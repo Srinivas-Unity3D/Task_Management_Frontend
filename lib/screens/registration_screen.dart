@@ -3,6 +3,7 @@ import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/role_dropdown.dart';
+import '../widgets/phone_number_field.dart';
 import 'sign_in_screen.dart';
 import 'package:flutter/services.dart';
 
@@ -126,15 +127,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               },
                             ),
                             SizedBox(height: isSmallScreen ? 16 : 20),
-                            CustomTextField(
+                            PhoneNumberField(
                               label: 'Mobile Number',
-                              hint: 'Enter your mobile number',
+                              hint: 'Enter mobile number',
                               controller: _mobileController,
-                              keyboardType: TextInputType.phone,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(10),
-                              ],
                               validator: (value) {
                                 if (value?.isEmpty ?? true) {
                                   return 'Please enter your mobile number';
