@@ -270,13 +270,35 @@ class CountrySearchList extends StatefulWidget {
 
 class _CountrySearchListState extends State<CountrySearchList> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   List<CountryCode> _filteredCountries = [];
   final List<CountryCode> _countries = Utils.getCountryCodes();
+  int? _selectedIndex;
 
   @override
   void initState() {
     super.initState();
     _filteredCountries = _countries;
+    // Find the initial selected country (IN for India)
+    _selectedIndex = _countries.indexWhere((country) => country.alpha2Code == 'IN');
+    // Scroll to selected country after build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_selectedIndex != null) {
+        _scrollToIndex(_selectedIndex!);
+      }
+    });
+  }
+
+  void _scrollToIndex(int index) {
+    if (_scrollController.hasClients) {
+      final itemHeight = 52.0; // Approximate height of each country item
+      final offset = index * itemHeight;
+      _scrollController.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   void _filterCountries(String query) {
@@ -293,8 +315,15 @@ class _CountrySearchListState extends State<CountrySearchList> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
+        Container(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: AppColors.borderColor.withOpacity(0.5),
+                width: 1,
+              ),
+            ),
+          ),
           child: TextField(
             controller: _searchController,
             style: const TextStyle(color: AppColors.white),
@@ -304,16 +333,16 @@ class _CountrySearchListState extends State<CountrySearchList> {
               prefixIcon: const Icon(Icons.search, color: AppColors.textGrey),
               filled: true,
               fillColor: AppColors.inputBackground,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
-              ),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
             onChanged: _filterCountries,
           ),
         ),
         Flexible(
           child: ListView.builder(
+            controller: _scrollController,
+            padding: EdgeInsets.zero,
             shrinkWrap: true,
             itemCount: _filteredCountries.length,
             itemBuilder: (context, index) {
@@ -321,6 +350,7 @@ class _CountrySearchListState extends State<CountrySearchList> {
               return InkWell(
                 onTap: () => widget.onSelect(country),
                 child: Container(
+                  height: 52,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
@@ -368,6 +398,12 @@ class _CountrySearchListState extends State<CountrySearchList> {
       ],
     );
   }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 }
 
 class CountryCode {
@@ -392,11 +428,6 @@ class Utils {
 
   static List<CountryCode> getCountryCodes() {
     return [
-      const CountryCode(name: 'India', dialCode: '+91', alpha2Code: 'IN'),
-      const CountryCode(name: 'United States', dialCode: '+1', alpha2Code: 'US'),
-      const CountryCode(name: 'United Kingdom', dialCode: '+44', alpha2Code: 'GB'),
-      const CountryCode(name: 'Canada', dialCode: '+1', alpha2Code: 'CA'),
-      const CountryCode(name: 'Australia', dialCode: '+61', alpha2Code: 'AU'),
       const CountryCode(name: 'Afghanistan', dialCode: '+93', alpha2Code: 'AF'),
       const CountryCode(name: 'Albania', dialCode: '+355', alpha2Code: 'AL'),
       const CountryCode(name: 'Algeria', dialCode: '+213', alpha2Code: 'DZ'),
