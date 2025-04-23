@@ -120,6 +120,7 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
                         ],
                       ),
                       child: CountrySearchList(
+                        currentIsoCode: number.isoCode ?? 'IN',
                         onSelect: (country) {
                           setState(() {
                             number = PhoneNumber(
@@ -258,10 +259,12 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
 
 class CountrySearchList extends StatefulWidget {
   final Function(CountryCode) onSelect;
+  final String currentIsoCode;
 
   const CountrySearchList({
     Key? key,
     required this.onSelect,
+    required this.currentIsoCode,
   }) : super(key: key);
 
   @override
@@ -273,25 +276,32 @@ class _CountrySearchListState extends State<CountrySearchList> {
   final ScrollController _scrollController = ScrollController();
   List<CountryCode> _filteredCountries = [];
   final List<CountryCode> _countries = Utils.getCountryCodes();
-  int? _selectedIndex;
+  late String _currentIsoCode;
 
   @override
   void initState() {
     super.initState();
+    _currentIsoCode = widget.currentIsoCode;
     _filteredCountries = _countries;
-    // Find the initial selected country (IN for India)
-    _selectedIndex = _countries.indexWhere((country) => country.alpha2Code == 'IN');
-    // Scroll to selected country after build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_selectedIndex != null) {
-        _scrollToIndex(_selectedIndex!);
-      }
-    });
+    _scrollToSelectedCountry();
+  }
+
+  void _scrollToSelectedCountry() {
+    if (_currentIsoCode != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final index = _filteredCountries.indexWhere(
+          (country) => country.alpha2Code == _currentIsoCode
+        );
+        if (index != -1) {
+          _scrollToIndex(index);
+        }
+      });
+    }
   }
 
   void _scrollToIndex(int index) {
     if (_scrollController.hasClients) {
-      final itemHeight = 52.0; // Approximate height of each country item
+      final itemHeight = 52.0;
       final offset = index * itemHeight;
       _scrollController.animateTo(
         offset,
@@ -336,7 +346,12 @@ class _CountrySearchListState extends State<CountrySearchList> {
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
-            onChanged: _filterCountries,
+            onChanged: (value) {
+              _filterCountries(value);
+              if (value.isEmpty) {
+                _scrollToSelectedCountry();
+              }
+            },
           ),
         ),
         Flexible(
@@ -348,7 +363,10 @@ class _CountrySearchListState extends State<CountrySearchList> {
             itemBuilder: (context, index) {
               final country = _filteredCountries[index];
               return InkWell(
-                onTap: () => widget.onSelect(country),
+                onTap: () {
+                  _currentIsoCode = country.alpha2Code;
+                  widget.onSelect(country);
+                },
                 child: Container(
                   height: 52,
                   padding: const EdgeInsets.symmetric(
@@ -356,6 +374,9 @@ class _CountrySearchListState extends State<CountrySearchList> {
                     vertical: 12,
                   ),
                   decoration: BoxDecoration(
+                    color: country.alpha2Code == _currentIsoCode 
+                        ? AppColors.inputBackground 
+                        : null,
                     border: Border(
                       bottom: index != _filteredCountries.length - 1
                           ? BorderSide(
@@ -440,6 +461,7 @@ class Utils {
       const CountryCode(name: 'Argentina', dialCode: '+54', alpha2Code: 'AR'),
       const CountryCode(name: 'Armenia', dialCode: '+374', alpha2Code: 'AM'),
       const CountryCode(name: 'Aruba', dialCode: '+297', alpha2Code: 'AW'),
+      const CountryCode(name: 'Australia', dialCode: '+61', alpha2Code: 'AU'),
       const CountryCode(name: 'Austria', dialCode: '+43', alpha2Code: 'AT'),
       const CountryCode(name: 'Azerbaijan', dialCode: '+994', alpha2Code: 'AZ'),
       const CountryCode(name: 'Bahamas', dialCode: '+1242', alpha2Code: 'BS'),
@@ -463,6 +485,7 @@ class Utils {
       const CountryCode(name: 'Burundi', dialCode: '+257', alpha2Code: 'BI'),
       const CountryCode(name: 'Cambodia', dialCode: '+855', alpha2Code: 'KH'),
       const CountryCode(name: 'Cameroon', dialCode: '+237', alpha2Code: 'CM'),
+      const CountryCode(name: 'Canada', dialCode: '+1', alpha2Code: 'CA'),
       const CountryCode(name: 'Cape Verde', dialCode: '+238', alpha2Code: 'CV'),
       const CountryCode(name: 'Cayman Islands', dialCode: '+1345', alpha2Code: 'KY'),
       const CountryCode(name: 'Central African Republic', dialCode: '+236', alpha2Code: 'CF'),
@@ -518,6 +541,7 @@ class Utils {
       const CountryCode(name: 'Hong Kong', dialCode: '+852', alpha2Code: 'HK'),
       const CountryCode(name: 'Hungary', dialCode: '+36', alpha2Code: 'HU'),
       const CountryCode(name: 'Iceland', dialCode: '+354', alpha2Code: 'IS'),
+      const CountryCode(name: 'India', dialCode: '+91', alpha2Code: 'IN'),
       const CountryCode(name: 'Indonesia', dialCode: '+62', alpha2Code: 'ID'),
       const CountryCode(name: 'Iran', dialCode: '+98', alpha2Code: 'IR'),
       const CountryCode(name: 'Iraq', dialCode: '+964', alpha2Code: 'IQ'),
