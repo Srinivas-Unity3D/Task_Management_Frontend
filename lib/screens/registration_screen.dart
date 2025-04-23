@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl_phone_number_input/intl_phone_number_input.dart';
 import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/custom_button.dart';
@@ -24,6 +25,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  PhoneNumber? _phoneNumber;
 
   final List<String> _roles = [
     'Software Developer',
@@ -131,12 +133,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               label: 'Mobile Number',
                               hint: 'Enter mobile number',
                               controller: _mobileController,
+                              onInputChanged: (PhoneNumber number) {
+                                setState(() {
+                                  _phoneNumber = number;
+                                });
+                              },
                               validator: (value) {
                                 if (value?.isEmpty ?? true) {
                                   return 'Please enter your mobile number';
-                                }
-                                if (value!.length < 10) {
-                                  return 'Please enter a valid 10-digit mobile number';
                                 }
                                 return null;
                               },
