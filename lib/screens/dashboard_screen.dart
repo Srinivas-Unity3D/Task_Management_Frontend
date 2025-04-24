@@ -13,6 +13,7 @@ import '../widgets/dashboard/side_menu.dart';
 import '../widgets/dashboard/side_panel.dart';
 import '../widgets/custom_text_field.dart';
 import '../services/api_service.dart';
+import '../screens/create_task_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -749,17 +750,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     padding: const EdgeInsets.all(16),
                     child: Align(
                       alignment: Alignment.centerRight,
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF7DF9FF),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.add,
-                          color: Color(0xFF0F172A),
-                          size: 20,
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CreateTaskScreen(),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF7DF9FF),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.add,
+                            color: Color(0xFF0F172A),
+                            size: 20,
+                          ),
                         ),
                       ),
                     ),
