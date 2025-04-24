@@ -8,6 +8,8 @@ import '../models/task.dart';
 import '../models/task_stats.dart';
 import '../theme/colors.dart';
 import 'sign_in_screen.dart';
+import '../widgets/dashboard/side_menu.dart';
+import '../widgets/dashboard/side_panel.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -17,6 +19,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late User _user;
   late TaskStats _taskStats;
   bool _isLoading = true;
@@ -83,6 +86,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  Future<void> _handleLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Clear all stored data
+    await prefs.clear();
+    
+    if (mounted) {
+      // Navigate to login screen
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => const SignInScreen(),
+        ),
+      );
+    }
+  }
+
   Widget _buildNotificationIcon({required bool hasUnreadNotifications}) {
     return Container(
       width: 48,
@@ -118,6 +136,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  void _showSidePanel() {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, animation1, animation2) => Container(),
+      transitionBuilder: (context, animation1, animation2, child) {
+        final curvedAnimation = CurvedAnimation(
+          parent: animation1,
+          curve: Curves.easeInOut,
+        );
+        return Stack(
+          children: [
+            // Backdrop for tap to dismiss
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                color: Colors.transparent,
+                width: double.infinity,
+                height: double.infinity,
+              ),
+            ),
+            // Side Panel
+            Positioned(
+              top: 0,
+              bottom: 0,
+              left: 0,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(-1, 0),
+                  end: Offset.zero,
+                ).animate(curvedAnimation),
+                child: SidePanel(
+                  onLogout: _handleLogout,
+                  onClose: () => Navigator.pop(context),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -130,6 +194,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: LayoutBuilder(
@@ -148,7 +213,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              ProfileSection(user: _user),
+                              ProfileSection(
+                                user: _user,
+                                onProfileTap: _showSidePanel,
+                              ),
                               const SizedBox(height: 32),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

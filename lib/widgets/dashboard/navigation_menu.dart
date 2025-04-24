@@ -1,27 +1,38 @@
 import 'package:flutter/material.dart';
+import '../../theme/colors.dart';
 
 class NavigationMenu extends StatelessWidget {
-  const NavigationMenu({Key? key}) : super(key: key);
+  const NavigationMenu({
+    Key? key,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: 24),
         _buildMenuItem(
-          icon: Icons.task,
+          icon: Icons.assignment_outlined,
           label: 'My Tasks',
-          topMargin: 44,
+          onTap: () {
+            // TODO: Navigate to My Tasks
+          },
         ),
+        const SizedBox(height: 16),
         _buildMenuItem(
           icon: Icons.history,
           label: 'History',
-          topMargin: 40,
+          onTap: () {
+            // TODO: Navigate to History
+          },
         ),
+        const SizedBox(height: 16),
         _buildMenuItem(
-          icon: Icons.assignment,
+          icon: Icons.assignment_ind_outlined,
           label: 'Assign Tasks',
-          topMargin: 40,
+          onTap: () {
+            // TODO: Navigate to Assign Tasks
+          },
         ),
       ],
     );
@@ -30,28 +41,31 @@ class NavigationMenu extends StatelessWidget {
   Widget _buildMenuItem({
     required IconData icon,
     required String label,
-    required double topMargin,
+    required VoidCallback onTap,
   }) {
-    return Padding(
-      padding: EdgeInsets.only(top: topMargin, left: 12),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 20,
-            color: const Color(0xFF798598),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF798598),
-              fontSize: 16,
-              fontWeight: FontWeight.w400,
-              fontFamily: 'Inter',
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              color: AppColors.textGrey,
+              size: 20,
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textGrey,
+                fontSize: 14,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
