@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'screens/sign_in_screen.dart';
+import 'screens/dashboard_screen.dart';
 import 'theme/colors.dart';
 
 void main() {
@@ -22,7 +23,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Sign In App',
+      title: 'Task Management',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primaryColor: AppColors.accentCyan,
@@ -75,7 +76,7 @@ class MyApp extends StatelessWidget {
         ),
       ),
 
-      // Set SignInScreen as the home screen
+      // Changed back to SignInScreen
       home: const SignInScreen(),
     );
   }
