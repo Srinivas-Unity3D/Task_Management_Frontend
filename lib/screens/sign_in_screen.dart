@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/custom_button.dart';
@@ -19,7 +20,41 @@ class _SignInScreenState extends State<SignInScreen> {
   final _passwordController = TextEditingController();
   final _apiService = ApiService();
   bool _isLoading = false;
+  bool _rememberMe = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSavedCredentials();
+  }
+
+  Future<void> _checkSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUsername = prefs.getString('username');
+    final savedPassword = prefs.getString('password');
+    
+    if (savedUsername != null && savedPassword != null) {
+      setState(() {
+        _usernameController.text = savedUsername;
+        _passwordController.text = savedPassword;
+        _rememberMe = true;
+      });
+    }
+  }
+
+  Future<void> _saveCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setString('username', _usernameController.text);
+      await prefs.setString('password', _passwordController.text);
+      await prefs.setBool('isLoggedIn', true);
+    } else {
+      await prefs.remove('username');
+      await prefs.remove('password');
+      await prefs.remove('isLoggedIn');
+    }
+  }
 
   @override
   void dispose() {
@@ -47,8 +82,8 @@ class _SignInScreenState extends State<SignInScreen> {
           });
 
           if (response['success']) {
-            // Store user data (you might want to use shared preferences here)
-            final userData = response['data'];
+            // Save credentials if remember me is checked
+            await _saveCredentials();
             
             // Navigate to Dashboard
             Navigator.of(context).pushReplacement(
@@ -147,6 +182,41 @@ class _SignInScreenState extends State<SignInScreen> {
                                 }
                                 return null;
                               },
+                            ),
+                            const SizedBox(height: 16),
+                            // Remember Me Toggle
+                            Row(
+                              children: [
+                                SizedBox(
+                                  height: 24,
+                                  width: 24,
+                                  child: Checkbox(
+                                    value: _rememberMe,
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _rememberMe = value ?? false;
+                                      });
+                                    },
+                                    fillColor: MaterialStateProperty.resolveWith<Color>(
+                                      (Set<MaterialState> states) {
+                                        if (states.contains(MaterialState.selected)) {
+                                          return AppColors.accentCyan;
+                                        }
+                                        return AppColors.borderColor;
+                                      },
+                                    ),
+                                    checkColor: AppColors.background,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Remember Me',
+                                  style: TextStyle(
+                                    color: AppColors.textGrey,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
                             if (_errorMessage != null) ...[
                               const SizedBox(height: 16),

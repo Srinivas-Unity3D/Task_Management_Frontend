@@ -15,7 +15,7 @@ void main() async {  // Made async to properly handle initialization
     DeviceOrientation.portraitDown,
   ]);
 
-  // Initialize SharedPreferences
+  // Check if user is logged in
   final prefs = await SharedPreferences.getInstance();
   final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
 
