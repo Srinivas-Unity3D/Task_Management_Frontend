@@ -572,179 +572,98 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildAssignTasksView() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Assign Tasks',
-                style: TextStyle(
-                  color: AppColors.accentCyan,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Inter',
-                ),
-              ),
-              _buildNotificationIcon(
-                hasUnreadNotifications: _hasUnreadNotifications,
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppColors.accentCyan,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.add,
-                color: AppColors.background,
-                size: 24,
-              ),
-            ),
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: AppColors.cardBackground,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  children: [
-                    _buildTeamMemberItem(
-                      name: 'Ayan',
-                      role: 'Developer',
-                      currentTask: 'Website Redesign',
-                      onAssign: () {
-                        // TODO: Handle assign task
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    _buildTeamMemberItem(
-                      name: 'Azim',
-                      role: 'Admin',
-                      currentTask: 'API Integration',
-                      onAssign: () {
-                        // TODO: Handle assign task
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    _buildTeamMemberItem(
-                      name: 'Durga',
-                      role: 'Product Manager',
-                      currentTask: 'User Research',
-                      onAssign: () {
-                        // TODO: Handle assign task
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildTeamMemberItem({
     required String name,
     required String role,
     required String currentTask,
     required VoidCallback onAssign,
   }) {
-    return Row(
-      children: [
-        // Avatar
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: Colors.grey[300],
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 16),
-        // Member Details
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1526),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          // Avatar
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: const Color(0xFF2A2A2A),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                name[0].toUpperCase(),
                 style: const TextStyle(
-                  color: AppColors.accentCyan,
-                  fontSize: 16,
+                  color: Colors.white,
+                  fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              Text(
-                role,
-                style: const TextStyle(
-                  color: AppColors.textGrey,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                currentTask,
-                style: const TextStyle(
-                  color: Color(0xFF7DF9FF),
-                  fontSize: 14,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-        // Assign Task Button
-        InkWell(
-          onTap: onAssign,
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 8,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.accentCyan,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
+          const SizedBox(width: 12),
+          // Member Details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  'Assign Task',
-                  style: TextStyle(
-                    color: AppColors.background,
+                  name,
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                SizedBox(width: 4),
-                Icon(
-                  Icons.edit,
-                  color: AppColors.background,
-                  size: 16,
+                Text(
+                  role,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 12,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  currentTask,
+                  style: const TextStyle(
+                    color: Color(0xFF7DF9FF),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
-      ],
+          // Assign Task Button
+          TextButton.icon(
+            onPressed: onAssign,
+            style: TextButton.styleFrom(
+              backgroundColor: const Color(0xFF7DF9FF),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            icon: const Text(
+              'Assign Task',
+              style: TextStyle(
+                color: Color(0xFF0F172A),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            label: const Icon(
+              Icons.edit,
+              color: Color(0xFF0F172A),
+              size: 12,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -789,6 +708,100 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAssignTasksView() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Assign Tasks',
+                style: TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Inter',
+                ),
+              ),
+              _buildNotificationIcon(
+                hasUnreadNotifications: _hasUnreadNotifications,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  // Fixed plus button section
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF7DF9FF),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.add,
+                          color: Color(0xFF0F172A),
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Scrollable content
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      children: [
+                        _buildTeamMemberItem(
+                          name: 'Ayan',
+                          role: 'Developer',
+                          currentTask: 'Website Redesign',
+                          onAssign: () {
+                            _showAssignTaskDialog('Ayan');
+                          },
+                        ),
+                        _buildTeamMemberItem(
+                          name: 'Azim',
+                          role: 'Admin',
+                          currentTask: 'API Integration',
+                          onAssign: () {
+                            _showAssignTaskDialog('Azim');
+                          },
+                        ),
+                        _buildTeamMemberItem(
+                          name: 'Durga',
+                          role: 'Product Manager',
+                          currentTask: 'User Research',
+                          onAssign: () {
+                            _showAssignTaskDialog('Durga');
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
