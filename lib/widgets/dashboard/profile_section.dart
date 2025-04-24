@@ -6,11 +6,17 @@ import 'navigation_menu.dart';
 class ProfileSection extends StatelessWidget {
   final User user;
   final VoidCallback onProfileTap;
+  final VoidCallback onMyTasksPressed;
+  final VoidCallback onHistoryPressed;
+  final VoidCallback onAssignTasksPressed;
 
   const ProfileSection({
     Key? key,
     required this.user,
     required this.onProfileTap,
+    required this.onMyTasksPressed,
+    required this.onHistoryPressed,
+    required this.onAssignTasksPressed,
   }) : super(key: key);
 
   @override
@@ -81,7 +87,11 @@ class ProfileSection extends StatelessWidget {
               ],
             ),
           ),
-          const NavigationMenu(),
+          NavigationMenu(
+            onMyTasksPressed: onMyTasksPressed,
+            onHistoryPressed: onHistoryPressed,
+            onAssignTasksPressed: onAssignTasksPressed,
+          ),
         ],
       ),
     );

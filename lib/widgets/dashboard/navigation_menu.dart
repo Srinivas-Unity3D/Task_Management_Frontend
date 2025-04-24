@@ -2,8 +2,15 @@ import 'package:flutter/material.dart';
 import '../../theme/colors.dart';
 
 class NavigationMenu extends StatelessWidget {
+  final VoidCallback onMyTasksPressed;
+  final VoidCallback onHistoryPressed;
+  final VoidCallback onAssignTasksPressed;
+
   const NavigationMenu({
     Key? key,
+    required this.onMyTasksPressed,
+    required this.onHistoryPressed,
+    required this.onAssignTasksPressed,
   }) : super(key: key);
 
   @override
@@ -14,25 +21,19 @@ class NavigationMenu extends StatelessWidget {
         _buildMenuItem(
           icon: Icons.assignment_outlined,
           label: 'My Tasks',
-          onTap: () {
-            // TODO: Navigate to My Tasks
-          },
+          onTap: onMyTasksPressed,
         ),
         const SizedBox(height: 16),
         _buildMenuItem(
           icon: Icons.history,
           label: 'History',
-          onTap: () {
-            // TODO: Navigate to History
-          },
+          onTap: onHistoryPressed,
         ),
         const SizedBox(height: 16),
         _buildMenuItem(
           icon: Icons.assignment_ind_outlined,
           label: 'Assign Tasks',
-          onTap: () {
-            // TODO: Navigate to Assign Tasks
-          },
+          onTap: onAssignTasksPressed,
         ),
       ],
     );
