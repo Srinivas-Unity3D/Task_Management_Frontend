@@ -29,6 +29,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isLoading = true;
   bool _hasUnreadNotifications = false;
   ViewState _currentView = ViewState.dashboard;
+  List<Task> _userTasks = [];
 
   @override
   void initState() {
@@ -59,9 +60,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final response = await _apiService.getTasks(username: username, role: role);
       if (response['success']) {
         final tasksJson = response['data'] as List;
-        final tasks = tasksJson.map((task) => Task.fromJson(task)).toList();
+        _userTasks = tasksJson.map((task) => Task.fromJson(task)).toList();
         setState(() {
-          _taskStats = TaskStats.fromTasks(tasks);
+          _taskStats = TaskStats.fromTasks(_userTasks);
         });
       } else {
         if (mounted) {
@@ -193,8 +194,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildDashboardView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: const EdgeInsets.all(24),
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -249,29 +250,107 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildMyTasksView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'My Tasks',
-              style: TextStyle(
-                color: AppColors.accentCyan,
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Inter',
+    return ListView.builder(
+      padding: const EdgeInsets.all(24),
+      itemCount: _userTasks.length + 1, // +1 for the header
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          // Header
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'My Tasks',
+                  style: TextStyle(
+                    color: AppColors.accentCyan,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+                _buildNotificationIcon(
+                  hasUnreadNotifications: _hasUnreadNotifications,
+                ),
+              ],
+            ),
+          );
+        }
+
+        final task = _userTasks[index - 1];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Priority Indicator Dot
+              Container(
+                margin: const EdgeInsets.only(top: 6),
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: task.priority == TaskPriority.high 
+                      ? AppColors.highPriority 
+                      : AppColors.mediumPriority,
+                ),
               ),
-            ),
-            _buildNotificationIcon(
-              hasUnreadNotifications: _hasUnreadNotifications,
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        // Add your tasks list view here
-      ],
+              const SizedBox(width: 12),
+              // Task Details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      task.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Due ${_formatDate(task.deadline)}',
+                      style: const TextStyle(
+                        color: AppColors.textGrey,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Status Badge
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF392F41),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  task.status.name.toUpperCase(),
+                  style: TextStyle(
+                    color: task.status == TaskStatus.completed 
+                        ? AppColors.completed 
+                        : AppColors.pending,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -354,6 +433,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               )
             : Column(
                 children: [
+                  // Profile Section at top
                   Padding(
                     padding: const EdgeInsets.all(24),
                     child: ProfileSection(
@@ -364,21 +444,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       onAssignTasksPressed: () => _switchView(ViewState.assignTasks),
                     ),
                   ),
+                  // Content Area
                   Expanded(
                     child: RefreshIndicator(
                       onRefresh: _loadDashboardData,
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: _buildCurrentView(),
-                        ),
-                      ),
+                      child: _buildCurrentView(),
                     ),
                   ),
                 ],
               ),
       ),
     );
+  }
+
+  String _formatDate(DateTime date) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${months[date.month - 1]} ${date.day.toString().padLeft(2, '0')}';
   }
 }
