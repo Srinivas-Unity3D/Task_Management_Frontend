@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math';
 
 class CreateTaskScreen extends StatefulWidget {
   const CreateTaskScreen({Key? key}) : super(key: key);
@@ -57,13 +58,42 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     'Urgent'
   ];
 
+  final bool _isEmulatorTestMode = false;  // Set to false for real device testing
+
   @override
   void initState() {
     super.initState();
-    print('Initializing AudioRecorder...');
+    print('🎤 [Init] Initializing AudioRecorder...');
     _audioRecorder = AudioRecorder();
+    _checkMicrophoneStatus();
     _getCurrentUser();
-    _requestPermissions();
+  }
+
+  Future<void> _checkMicrophoneStatus() async {
+    try {
+      print('\n🎤 [Microphone] Checking microphone status...');
+      
+      // Check if microphone permission is granted
+      final micPermission = await Permission.microphone.status;
+      print('🎤 [Microphone] Permission status: $micPermission');
+      
+      // Check if microphone is available
+      final hasRecordingPermission = await _audioRecorder.hasPermission();
+      print('🎤 [Microphone] Recording permission: $hasRecordingPermission');
+      
+      // Check if microphone is currently in use
+      final isRecording = await _audioRecorder.isRecording();
+      print('🎤 [Microphone] Is currently recording: $isRecording');
+      
+      if (!hasRecordingPermission) {
+        print('❌ [Microphone] No recording permission available');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone access is not available')),
+        );
+      }
+    } catch (e) {
+      print('❌ [Microphone] Error checking status: $e');
+    }
   }
 
   Future<void> _getCurrentUser() async {
@@ -107,38 +137,116 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<void> _requestPermissions() async {
     try {
-      print('Requesting permissions...');
-      Map<Permission, PermissionStatus> statuses = await [
-        Permission.microphone,
-        Permission.storage,
-      ].request();
+      print('🎤 [Permissions] Requesting microphone permission...');
       
-      print('Permission statuses: $statuses');
+      // First check current permission status
+      final micStatus = await Permission.microphone.status;
+      print('📱 [Permissions] Current status:');
+      print('  - Microphone: $micStatus');
       
-      if (statuses[Permission.microphone] != PermissionStatus.granted) {
-        print('Microphone permission not granted');
+      // Request permission if not granted
+      if (!micStatus.isGranted) {
+        print('📱 [Permissions] Requesting microphone permission...');
+        final status = await Permission.microphone.request();
+        
+        print('📱 [Permissions] New status after request:');
+        print('  - Microphone: $status');
+        
+        if (status != PermissionStatus.granted) {
+          print('❌ [Permissions] Microphone permission denied');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Microphone permission is required for recording. Please enable it in Settings.'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+          return;
+        }
+      }
+      
+      // Double check recorder permission
+      final hasRecorderPermission = await _audioRecorder.hasPermission();
+      print('🎤 [Permissions] Recorder permission check: $hasRecorderPermission');
+      
+      if (!hasRecorderPermission) {
+        print('❌ [Permissions] Recorder permission check failed');
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Microphone permission is required for recording')),
+          const SnackBar(
+            content: Text('Unable to access microphone. Please check your device settings.'),
+            duration: Duration(seconds: 5),
+          ),
         );
       }
     } catch (e) {
-      print('Error requesting permissions: $e');
+      print('❌ [Permissions] Error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error checking permissions: $e'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
     }
   }
 
   Future<void> _startRecording() async {
     try {
-      print('Starting recording process...');
+      print('\n🎤 [Recording] Starting recording process...');
       
+      // Check microphone permission before starting
+      final micPermission = await Permission.microphone.status;
+      print('📱 [Recording] Permission check:');
+      print('  - Microphone: $micPermission');
+      
+      if (!micPermission.isGranted) {
+        print('❌ [Recording] Microphone permission not granted, requesting...');
+        await _requestPermissions();
+        return;
+      }
+
       // Create directory if it doesn't exist
       final appDir = await getApplicationDocumentsDirectory();
+      print('📁 [Recording] App documents directory: ${appDir.path}');
+      
       final dirPath = '${appDir.path}/recordings';
-      await Directory(dirPath).create(recursive: true);
+      print('📁 [Recording] Creating recordings directory at: $dirPath');
+      
+      try {
+        await Directory(dirPath).create(recursive: true);
+      } catch (e) {
+        print('⚠️ [Recording] Directory creation warning (may already exist): $e');
+      }
       
       final filePath = '$dirPath/audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      print('Will save recording to: $filePath');
+      print('📝 [Recording] Will save recording to: $filePath');
 
-      // Configure and start recording
+      if (_isEmulatorTestMode) {
+        // Create a test audio file for emulator testing
+        print('🔧 [Recording] Running in emulator test mode');
+        await _createTestAudioFile(filePath);
+        setState(() {
+          _isRecording = true;
+          _recordedFilePath = filePath;
+        });
+        print('✅ [Recording] Test file created at: $filePath');
+        return;
+      }
+
+      // Check if recorder is ready
+      final isRecorderReady = await _audioRecorder.hasPermission();
+      print('🎤 [Recording] Recorder ready status: $isRecorderReady');
+      
+      if (!isRecorderReady) {
+        print('❌ [Recording] Recorder not ready');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to access microphone. Please check your permissions.'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+
+      print('⚙️ [Recording] Configuring recorder...');
       await _audioRecorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
@@ -147,44 +255,88 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         ),
         path: filePath,
       );
-      print('Recording started successfully');
+      print('✅ [Recording] Recording started successfully');
 
       setState(() {
         _isRecording = true;
         _recordedFilePath = filePath;
       });
+      print('🔄 [Recording] State updated: isRecording=$_isRecording, filePath=$_recordedFilePath');
     } catch (e) {
-      print('Error in _startRecording: $e');
+      print('❌ [Recording] Error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to start recording: $e')),
+        SnackBar(
+          content: Text('Failed to start recording: $e'),
+          duration: const Duration(seconds: 5),
+        ),
       );
+    }
+  }
+
+  Future<void> _createTestAudioFile(String filePath) async {
+    try {
+      // Create a simple test audio file (1 second of silence)
+      final file = File(filePath);
+      final List<int> headerBytes = [
+        0x52, 0x49, 0x46, 0x46, // "RIFF"
+        0x24, 0x00, 0x00, 0x00, // File size
+        0x57, 0x41, 0x56, 0x45, // "WAVE"
+        0x66, 0x6D, 0x74, 0x20, // "fmt "
+        0x10, 0x00, 0x00, 0x00, // Format chunk size
+        0x01, 0x00,             // Format tag (PCM)
+        0x01, 0x00,             // Channels (mono)
+        0x44, 0xAC, 0x00, 0x00, // Sample rate (44100 Hz)
+        0x88, 0x58, 0x01, 0x00, // Bytes per second
+        0x02, 0x00,             // Block align
+        0x10, 0x00,             // Bits per sample
+        0x64, 0x61, 0x74, 0x61, // "data"
+        0x00, 0x00, 0x00, 0x00  // Data chunk size
+      ];
+      
+      await file.writeAsBytes(headerBytes);
+      print('✅ [Recording] Created test audio file with silence');
+    } catch (e) {
+      print('❌ [Recording] Error creating test file: $e');
+      throw e;
     }
   }
 
   Future<void> _stopRecording() async {
     if (!_isRecording) {
-      print('Not currently recording');
+      print('⚠️ [Recording] Stop called but not currently recording');
       return;
     }
 
     try {
-      print('Stopping recording...');
+      print('\n🛑 [Recording] Stopping recording...');
       final path = await _audioRecorder.stop();
-      print('Recording stopped. File saved at: $path');
+      print('✅ [Recording] Recording stopped. File saved at: $path');
 
       setState(() {
         _isRecording = false;
       });
+      print('🔄 [Recording] State updated: isRecording=$_isRecording');
 
-      // Verify file exists
+      // Verify file exists and check its size
       final file = File(path ?? '');
       if (await file.exists()) {
-        print('Recording file exists at: ${file.path}');
+        final size = await file.length();
+        print('📁 [Recording] File verification:');
+        print('  - Path: ${file.path}');
+        print('  - Size: $size bytes');
+        print('  - Exists: true');
+        
+        // Read first few bytes to verify it's not empty
+        if (size > 0) {
+          final bytes = await file.openRead(0, min(size, 16)).toList();
+          print('  - First few bytes: $bytes');
+          print('✅ [Recording] File verification complete - file is valid');
+        }
       } else {
-        print('Warning: Recording file not found at: ${file.path}');
+        print('❌ [Recording] Warning: Recording file not found at: ${file.path}');
       }
     } catch (e) {
-      print('Error in _stopRecording: $e');
+      print('❌ [Recording] Error in _stopRecording: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to stop recording: $e')),
       );
@@ -193,35 +345,37 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<void> _playRecording() async {
     if (_recordedFilePath == null) {
-      print('No recording to play');
+      print('⚠️ [Playback] No recording to play');
       return;
     }
     
     try {
-      print('Attempting to play recording from: $_recordedFilePath');
+      print('\n▶️ [Playback] Attempting to play recording from: $_recordedFilePath');
       if (_isPlaying) {
-        print('Stopping current playback');
+        print('⏹️ [Playback] Stopping current playback');
         await _audioPlayer.stop();
         setState(() {
           _isPlaying = false;
         });
+        print('✅ [Playback] Playback stopped');
       } else {
-        print('Starting playback');
+        print('▶️ [Playback] Starting playback');
         await _audioPlayer.play(DeviceFileSource(_recordedFilePath!));
         setState(() {
           _isPlaying = true;
         });
+        print('✅ [Playback] Playback started');
         
         // Listen for playback completion
         _audioPlayer.onPlayerComplete.listen((event) {
-          print('Playback completed');
+          print('✅ [Playback] Playback completed');
           setState(() {
             _isPlaying = false;
           });
         });
       }
     } catch (e) {
-      print('Error in _playRecording: $e');
+      print('❌ [Playback] Error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to play recording: $e')),
       );
@@ -229,18 +383,26 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<void> _deleteRecording() async {
-    if (_recordedFilePath == null) return;
+    if (_recordedFilePath == null) {
+      print('⚠️ [Delete] No recording to delete');
+      return;
+    }
     
     try {
+      print('\n🗑️ [Delete] Attempting to delete recording at: $_recordedFilePath');
       final file = File(_recordedFilePath!);
       if (await file.exists()) {
         await file.delete();
+        print('✅ [Delete] Recording deleted successfully');
+      } else {
+        print('⚠️ [Delete] File does not exist');
       }
       setState(() {
         _recordedFilePath = null;
       });
+      print('🔄 [Delete] State updated: recordedFilePath=null');
     } catch (e) {
-      print('Error deleting recording: $e');
+      print('❌ [Delete] Error: $e');
     }
   }
 
