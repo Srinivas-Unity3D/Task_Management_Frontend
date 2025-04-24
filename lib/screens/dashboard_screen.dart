@@ -127,7 +127,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Positioned(
               top: 12,
               right: 12,
-              child: Container(
+        child: Container(
                 width: 8,
                 height: 8,
                 decoration: const BoxDecoration(
@@ -159,7 +159,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             // Backdrop for tap to dismiss
             GestureDetector(
               onTap: () => Navigator.pop(context),
-              child: Container(
+            child: Container(
                 color: Colors.transparent,
                 width: double.infinity,
                 height: double.infinity,
@@ -196,27 +196,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildDashboardView() {
     return ListView(
       padding: const EdgeInsets.all(24),
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
             const Text(
-              'My Dashboard',
-              style: TextStyle(
+                        'My Dashboard',
+                        style: TextStyle(
                 color: AppColors.accentCyan,
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Inter',
-              ),
-            ),
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
             _buildNotificationIcon(
               hasUnreadNotifications: _hasUnreadNotifications,
-            ),
-          ],
-        ),
-        const SizedBox(height: 32),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
         StatsCard(
-          title: 'Active Tasks',
+                    title: 'Active Tasks',
           count: _taskStats?.activeTasks.toString() ?? '0',
           icon: Icons.assignment,
           onTap: () => _switchView(ViewState.myTasks),
@@ -566,9 +566,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildAssignTasksView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: const EdgeInsets.all(24),
       children: [
+        // Header with title and notification
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -587,8 +588,193 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
         const SizedBox(height: 24),
-        // Add your assign tasks view here
+        // Add New Task Button
+        Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.accentCyan,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.add,
+              color: AppColors.background,
+              size: 24,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Team Members List
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              _buildTeamMemberItem(
+                name: 'Ayan',
+                role: 'Developer',
+                currentTask: 'Website Redesign',
+                onAssign: () {
+                  // TODO: Handle assign task
+                },
+                  ),
+                  const SizedBox(height: 24),
+              _buildTeamMemberItem(
+                name: 'Azim',
+                role: 'Admin',
+                currentTask: 'API Integration',
+                onAssign: () {
+                  // TODO: Handle assign task
+                },
+                  ),
+                  const SizedBox(height: 24),
+              _buildTeamMemberItem(
+                name: 'Durga',
+                role: 'Product Manager',
+                currentTask: 'User Research',
+                onAssign: () {
+                  // TODO: Handle assign task
+                },
+              ),
+            ],
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildTeamMemberItem({
+    required String name,
+    required String role,
+    required String currentTask,
+    required VoidCallback onAssign,
+  }) {
+    return Row(
+      children: [
+        // Avatar
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.grey[300],
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 16),
+        // Member Details
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: const TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                role,
+                style: const TextStyle(
+                  color: AppColors.textGrey,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                currentTask,
+                style: const TextStyle(
+                  color: Color(0xFF7DF9FF),
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Assign Task Button
+        InkWell(
+          onTap: onAssign,
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 8,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.accentCyan,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Text(
+                  'Assign Task',
+                  style: TextStyle(
+                    color: AppColors.background,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(width: 4),
+                Icon(
+                  Icons.edit,
+                  color: AppColors.background,
+                  size: 16,
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // Add this method to handle task assignment
+  void _showAssignTaskDialog(String memberName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        title: Text(
+          'Assign Task to $memberName',
+          style: const TextStyle(
+            color: AppColors.accentCyan,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Add task assignment form here
+            // You can add fields for task title, description, deadline, etc.
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textGrey),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              // TODO: Handle task assignment
+              Navigator.pop(context);
+            },
+            child: const Text(
+              'Assign',
+              style: TextStyle(color: AppColors.accentCyan),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -636,7 +822,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                 ],
-              ),
+        ),
       ),
     );
   }

@@ -18,4 +18,9 @@ class AppColors {
   static const highPriority = Color(0xFFFF4444);
   static const mediumPriority = Color(0xFFFFB800);
   static const lowPriority = Color(0xFF22C55E);
+
+  // Add these colors if not already present
+  static const taskCardBackground = Color(0xFF1E2746);
+  static const assignButtonBackground = Color(0xFF7DF9FF);
+  static const assignButtonText = Color(0xFF0F172A);
 }
