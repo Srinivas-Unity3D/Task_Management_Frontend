@@ -19,11 +19,13 @@ class NavigationMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        const SizedBox(height: 24),
         _buildMenuItem(
           icon: Icons.dashboard,
           label: 'Dashboard',
           onTap: onDashboardPressed,
         ),
+        const SizedBox(height: 16),
         _buildMenuItem(
           icon: Icons.task,
           label: 'My Tasks',
@@ -54,7 +56,7 @@ class NavigationMenu extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         child: Row(
           children: [
             Icon(
