@@ -194,452 +194,466 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildDashboardView() {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-            const Text(
-                        'My Dashboard',
-                        style: TextStyle(
-                color: AppColors.accentCyan,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Inter',
-                        ),
-                      ),
-            _buildNotificationIcon(
-              hasUnreadNotifications: _hasUnreadNotifications,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-        StatsCard(
-                    title: 'Active Tasks',
-          count: _taskStats?.activeTasks.toString() ?? '0',
-          icon: Icons.assignment,
-          onTap: () => _switchView(ViewState.myTasks),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'My Dashboard',
+                style: TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Inter',
+                ),
+              ),
+              _buildNotificationIcon(
+                hasUnreadNotifications: _hasUnreadNotifications,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
-        StatsCard(
-          title: 'In Progress',
-          count: _taskStats?.inProgressTasks.toString() ?? '0',
-          icon: Icons.trending_up,
-          iconColor: Colors.blue,
-          onTap: () => _switchView(ViewState.myTasks),
-        ),
-        const SizedBox(height: 16),
-        StatsCard(
-          title: 'Completed',
-          count: _taskStats?.completedTasks.toString() ?? '0',
-          icon: Icons.check_circle,
-          iconColor: Colors.green,
-          onTap: () => _switchView(ViewState.myTasks),
-        ),
-        const SizedBox(height: 16),
-        StatsCard(
-          title: 'Snoozed',
-          count: _taskStats?.snoozedTasks.toString() ?? '0',
-          icon: Icons.snooze,
-          iconColor: Colors.orange,
-          onTap: () => _switchView(ViewState.myTasks),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            children: [
+              StatsCard(
+                title: 'Active Tasks',
+                count: _taskStats?.activeTasks.toString() ?? '0',
+                icon: Icons.assignment,
+                onTap: () => _switchView(ViewState.myTasks),
+              ),
+              const SizedBox(height: 16),
+              StatsCard(
+                title: 'In Progress',
+                count: _taskStats?.inProgressTasks.toString() ?? '0',
+                icon: Icons.trending_up,
+                iconColor: Colors.blue,
+                onTap: () => _switchView(ViewState.myTasks),
+              ),
+              const SizedBox(height: 16),
+              StatsCard(
+                title: 'Completed',
+                count: _taskStats?.completedTasks.toString() ?? '0',
+                icon: Icons.check_circle,
+                iconColor: Colors.green,
+                onTap: () => _switchView(ViewState.myTasks),
+              ),
+              const SizedBox(height: 16),
+              StatsCard(
+                title: 'Snoozed',
+                count: _taskStats?.snoozedTasks.toString() ?? '0',
+                icon: Icons.snooze,
+                iconColor: Colors.orange,
+                onTap: () => _switchView(ViewState.myTasks),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
   Widget _buildMyTasksView() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(24),
-      itemCount: _userTasks.length + 1, // +1 for the header
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          // Header
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'My Tasks',
-                  style: TextStyle(
-                    color: AppColors.accentCyan,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'Inter',
-                  ),
-                ),
-                _buildNotificationIcon(
-                  hasUnreadNotifications: _hasUnreadNotifications,
-                ),
-              ],
-            ),
-          );
-        }
-
-        final task = _userTasks[index - 1];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(12),
-          ),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Priority Indicator Dot
-              Container(
-                margin: const EdgeInsets.only(top: 6),
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: task.priority == TaskPriority.high 
-                      ? AppColors.highPriority 
-                      : AppColors.mediumPriority,
+              const Text(
+                'My Tasks',
+                style: TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Inter',
                 ),
               ),
-              const SizedBox(width: 12),
-              // Task Details
-              Expanded(
-                child: Column(
+              _buildNotificationIcon(
+                hasUnreadNotifications: _hasUnreadNotifications,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            itemCount: _userTasks.length,
+            itemBuilder: (context, index) {
+              final task = _userTasks[index];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      task.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
+                    Container(
+                      margin: const EdgeInsets.only(top: 6),
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: task.priority == TaskPriority.high 
+                            ? AppColors.highPriority 
+                            : AppColors.mediumPriority,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Due ${_formatDate(task.deadline)}',
-                      style: const TextStyle(
-                        color: AppColors.textGrey,
-                        fontSize: 14,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Due ${_formatDate(task.deadline)}',
+                            style: const TextStyle(
+                              color: AppColors.textGrey,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF392F41),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        task.status.name.toUpperCase(),
+                        style: TextStyle(
+                          color: task.status == TaskStatus.completed 
+                              ? AppColors.completed 
+                              : AppColors.pending,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-              // Status Badge
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF392F41),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  task.status.name.toUpperCase(),
-                  style: TextStyle(
-                    color: task.status == TaskStatus.completed 
-                        ? AppColors.completed 
-                        : AppColors.pending,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
+              );
+            },
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 
   Widget _buildHistoryView() {
-    return ListView(
-      padding: const EdgeInsets.all(24),
+    return Column(
       children: [
-        // Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'Task History',
-                  style: TextStyle(
-                    color: AppColors.accentCyan,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'Inter',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Legend
-                Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.completed,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Text(
-                      'Completed',
-                      style: TextStyle(
-                        color: AppColors.textGrey,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.orange,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Text(
-                      'Snoozed',
-                      style: TextStyle(
-                        color: AppColors.textGrey,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            _buildNotificationIcon(
-              hasUnreadNotifications: _hasUnreadNotifications,
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        // Completed Tasks Card
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Completed Tasks',
-                style: TextStyle(
-                  color: AppColors.textGrey,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _taskStats?.completedTasks.toString() ?? '0',
-                style: const TextStyle(
-                  color: AppColors.accentCyan,
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Inter',
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Snoozed Tasks Card
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Snoozed Tasks',
-                style: TextStyle(
-                  color: AppColors.textGrey,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _taskStats?.snoozedTasks.toString() ?? '0',
-                style: const TextStyle(
-                  color: AppColors.accentCyan,
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Inter',
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        // Task History List
-        ..._userTasks
-            .where((task) => 
-                task.status == TaskStatus.completed || 
-                task.status == TaskStatus.snoozed)
-            .map((task) => Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.cardBackground,
-                    borderRadius: BorderRadius.circular(12),
+              Row(
+                children: [
+                  const Text(
+                    'Task History',
+                    style: TextStyle(
+                      color: AppColors.accentCyan,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Inter',
+                    ),
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(width: 12),
+                  Row(
                     children: [
-                      // Status Indicator
                       Container(
-                        margin: const EdgeInsets.only(top: 6),
                         width: 8,
                         height: 8,
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          color: task.status == TaskStatus.completed
-                              ? AppColors.completed
-                              : Colors.orange,
+                          color: AppColors.completed,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Completed',
+                        style: TextStyle(
+                          color: AppColors.textGrey,
+                          fontSize: 12,
                         ),
                       ),
                       const SizedBox(width: 12),
-                      // Task Details
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              task.title,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Due ${_formatDate(task.deadline)}',
-                              style: const TextStyle(
-                                color: AppColors.textGrey,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.orange,
                         ),
                       ),
-                      // Status Badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF392F41),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          task.status.name.toUpperCase(),
-                          style: TextStyle(
-                            color: task.status == TaskStatus.completed
-                                ? AppColors.completed
-                                : Colors.orange,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Snoozed',
+                        style: TextStyle(
+                          color: AppColors.textGrey,
+                          fontSize: 12,
                         ),
                       ),
                     ],
                   ),
-                ))
-            .toList(),
+                ],
+              ),
+              _buildNotificationIcon(
+                hasUnreadNotifications: _hasUnreadNotifications,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Completed Tasks',
+                      style: TextStyle(
+                        color: AppColors.textGrey,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _taskStats?.completedTasks.toString() ?? '0',
+                      style: const TextStyle(
+                        color: AppColors.accentCyan,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Snoozed Tasks',
+                      style: TextStyle(
+                        color: AppColors.textGrey,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _taskStats?.snoozedTasks.toString() ?? '0',
+                      style: const TextStyle(
+                        color: AppColors.accentCyan,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              ..._userTasks
+                  .where((task) => 
+                      task.status == TaskStatus.completed || 
+                      task.status == TaskStatus.snoozed)
+                  .map((task) => Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardBackground,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.only(top: 6),
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: task.status == TaskStatus.completed
+                                    ? AppColors.completed
+                                    : Colors.orange,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    task.title,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Due ${_formatDate(task.deadline)}',
+                                    style: const TextStyle(
+                                      color: AppColors.textGrey,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF392F41),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Text(
+                                task.status.name.toUpperCase(),
+                                style: TextStyle(
+                                  color: task.status == TaskStatus.completed
+                                      ? AppColors.completed
+                                      : Colors.orange,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ))
+                  .toList(),
+            ],
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildAssignTasksView() {
-    return ListView(
-      padding: const EdgeInsets.all(24),
+    return Column(
       children: [
-        // Header with title and notification
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Assign Tasks',
-              style: TextStyle(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Assign Tasks',
+                style: TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Inter',
+                ),
+              ),
+              _buildNotificationIcon(
+                hasUnreadNotifications: _hasUnreadNotifications,
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
                 color: AppColors.accentCyan,
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Inter',
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.add,
+                color: AppColors.background,
+                size: 24,
               ),
             ),
-            _buildNotificationIcon(
-              hasUnreadNotifications: _hasUnreadNotifications,
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        // Add New Task Button
-        Align(
-          alignment: Alignment.centerRight,
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppColors.accentCyan,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.add,
-              color: AppColors.background,
-              size: 24,
-            ),
           ),
         ),
-        const SizedBox(height: 16),
-        // Team Members List
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             children: [
-              _buildTeamMemberItem(
-                name: 'Ayan',
-                role: 'Developer',
-                currentTask: 'Website Redesign',
-                onAssign: () {
-                  // TODO: Handle assign task
-                },
-                  ),
-                  const SizedBox(height: 24),
-              _buildTeamMemberItem(
-                name: 'Azim',
-                role: 'Admin',
-                currentTask: 'API Integration',
-                onAssign: () {
-                  // TODO: Handle assign task
-                },
-                  ),
-                  const SizedBox(height: 24),
-              _buildTeamMemberItem(
-                name: 'Durga',
-                role: 'Product Manager',
-                currentTask: 'User Research',
-                onAssign: () {
-                  // TODO: Handle assign task
-                },
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    _buildTeamMemberItem(
+                      name: 'Ayan',
+                      role: 'Developer',
+                      currentTask: 'Website Redesign',
+                      onAssign: () {
+                        // TODO: Handle assign task
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    _buildTeamMemberItem(
+                      name: 'Azim',
+                      role: 'Admin',
+                      currentTask: 'API Integration',
+                      onAssign: () {
+                        // TODO: Handle assign task
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    _buildTeamMemberItem(
+                      name: 'Durga',
+                      role: 'Product Manager',
+                      currentTask: 'User Research',
+                      onAssign: () {
+                        // TODO: Handle assign task
+                      },
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
