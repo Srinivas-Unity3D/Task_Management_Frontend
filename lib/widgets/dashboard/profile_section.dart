@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/user.dart';
 import '../../theme/colors.dart';
+import '../../models/view_state.dart';
 import 'navigation_menu.dart';
 
 class ProfileSection extends StatelessWidget {
@@ -10,6 +11,7 @@ class ProfileSection extends StatelessWidget {
   final VoidCallback onHistoryPressed;
   final VoidCallback onAssignTasksPressed;
   final VoidCallback onDashboardPressed;
+  final ViewState currentView;
 
   const ProfileSection({
     Key? key,
@@ -19,6 +21,7 @@ class ProfileSection extends StatelessWidget {
     required this.onHistoryPressed,
     required this.onAssignTasksPressed,
     required this.onDashboardPressed,
+    required this.currentView,
   }) : super(key: key);
 
   @override
@@ -94,6 +97,7 @@ class ProfileSection extends StatelessWidget {
             onHistoryPressed: onHistoryPressed,
             onAssignTasksPressed: onAssignTasksPressed,
             onDashboardPressed: onDashboardPressed,
+            currentView: currentView,
           ),
         ],
       ),
