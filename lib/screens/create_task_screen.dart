@@ -4,6 +4,7 @@ import '../widgets/custom_text_field.dart';
 import '../models/task.dart';
 import '../widgets/role_dropdown.dart';
 import '../services/api_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   const CreateTaskScreen({Key? key}) : super(key: key);
@@ -27,6 +28,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _isRecording = false;
   List<String> _users = [];
   bool _isLoadingUsers = true;
+  String? _currentUsername;
 
   final List<String> _frequencyOptions = const [
     '30 minutes',
@@ -40,7 +42,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchUsers();
+    _getCurrentUser();
+  }
+
+  Future<void> _getCurrentUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _currentUsername = prefs.getString('username');
+      await _fetchUsers();
+    } catch (e) {
+      print('Error getting current user: $e');
+    }
   }
 
   Future<void> _fetchUsers() async {
@@ -51,7 +63,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       
       final users = await _apiService.getUsers();
       setState(() {
-        _users = users;
+        // Filter out the current user from the list
+        _users = users.where((user) => user != _currentUsername).toList();
         _isLoadingUsers = false;
       });
     } catch (e) {
