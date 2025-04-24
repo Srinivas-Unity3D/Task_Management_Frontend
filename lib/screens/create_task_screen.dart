@@ -12,6 +12,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:async';
 
 class CreateTaskScreen extends StatefulWidget {
   const CreateTaskScreen({Key? key}) : super(key: key);
@@ -60,6 +61,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   final bool _isEmulatorTestMode = false;  // Set to false for real device testing
 
+  bool _canScroll = true;
+  Duration _recordingDuration = Duration.zero;
+  Timer? _recordingTimer;
+  Duration _playbackPosition = Duration.zero;
+  Timer? _playbackTimer;
+  Duration _totalDuration = Duration.zero;
+  StreamSubscription? _positionSubscription;
+  StreamSubscription? _durationSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +77,23 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _audioRecorder = AudioRecorder();
     _checkMicrophoneStatus();
     _getCurrentUser();
+    _setupAudioPlayer();
+  }
+
+  void _setupAudioPlayer() {
+    // Listen to position changes
+    _positionSubscription = _audioPlayer.onPositionChanged.listen((position) {
+      setState(() {
+        _playbackPosition = position;
+      });
+    });
+
+    // Listen to duration changes
+    _durationSubscription = _audioPlayer.onDurationChanged.listen((duration) {
+      setState(() {
+        _totalDuration = duration;
+      });
+    });
   }
 
   Future<void> _checkMicrophoneStatus() async {
@@ -128,8 +155,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   @override
   void dispose() {
-    _titleController.dispose();
-    _descriptionController.dispose();
+    _recordingTimer?.cancel();
+    _playbackTimer?.cancel();
+    _positionSubscription?.cancel();
+    _durationSubscription?.cancel();
     _audioPlayer.dispose();
     _audioRecorder.dispose();
     super.dispose();
@@ -188,10 +217,22 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     }
   }
 
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return "$minutes:$seconds";
+  }
+
   Future<void> _startRecording() async {
     try {
       print('\n🎤 [Recording] Starting recording process...');
       
+      // Disable scrolling when recording starts
+      setState(() {
+        _canScroll = false;
+      });
+
       // Check microphone permission before starting
       final micPermission = await Permission.microphone.status;
       print('📱 [Recording] Permission check:');
@@ -262,6 +303,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         _recordedFilePath = filePath;
       });
       print('🔄 [Recording] State updated: isRecording=$_isRecording, filePath=$_recordedFilePath');
+
+      // Start the recording timer
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          _recordingDuration += const Duration(seconds: 1);
+        });
+      });
+
     } catch (e) {
       print('❌ [Recording] Error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -270,6 +319,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           duration: const Duration(seconds: 5),
         ),
       );
+      setState(() {
+        _canScroll = true;  // Re-enable scrolling if recording fails
+      });
     }
   }
 
@@ -314,6 +366,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
       setState(() {
         _isRecording = false;
+        _canScroll = true;  // Re-enable scrolling
+        _recordingDuration = Duration.zero;
       });
       print('🔄 [Recording] State updated: isRecording=$_isRecording');
 
@@ -340,45 +394,49 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to stop recording: $e')),
       );
+      setState(() {
+        _canScroll = true;  // Re-enable scrolling on error
+      });
     }
   }
 
   Future<void> _playRecording() async {
-    if (_recordedFilePath == null) {
-      print('⚠️ [Playback] No recording to play');
-      return;
-    }
+    if (_recordedFilePath == null || _isRecording) return;
     
     try {
-      print('\n▶️ [Playback] Attempting to play recording from: $_recordedFilePath');
       if (_isPlaying) {
-        print('⏹️ [Playback] Stopping current playback');
         await _audioPlayer.stop();
+        _playbackTimer?.cancel();
         setState(() {
           _isPlaying = false;
+          _playbackPosition = Duration.zero;
+          _canScroll = true;
         });
-        print('✅ [Playback] Playback stopped');
       } else {
-        print('▶️ [Playback] Starting playback');
         await _audioPlayer.play(DeviceFileSource(_recordedFilePath!));
         setState(() {
           _isPlaying = true;
+          _canScroll = false;
         });
-        print('✅ [Playback] Playback started');
-        
+
         // Listen for playback completion
         _audioPlayer.onPlayerComplete.listen((event) {
-          print('✅ [Playback] Playback completed');
+          _playbackTimer?.cancel();
           setState(() {
             _isPlaying = false;
+            _playbackPosition = Duration.zero;
+            _canScroll = true;
           });
         });
       }
     } catch (e) {
       print('❌ [Playback] Error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to play recording: $e')),
-      );
+      _playbackTimer?.cancel();
+      setState(() {
+        _isPlaying = false;
+        _playbackPosition = Duration.zero;
+        _canScroll = true;
+      });
     }
   }
 
@@ -412,6 +470,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
         child: SingleChildScrollView(
+          physics: (!_isRecording && !_isPlaying) 
+              ? const AlwaysScrollableScrollPhysics() 
+              : const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
@@ -801,7 +862,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                     children: [
                       // Record Button
                       ElevatedButton.icon(
-                        onPressed: _isRecording ? _stopRecording : _startRecording,
+                        onPressed: _isPlaying ? null : (_isRecording ? _stopRecording : _startRecording),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _isRecording ? Colors.red : AppColors.accentCyan,
                           foregroundColor: AppColors.background,
@@ -819,13 +880,51 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           ),
                         ),
                       ),
-                      if (_recordedFilePath != null) ...[
+                      if (_isRecording || _isPlaying) ...[
+                        const SizedBox(height: 16),
+                        // Timeline indicator
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                _isRecording 
+                                  ? 'Recording: ${_formatDuration(_recordingDuration)}'
+                                  : 'Playing: ${_formatDuration(_playbackPosition)} / ${_formatDuration(_totalDuration)}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              if (_isPlaying && _totalDuration.inSeconds > 0) ...[
+                                const SizedBox(height: 8),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
+                                    backgroundColor: AppColors.borderColor,
+                                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accentCyan),
+                                    minHeight: 4,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (_recordedFilePath != null && !_isRecording) ...[
                         const SizedBox(height: 16),
                         Row(
                           children: [
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed: _playRecording,
+                                onPressed: _isRecording ? null : _playRecording,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.accentCyan,
                                   foregroundColor: AppColors.background,
@@ -844,12 +943,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              onPressed: _deleteRecording,
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              tooltip: 'Delete Recording',
-                            ),
+                            if (!_isPlaying) ...[
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: _deleteRecording,
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                tooltip: 'Delete Recording',
+                              ),
+                            ],
                           ],
                         ),
                       ],
