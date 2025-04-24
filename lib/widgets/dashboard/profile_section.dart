@@ -9,6 +9,7 @@ class ProfileSection extends StatelessWidget {
   final VoidCallback onMyTasksPressed;
   final VoidCallback onHistoryPressed;
   final VoidCallback onAssignTasksPressed;
+  final VoidCallback onDashboardPressed;
 
   const ProfileSection({
     Key? key,
@@ -17,6 +18,7 @@ class ProfileSection extends StatelessWidget {
     required this.onMyTasksPressed,
     required this.onHistoryPressed,
     required this.onAssignTasksPressed,
+    required this.onDashboardPressed,
   }) : super(key: key);
 
   @override
@@ -91,6 +93,7 @@ class ProfileSection extends StatelessWidget {
             onMyTasksPressed: onMyTasksPressed,
             onHistoryPressed: onHistoryPressed,
             onAssignTasksPressed: onAssignTasksPressed,
+            onDashboardPressed: onDashboardPressed,
           ),
         ],
       ),

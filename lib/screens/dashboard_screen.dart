@@ -812,6 +812,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       onMyTasksPressed: () => _switchView(ViewState.myTasks),
                       onHistoryPressed: () => _switchView(ViewState.history),
                       onAssignTasksPressed: () => _switchView(ViewState.assignTasks),
+                      onDashboardPressed: () {
+                        // Already on dashboard, no action needed
+                      },
                     ),
                   ),
                   // Content Area

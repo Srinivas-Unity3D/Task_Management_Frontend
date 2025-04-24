@@ -5,21 +5,27 @@ class NavigationMenu extends StatelessWidget {
   final VoidCallback onMyTasksPressed;
   final VoidCallback onHistoryPressed;
   final VoidCallback onAssignTasksPressed;
+  final VoidCallback onDashboardPressed;
 
   const NavigationMenu({
     Key? key,
     required this.onMyTasksPressed,
     required this.onHistoryPressed,
     required this.onAssignTasksPressed,
+    required this.onDashboardPressed,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const SizedBox(height: 24),
         _buildMenuItem(
-          icon: Icons.assignment_outlined,
+          icon: Icons.dashboard,
+          label: 'Dashboard',
+          onTap: onDashboardPressed,
+        ),
+        _buildMenuItem(
+          icon: Icons.task,
           label: 'My Tasks',
           onTap: onMyTasksPressed,
         ),
