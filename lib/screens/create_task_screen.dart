@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../models/task.dart';
+import '../widgets/role_dropdown.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   const CreateTaskScreen({Key? key}) : super(key: key);
@@ -19,9 +20,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   DateTime? _dueDate;
   DateTime? _alarmStartDate;
   TimeOfDay? _alarmStartTime;
-  String _alarmFrequency = '1 hour';  // Default value
+  String _alarmFrequency = '30 minutes';  // Changed to have default value
   TaskStatus _status = TaskStatus.pending;
   bool _isRecording = false;
+
+  final List<String> _frequencyOptions = const [
+    '30 minutes',
+    '1 hour',
+    '2 hours',
+    '4 hours',
+    '6 hours',
+    '8 hours',
+  ];
 
   @override
   void dispose() {
@@ -404,49 +414,22 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                 ),
                 const SizedBox(height: 16),
                 // Alarm Frequency
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Frequency',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0D1526),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF1E293B)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _alarmFrequency,
-                          isExpanded: true,
-                          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF94A3B8)),
-                          dropdownColor: const Color(0xFF0D1526),
-                          items: const [
-                            DropdownMenuItem(value: '1 hour', child: Text('Every 1 hour')),
-                            DropdownMenuItem(value: '2 hours', child: Text('Every 2 hours')),
-                            DropdownMenuItem(value: '4 hours', child: Text('Every 4 hours')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _alarmFrequency = value!;
-                            });
-                          },
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                RoleDropdown(
+                  label: 'Frequency',
+                  hint: 'Select frequency',
+                  items: _frequencyOptions,
+                  value: _alarmFrequency,
+                  onChanged: (value) {
+                    setState(() {
+                      _alarmFrequency = value ?? '30 minutes';
+                    });
+                  },
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please select a frequency';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
                 // Status
