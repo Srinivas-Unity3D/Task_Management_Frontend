@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/sign_in_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'theme/colors.dart';
 
-void main() {
+void main() async {  // Made async to properly handle initialization
   WidgetsFlutterBinding.ensureInitialized();
 
   // Force portrait orientation
@@ -14,11 +15,17 @@ void main() {
     DeviceOrientation.portraitDown,
   ]);
 
-  runApp(const MyApp());
+  // Initialize SharedPreferences
+  final prefs = await SharedPreferences.getInstance();
+  final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+
+  runApp(MyApp(isLoggedIn: isLoggedIn));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  final bool isLoggedIn;
+  
+  const MyApp({Key? key, this.isLoggedIn = false}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +68,8 @@ class MyApp extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             borderSide: const BorderSide(color: AppColors.accentCyan),
           ),
+          labelStyle: const TextStyle(color: AppColors.textGrey),
+          hintStyle: const TextStyle(color: AppColors.textGrey),
         ),
 
         // Configure elevated button theme
@@ -75,9 +84,9 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-
-      // Changed back to SignInScreen
-      home: const SignInScreen(),
+      
+      // Use isLoggedIn to determine initial screen
+      home: isLoggedIn ? const DashboardScreen() : const SignInScreen(),
     );
   }
 }
