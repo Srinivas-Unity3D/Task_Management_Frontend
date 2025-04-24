@@ -5,6 +5,7 @@ import '../widgets/custom_text_field.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/role_dropdown.dart';
 import '../widgets/phone_number_field.dart';
+import '../services/api_service.dart';
 import 'sign_in_screen.dart';
 import 'package:flutter/services.dart';
 
@@ -17,15 +18,21 @@ class RegistrationScreen extends StatefulWidget {
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _mobileController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _apiService = ApiService();
+  
   String? _selectedRole;
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   PhoneNumber? _phoneNumber;
+  String? _errorMessage;
+  bool _showRoleError = false;
+  bool _formDirty = false;
 
   final List<String> _roles = [
     'Software Developer',
@@ -45,6 +52,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   void dispose() {
+    _usernameController.dispose();
     _emailController.dispose();
     _mobileController.dispose();
     _passwordController.dispose();
@@ -52,16 +60,89 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     super.dispose();
   }
 
+  bool _validatePasswords() {
+    if (_passwordController.text != _confirmPasswordController.text) {
+      setState(() => _errorMessage = 'Passwords do not match');
+      return false;
+    }
+    setState(() => _errorMessage = null);
+    return true;
+  }
+
   Future<void> _handleRegistration() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      setState(() => _isLoading = true);
-      try {
-        // Implement your registration logic here
-        await Future.delayed(const Duration(seconds: 2)); // Simulated delay
-      } finally {
-        if (mounted) {
-          setState(() => _isLoading = false);
+    setState(() {
+      _showRoleError = true;
+    });
+
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
+    if (_selectedRole == null) {
+      return;
+    }
+
+    if (!_validatePasswords()) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await _apiService.register(
+        username: _usernameController.text,
+        email: _emailController.text,
+        phone: _phoneNumber?.phoneNumber ?? _mobileController.text,
+        password: _passwordController.text,
+        role: _selectedRole ?? '',
+      );
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+
+        if (response['success']) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Registration successful! Please login to continue.'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => const SignInScreen(),
+                ),
+              );
+            }
+          });
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(response['message'] ?? 'Registration failed'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
         }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('An unexpected error occurred. Please try again.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
       }
     }
   }
@@ -118,12 +199,28 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                             ),
                             SizedBox(height: isSmallScreen ? 20 : 24),
                             CustomTextField(
+                              label: 'Username',
+                              hint: 'Enter your username',
+                              controller: _usernameController,
+                              validator: (value) {
+                                if (value?.isEmpty ?? true) {
+                                  return 'Please enter your username';
+                                }
+                                return null;
+                              },
+                            ),
+                            SizedBox(height: isSmallScreen ? 16 : 20),
+                            CustomTextField(
                               label: 'Email',
                               hint: 'Enter your email',
                               controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
                               validator: (value) {
                                 if (value?.isEmpty ?? true) {
                                   return 'Please enter your email';
+                                }
+                                if (!value!.contains('@') || !value.contains('.')) {
+                                  return 'Please enter a valid email';
                                 }
                                 return null;
                               },
@@ -141,6 +238,28 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               validator: (value) {
                                 if (value?.isEmpty ?? true) {
                                   return 'Please enter your mobile number';
+                                }
+                                return null;
+                              },
+                            ),
+                            SizedBox(height: isSmallScreen ? 16 : 20),
+                            RoleDropdown(
+                              label: 'Select Role',
+                              hint: 'Choose role',
+                              items: _roles,
+                              value: _selectedRole,
+                              showError: _showRoleError,
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  _selectedRole = newValue;
+                                  if (_showRoleError) {
+                                    _showRoleError = false;
+                                  }
+                                });
+                              },
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please select a role';
                                 }
                                 return null;
                               },
@@ -190,24 +309,20 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                 if (value?.isEmpty ?? true) {
                                   return 'Please confirm your password';
                                 }
-                                if (value != _passwordController.text) {
-                                  return 'Passwords do not match';
-                                }
                                 return null;
                               },
                             ),
-                            SizedBox(height: isSmallScreen ? 16 : 20),
-                            RoleDropdown(
-                              label: 'Select Role',
-                              hint: 'Choose role',
-                              items: _roles,
-                              value: _selectedRole,
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  _selectedRole = newValue;
-                                });
-                              },
-                            ),
+                            if (_errorMessage != null) ...[
+                              const SizedBox(height: 16),
+                              Text(
+                                _errorMessage!,
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
                             SizedBox(height: isSmallScreen ? 24 : 32),
                             CustomButton(
                               text: 'Create Account',
@@ -219,7 +334,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                  "Already have an account?",
+                                  'Already have an account?',
                                   style: TextStyle(
                                     color: AppColors.textGrey,
                                     fontSize: isSmallScreen ? 12 : 14,
@@ -236,7 +351,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                     );
                                   },
                                   child: Text(
-                                    'Sign in',
+                                    'Sign In',
                                     style: TextStyle(
                                       color: AppColors.accentCyan,
                                       fontSize: isSmallScreen ? 12 : 14,

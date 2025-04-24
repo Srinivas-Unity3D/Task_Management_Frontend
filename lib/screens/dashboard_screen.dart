@@ -10,6 +10,7 @@ import '../theme/colors.dart';
 import 'sign_in_screen.dart';
 import '../widgets/dashboard/side_menu.dart';
 import '../widgets/dashboard/side_panel.dart';
+import '../widgets/custom_text_field.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -24,6 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late TaskStats _taskStats;
   bool _isLoading = true;
   bool _hasUnreadNotifications = false;
+  final TextEditingController emailController = TextEditingController();
 
   @override
   void initState() {
@@ -275,6 +277,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 },
                               ),
                               const SizedBox(height: 24),
+                              CustomTextField(
+                                label: "Email",
+                                hint: "Enter your email",
+                                controller: emailController,
+                                keyboardType: TextInputType.emailAddress,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Please enter your email';
+                                  }
+                                  return null;
+                                },
+                              ),
                             ],
                           ),
                         ),

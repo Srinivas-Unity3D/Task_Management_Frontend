@@ -7,6 +7,8 @@ class RoleDropdown extends StatelessWidget {
   final List<String> items;
   final String? value;
   final Function(String?) onChanged;
+  final String? Function(String?)? validator;
+  final bool showError;
 
   const RoleDropdown({
     Key? key,
@@ -15,6 +17,8 @@ class RoleDropdown extends StatelessWidget {
     required this.items,
     required this.value,
     required this.onChanged,
+    this.validator,
+    this.showError = false,
   }) : super(key: key);
 
   void _showRoleSelector(BuildContext context) {
@@ -179,6 +183,8 @@ class RoleDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String? errorText = showError ? validator?.call(value) : null;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -199,7 +205,7 @@ class RoleDropdown extends StatelessWidget {
               color: AppColors.inputBackground,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: AppColors.borderColor,
+                color: errorText != null ? Colors.red : AppColors.borderColor,
                 width: 1,
               ),
             ),
@@ -222,6 +228,17 @@ class RoleDropdown extends StatelessWidget {
             ),
           ),
         ),
+        if (errorText != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, left: 16),
+            child: Text(
+              errorText,
+              style: const TextStyle(
+                color: Colors.red,
+                fontSize: 12,
+              ),
+            ),
+          ),
       ],
     );
   }

@@ -9,6 +9,7 @@ class PhoneNumberField extends StatefulWidget {
   final TextEditingController controller;
   final String? Function(String?)? validator;
   final Function(PhoneNumber)? onInputChanged;
+  final bool showError;
 
   const PhoneNumberField({
     Key? key,
@@ -17,6 +18,7 @@ class PhoneNumberField extends StatefulWidget {
     required this.controller,
     this.validator,
     this.onInputChanged,
+    this.showError = false,
   }) : super(key: key);
 
   @override
@@ -27,7 +29,8 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
   final TextEditingController _phoneController = TextEditingController();
   String initialCountry = 'IN';
   PhoneNumber number = PhoneNumber(isoCode: 'IN');
-  bool isValid = false;
+  String? _errorText;
+  bool _isDirty = false;
 
   @override
   void initState() {
@@ -169,7 +172,7 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
                   color: AppColors.inputBackground,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: AppColors.borderColor,
+                    color: (!_isDirty && _errorText != null) ? Colors.red : AppColors.borderColor,
                     width: 1,
                   ),
                 ),
@@ -213,17 +216,21 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
                   ),
                   filled: true,
                   fillColor: AppColors.inputBackground,
+                  errorStyle: const TextStyle(
+                    color: Colors.red,
+                    fontSize: 12,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
+                    borderSide: BorderSide(
                       color: AppColors.borderColor,
                       width: 1,
                     ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: AppColors.borderColor,
+                    borderSide: BorderSide(
+                      color: (!_isDirty && _errorText != null) ? Colors.red : AppColors.borderColor,
                       width: 1,
                     ),
                   ),
@@ -234,10 +241,37 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
                       width: 1,
                     ),
                   ),
+                  errorBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(
+                      color: Colors.red,
+                      width: 1,
+                    ),
+                  ),
+                  focusedErrorBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(
+                      color: Colors.red,
+                      width: 1,
+                    ),
+                  ),
                   contentPadding: const EdgeInsets.all(16),
                 ),
-                validator: widget.validator,
+                validator: (value) {
+                  if (!_isDirty) {
+                    final error = widget.validator?.call(value);
+                    setState(() {
+                      _errorText = error;
+                    });
+                    return error;
+                  }
+                  return null;
+                },
                 onChanged: (value) {
+                  setState(() {
+                    _isDirty = true;
+                    _errorText = null;
+                  });
                   if (widget.onInputChanged != null) {
                     widget.onInputChanged!(
                       PhoneNumber(
@@ -252,6 +286,17 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
             ),
           ],
         ),
+        if (!_isDirty && _errorText != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, left: 16),
+            child: Text(
+              _errorText!,
+              style: const TextStyle(
+                color: Colors.red,
+                fontSize: 12,
+              ),
+            ),
+          ),
       ],
     );
   }
