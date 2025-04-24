@@ -355,20 +355,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildHistoryView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: const EdgeInsets.all(24),
       children: [
+        // Header
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'History',
-              style: TextStyle(
-                color: AppColors.accentCyan,
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Inter',
-              ),
+            Row(
+              children: [
+                const Text(
+                  'Task History',
+                  style: TextStyle(
+                    color: AppColors.accentCyan,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Legend
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.completed,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Completed',
+                      style: TextStyle(
+                        color: AppColors.textGrey,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.orange,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Snoozed',
+                      style: TextStyle(
+                        color: AppColors.textGrey,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
             _buildNotificationIcon(
               hasUnreadNotifications: _hasUnreadNotifications,
@@ -376,7 +420,147 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
         const SizedBox(height: 24),
-        // Add your history view here
+        // Completed Tasks Card
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Completed Tasks',
+                style: TextStyle(
+                  color: AppColors.textGrey,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _taskStats?.completedTasks.toString() ?? '0',
+                style: const TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Snoozed Tasks Card
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Snoozed Tasks',
+                style: TextStyle(
+                  color: AppColors.textGrey,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _taskStats?.snoozedTasks.toString() ?? '0',
+                style: const TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        // Task History List
+        ..._userTasks
+            .where((task) => 
+                task.status == TaskStatus.completed || 
+                task.status == TaskStatus.snoozed)
+            .map((task) => Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Status Indicator
+                      Container(
+                        margin: const EdgeInsets.only(top: 6),
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: task.status == TaskStatus.completed
+                              ? AppColors.completed
+                              : Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Task Details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              task.title,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Due ${_formatDate(task.deadline)}',
+                              style: const TextStyle(
+                                color: AppColors.textGrey,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Status Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF392F41),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          task.status.name.toUpperCase(),
+                          style: TextStyle(
+                            color: task.status == TaskStatus.completed
+                                ? AppColors.completed
+                                : Colors.orange,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ))
+            .toList(),
       ],
     );
   }
