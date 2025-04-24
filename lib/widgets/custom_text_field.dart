@@ -30,7 +30,7 @@ class CustomTextField extends StatefulWidget {
 
 class _CustomTextFieldState extends State<CustomTextField> {
   bool _obscureText = true;
-  String? _errorText;
+  bool _isDirty = false;
 
   @override
   Widget build(BuildContext context) {
@@ -63,20 +63,21 @@ class _CustomTextFieldState extends State<CustomTextField> {
             errorStyle: const TextStyle(
               color: Colors.red,
               fontSize: 12,
+              height: 0,
             ),
             filled: true,
             fillColor: AppColors.inputBackground,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: _errorText != null ? Colors.red : AppColors.borderColor,
+                color: AppColors.borderColor,
                 width: 1,
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: _errorText != null ? Colors.red : AppColors.borderColor,
+                color: AppColors.borderColor,
                 width: 1,
               ),
             ),
@@ -103,18 +104,15 @@ class _CustomTextFieldState extends State<CustomTextField> {
                 : widget.suffixIcon,
           ),
           validator: (value) {
-            final error = widget.validator?.call(value);
-            setState(() {
-              _errorText = error;
-            });
-            return error;
+            if (!_isDirty) {
+              return widget.validator?.call(value);
+            }
+            return null;
           },
           onChanged: (value) {
-            if (_errorText != null) {
-              setState(() {
-                _errorText = null;
-              });
-            }
+            setState(() {
+              _isDirty = true;
+            });
           },
         ),
       ],

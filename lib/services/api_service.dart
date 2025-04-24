@@ -97,4 +97,37 @@ class ApiService {
       };
     }
   }
+
+  Future<Map<String, dynamic>> getTasks({
+    required String username,
+    required String role,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to load tasks',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Connection error. Please try again.',
+      };
+    }
+  }
 } 

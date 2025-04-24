@@ -34,16 +34,14 @@ class Task {
 
   factory Task.fromJson(Map<String, dynamic> json) {
     return Task(
-      taskId: json['task_id']?.toString() ?? '',
-      title: json['title'] ?? '',
+      taskId: json['task_id'],
+      title: json['title'],
       description: json['description'] ?? '',
-      deadline: json['deadline'] != null 
-          ? DateTime.parse(json['deadline']) 
-          : DateTime.now(),
-      priority: _getPriorityFromString(json['priority']),
-      status: _getStatusFromString(json['status']),
-      assignedBy: json['assigned_by']?.toString() ?? '',
-      assignedTo: json['assigned_to']?.toString() ?? '',
+      deadline: DateTime.parse(json['deadline']),
+      priority: _parsePriority(json['priority']),
+      status: _parseStatus(json['status']),
+      assignedBy: json['assigned_by'],
+      assignedTo: json['assigned_to'],
     );
   }
 
@@ -60,27 +58,29 @@ class Task {
     };
   }
 
-  static TaskPriority _getPriorityFromString(String? priority) {
-    switch (priority?.toLowerCase()) {
-      case 'high':
-        return TaskPriority.high;
+  static TaskPriority _parsePriority(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'low':
+        return TaskPriority.low;
       case 'medium':
         return TaskPriority.medium;
-      case 'low':
+      case 'high':
+        return TaskPriority.high;
       default:
-        return TaskPriority.low;
+        return TaskPriority.medium;
     }
   }
 
-  static TaskStatus _getStatusFromString(String? status) {
-    switch (status?.toLowerCase()) {
+  static TaskStatus _parseStatus(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return TaskStatus.pending;
       case 'in_progress':
         return TaskStatus.inProgress;
       case 'completed':
         return TaskStatus.completed;
       case 'snoozed':
         return TaskStatus.snoozed;
-      case 'pending':
       default:
         return TaskStatus.pending;
     }

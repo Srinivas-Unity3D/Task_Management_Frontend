@@ -11,6 +11,7 @@ import 'sign_in_screen.dart';
 import '../widgets/dashboard/side_menu.dart';
 import '../widgets/dashboard/side_panel.dart';
 import '../widgets/custom_text_field.dart';
+import '../services/api_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -21,25 +22,16 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ApiService _apiService = ApiService();
   late User _user;
-  late TaskStats _taskStats;
+  TaskStats? _taskStats;
   bool _isLoading = true;
   bool _hasUnreadNotifications = false;
-  final TextEditingController emailController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadDashboardData();
-    _checkNotifications();
-  }
-
-  Future<void> _checkNotifications() async {
-    // TODO: Replace with actual API call to check notifications
-    // For now, we'll simulate no unread notifications
-    setState(() {
-      _hasUnreadNotifications = false;
-    });
   }
 
   Future<void> _loadDashboardData() async {
@@ -48,9 +40,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       // Get the stored user data from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
-      final username = prefs.getString('username') ?? 'Srinivas';
-      final role = prefs.getString('role') ?? 'Developer';
+      final username = prefs.getString('username') ?? '';
+      final role = prefs.getString('role') ?? '';
 
+      // Load user data
       _user = User(
         userId: '1',
         username: username,
@@ -60,25 +53,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
         fcmToken: null,
       );
 
-      // Simulate fetching tasks
-      final List<Task> tasks = [
-        Task(
-          taskId: '1',
-          title: 'Implement Dashboard',
-          description: 'Create a responsive dashboard UI',
-          deadline: DateTime.now().add(const Duration(days: 3)),
-          priority: TaskPriority.high,
-          status: TaskStatus.inProgress,
-          assignedBy: '2',
-          assignedTo: '1',
-        ),
-      ];
-
-      _taskStats = TaskStats.fromTasks(tasks);
+      // Fetch tasks from API
+      final response = await _apiService.getTasks(username: username, role: role);
+      if (response['success']) {
+        final tasksJson = response['data'] as List;
+        final tasks = tasksJson.map((task) => Task.fromJson(task)).toList();
+        setState(() {
+          _taskStats = TaskStats.fromTasks(tasks);
+        });
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(response['message'] ?? 'Failed to load tasks'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     } catch (e) {
+      print('Error loading dashboard: $e'); // Add debug log
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading dashboard: ${e.toString()}')),
+          SnackBar(
+            content: Text('Error loading dashboard: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -186,120 +186,89 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        backgroundColor: AppColors.background,
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.accentCyan),
-        ),
-      );
-    }
-
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Center(
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 480),
-                height: constraints.maxHeight,
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              ProfileSection(
-                                user: _user,
-                                onProfileTap: _showSidePanel,
-                              ),
-                              const SizedBox(height: 32),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    'My Dashboard',
-                                    style: TextStyle(
-                                      color: AppColors.accentCyan,
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w700,
-                                      fontFamily: 'Inter',
-                                    ),
-                                  ),
-                                  _buildNotificationIcon(
-                                    hasUnreadNotifications: _hasUnreadNotifications,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 32),
-                              StatsCard(
-                                title: 'Active Tasks',
-                                count: _taskStats.activeTasks.toString(),
-                                icon: Icons.assignment,
-                                onTap: () {
-                                  // TODO: Navigate to active tasks
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              StatsCard(
-                                title: 'In Progress',
-                                count: _taskStats.inProgressTasks.toString(),
-                                icon: Icons.trending_up,
-                                iconColor: Colors.blue,
-                                onTap: () {
-                                  // TODO: Navigate to in-progress tasks
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              StatsCard(
-                                title: 'Completed',
-                                count: _taskStats.completedTasks.toString(),
-                                icon: Icons.check_circle,
-                                iconColor: Colors.green,
-                                onTap: () {
-                                  // TODO: Navigate to completed tasks
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              StatsCard(
-                                title: 'Snoozed',
-                                count: _taskStats.snoozedTasks.toString(),
-                                icon: Icons.snooze,
-                                iconColor: Colors.orange,
-                                onTap: () {
-                                  // TODO: Navigate to snoozed tasks
-                                },
-                              ),
-                              const SizedBox(height: 24),
-                              CustomTextField(
-                                label: "Email",
-                                hint: "Enter your email",
-                                controller: emailController,
-                                keyboardType: TextInputType.emailAddress,
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter your email';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ],
-                          ),
+        child: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(color: AppColors.accentCyan),
+              )
+            : RefreshIndicator(
+                onRefresh: _loadDashboardData,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ProfileSection(
+                          user: _user,
+                          onProfileTap: _showSidePanel,
                         ),
-                      ),
+                        const SizedBox(height: 32),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'My Dashboard',
+                              style: TextStyle(
+                                color: AppColors.accentCyan,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                                fontFamily: 'Inter',
+                              ),
+                            ),
+                            _buildNotificationIcon(
+                              hasUnreadNotifications: _hasUnreadNotifications,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 32),
+                        StatsCard(
+                          title: 'Active Tasks',
+                          count: _taskStats?.activeTasks.toString() ?? '0',
+                          icon: Icons.assignment,
+                          onTap: () {
+                            // TODO: Navigate to active tasks
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        StatsCard(
+                          title: 'In Progress',
+                          count: _taskStats?.inProgressTasks.toString() ?? '0',
+                          icon: Icons.trending_up,
+                          iconColor: Colors.blue,
+                          onTap: () {
+                            // TODO: Navigate to in-progress tasks
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        StatsCard(
+                          title: 'Completed',
+                          count: _taskStats?.completedTasks.toString() ?? '0',
+                          icon: Icons.check_circle,
+                          iconColor: Colors.green,
+                          onTap: () {
+                            // TODO: Navigate to completed tasks
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        StatsCard(
+                          title: 'Snoozed',
+                          count: _taskStats?.snoozedTasks.toString() ?? '0',
+                          icon: Icons.snooze,
+                          iconColor: Colors.orange,
+                          onTap: () {
+                            // TODO: Navigate to snoozed tasks
+                          },
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-            );
-          },
-        ),
       ),
     );
   }
