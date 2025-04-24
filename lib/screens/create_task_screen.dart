@@ -9,6 +9,7 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
@@ -70,6 +71,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
 
+  List<PlatformFile> _selectedFiles = [];
+  bool _isUploadingFiles = false;
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +82,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _checkMicrophoneStatus();
     _getCurrentUser();
     _setupAudioPlayer();
+    _requestInitialPermissions();
   }
 
   void _setupAudioPlayer() {
@@ -164,303 +169,112 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     super.dispose();
   }
 
-  Future<void> _requestPermissions() async {
-    try {
-      print('🎤 [Permissions] Requesting microphone permission...');
-      
-      // First check current permission status
-      final micStatus = await Permission.microphone.status;
-      print('📱 [Permissions] Current status:');
-      print('  - Microphone: $micStatus');
-      
-      // Request permission if not granted
-      if (!micStatus.isGranted) {
-        print('📱 [Permissions] Requesting microphone permission...');
-        final status = await Permission.microphone.request();
-        
-        print('📱 [Permissions] New status after request:');
-        print('  - Microphone: $status');
-        
-        if (status != PermissionStatus.granted) {
-          print('❌ [Permissions] Microphone permission denied');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Microphone permission is required for recording. Please enable it in Settings.'),
-              duration: Duration(seconds: 5),
-            ),
-          );
-          return;
-        }
-      }
-      
-      // Double check recorder permission
-      final hasRecorderPermission = await _audioRecorder.hasPermission();
-      print('🎤 [Permissions] Recorder permission check: $hasRecorderPermission');
-      
-      if (!hasRecorderPermission) {
-        print('❌ [Permissions] Recorder permission check failed');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to access microphone. Please check your device settings.'),
-            duration: Duration(seconds: 5),
-          ),
-        );
-      }
-    } catch (e) {
-      print('❌ [Permissions] Error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error checking permissions: $e'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    }
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return "$minutes:$seconds";
-  }
-
-  Future<void> _startRecording() async {
-    try {
-      print('\n🎤 [Recording] Starting recording process...');
-      
-      // Disable scrolling when recording starts
-      setState(() {
-        _canScroll = false;
-      });
-
-      // Check microphone permission before starting
-      final micPermission = await Permission.microphone.status;
-      print('📱 [Recording] Permission check:');
-      print('  - Microphone: $micPermission');
-      
-      if (!micPermission.isGranted) {
-        print('❌ [Recording] Microphone permission not granted, requesting...');
-        await _requestPermissions();
-        return;
-      }
-
-      // Create directory if it doesn't exist
-      final appDir = await getApplicationDocumentsDirectory();
-      print('📁 [Recording] App documents directory: ${appDir.path}');
-      
-      final dirPath = '${appDir.path}/recordings';
-      print('📁 [Recording] Creating recordings directory at: $dirPath');
-      
-      try {
-        await Directory(dirPath).create(recursive: true);
-      } catch (e) {
-        print('⚠️ [Recording] Directory creation warning (may already exist): $e');
-      }
-      
-      final filePath = '$dirPath/audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      print('📝 [Recording] Will save recording to: $filePath');
-
-      if (_isEmulatorTestMode) {
-        // Create a test audio file for emulator testing
-        print('🔧 [Recording] Running in emulator test mode');
-        await _createTestAudioFile(filePath);
-        setState(() {
-          _isRecording = true;
-          _recordedFilePath = filePath;
-        });
-        print('✅ [Recording] Test file created at: $filePath');
-        return;
-      }
-
-      // Check if recorder is ready
-      final isRecorderReady = await _audioRecorder.hasPermission();
-      print('🎤 [Recording] Recorder ready status: $isRecorderReady');
-      
-      if (!isRecorderReady) {
-        print('❌ [Recording] Recorder not ready');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to access microphone. Please check your permissions.'),
-            duration: Duration(seconds: 5),
-          ),
-        );
-        return;
-      }
-
-      print('⚙️ [Recording] Configuring recorder...');
-      await _audioRecorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: filePath,
-      );
-      print('✅ [Recording] Recording started successfully');
-
-      setState(() {
-        _isRecording = true;
-        _recordedFilePath = filePath;
-      });
-      print('🔄 [Recording] State updated: isRecording=$_isRecording, filePath=$_recordedFilePath');
-
-      // Start the recording timer
-      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        setState(() {
-          _recordingDuration += const Duration(seconds: 1);
-        });
-      });
-
-    } catch (e) {
-      print('❌ [Recording] Error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to start recording: $e'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-      setState(() {
-        _canScroll = true;  // Re-enable scrolling if recording fails
-      });
-    }
-  }
-
-  Future<void> _createTestAudioFile(String filePath) async {
-    try {
-      // Create a simple test audio file (1 second of silence)
-      final file = File(filePath);
-      final List<int> headerBytes = [
-        0x52, 0x49, 0x46, 0x46, // "RIFF"
-        0x24, 0x00, 0x00, 0x00, // File size
-        0x57, 0x41, 0x56, 0x45, // "WAVE"
-        0x66, 0x6D, 0x74, 0x20, // "fmt "
-        0x10, 0x00, 0x00, 0x00, // Format chunk size
-        0x01, 0x00,             // Format tag (PCM)
-        0x01, 0x00,             // Channels (mono)
-        0x44, 0xAC, 0x00, 0x00, // Sample rate (44100 Hz)
-        0x88, 0x58, 0x01, 0x00, // Bytes per second
-        0x02, 0x00,             // Block align
-        0x10, 0x00,             // Bits per sample
-        0x64, 0x61, 0x74, 0x61, // "data"
-        0x00, 0x00, 0x00, 0x00  // Data chunk size
-      ];
-      
-      await file.writeAsBytes(headerBytes);
-      print('✅ [Recording] Created test audio file with silence');
-    } catch (e) {
-      print('❌ [Recording] Error creating test file: $e');
-      throw e;
-    }
-  }
-
-  Future<void> _stopRecording() async {
-    if (!_isRecording) {
-      print('⚠️ [Recording] Stop called but not currently recording');
-      return;
-    }
-
-    try {
-      print('\n🛑 [Recording] Stopping recording...');
-      final path = await _audioRecorder.stop();
-      print('✅ [Recording] Recording stopped. File saved at: $path');
-
-      setState(() {
-        _isRecording = false;
-        _canScroll = true;  // Re-enable scrolling
-        _recordingDuration = Duration.zero;
-      });
-      print('🔄 [Recording] State updated: isRecording=$_isRecording');
-
-      // Verify file exists and check its size
-      final file = File(path ?? '');
-      if (await file.exists()) {
-        final size = await file.length();
-        print('📁 [Recording] File verification:');
-        print('  - Path: ${file.path}');
-        print('  - Size: $size bytes');
-        print('  - Exists: true');
-        
-        // Read first few bytes to verify it's not empty
-        if (size > 0) {
-          final bytes = await file.openRead(0, min(size, 16)).toList();
-          print('  - First few bytes: $bytes');
-          print('✅ [Recording] File verification complete - file is valid');
-        }
-      } else {
-        print('❌ [Recording] Warning: Recording file not found at: ${file.path}');
-      }
-    } catch (e) {
-      print('❌ [Recording] Error in _stopRecording: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to stop recording: $e')),
-      );
-      setState(() {
-        _canScroll = true;  // Re-enable scrolling on error
-      });
-    }
-  }
-
-  Future<void> _playRecording() async {
-    if (_recordedFilePath == null || _isRecording) return;
+  Future<bool> _requestStoragePermission() async {
+    print('📱 [Permissions] Checking storage permissions...');
     
-    try {
-      if (_isPlaying) {
-        await _audioPlayer.stop();
-        _playbackTimer?.cancel();
-        setState(() {
-          _isPlaying = false;
-          _playbackPosition = Duration.zero;
-          _canScroll = true;
-        });
-      } else {
-        await _audioPlayer.play(DeviceFileSource(_recordedFilePath!));
-        setState(() {
-          _isPlaying = true;
-          _canScroll = false;
-        });
-
-        // Listen for playback completion
-        _audioPlayer.onPlayerComplete.listen((event) {
-          _playbackTimer?.cancel();
-          setState(() {
-            _isPlaying = false;
-            _playbackPosition = Duration.zero;
-            _canScroll = true;
-          });
-        });
-      }
-    } catch (e) {
-      print('❌ [Playback] Error: $e');
-      _playbackTimer?.cancel();
-      setState(() {
-        _isPlaying = false;
-        _playbackPosition = Duration.zero;
-        _canScroll = true;
-      });
-    }
-  }
-
-  Future<void> _deleteRecording() async {
-    if (_recordedFilePath == null) {
-      print('⚠️ [Delete] No recording to delete');
-      return;
+    // For Android 13 and above
+    if (await Permission.photos.request().isGranted &&
+        await Permission.videos.request().isGranted &&
+        await Permission.audio.request().isGranted) {
+      print('✅ [Permissions] Media permissions granted');
+      return true;
     }
     
+    // For Android 12 and below
+    if (await Permission.storage.request().isGranted) {
+      print('✅ [Permissions] Storage permission granted');
+      return true;
+    }
+
+    print('❌ [Permissions] Storage permissions denied');
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Storage permission is required to pick files'),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 3),
+      ),
+    );
+    return false;
+  }
+
+  Future<void> _pickFiles() async {
     try {
-      print('\n🗑️ [Delete] Attempting to delete recording at: $_recordedFilePath');
-      final file = File(_recordedFilePath!);
-      if (await file.exists()) {
-        await file.delete();
-        print('✅ [Delete] Recording deleted successfully');
-      } else {
-        print('⚠️ [Delete] File does not exist');
+      // Request storage permission first
+      if (!await _requestStoragePermission()) {
+        print('❌ [Files] Storage permission not granted');
+        return;
       }
+
       setState(() {
-        _recordedFilePath = null;
+        _isUploadingFiles = true;
       });
-      print('🔄 [Delete] State updated: recordedFilePath=null');
+
+      print('📁 [Files] Opening file picker...');
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'jpg', 'jpeg', 'png'],
+        allowMultiple: true,
+        withData: true,
+        onFileLoading: (FilePickerStatus status) => print('📁 [Files] Picker status: $status'),
+      );
+
+      if (result != null) {
+        print('📁 [Files] Files selected successfully');
+        setState(() {
+          _selectedFiles = result.files;
+        });
+        
+        // Print file details for debugging
+        for (PlatformFile file in result.files) {
+          print('📎 [Files] Selected file:');
+          print('  - Name: ${file.name}');
+          print('  - Size: ${(file.size / 1024).toStringAsFixed(2)} KB');
+          print('  - Extension: ${file.extension}');
+          print('  - Path: ${file.path}');
+          print('  - Has data: ${file.bytes != null}');
+        }
+      } else {
+        print('📁 [Files] No files selected');
+      }
     } catch (e) {
-      print('❌ [Delete] Error: $e');
+      print('❌ [Files] Error picking files: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error selecting files: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isUploadingFiles = false;
+      });
+    }
+  }
+
+  Future<void> _removeFile(int index) async {
+    setState(() {
+      _selectedFiles.removeAt(index);
+    });
+  }
+
+  String _getFileIcon(String? extension) {
+    switch (extension?.toLowerCase()) {
+      case 'pdf':
+        return '📄';
+      case 'doc':
+      case 'docx':
+        return '📝';
+      case 'xls':
+      case 'xlsx':
+        return '📊';
+      case 'txt':
+        return '📃';
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+        return '🖼️';
+      default:
+        return '📎';
     }
   }
 
@@ -968,34 +782,100 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: () {
-                    // TODO: Implement file picking
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0D1526),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF1E293B)),
-                    ),
-                    child: Row(
-                      children: const [
-                        Icon(
-                          Icons.add,
-                          color: Color(0xFF94A3B8),
-                          size: 20,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Choose files...',
-                          style: TextStyle(
-                            color: Color(0xFF94A3B8),
-                            fontSize: 14,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBackground,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.borderColor),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GestureDetector(
+                        onTap: _isUploadingFiles ? null : _pickFiles,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _isUploadingFiles ? AppColors.borderColor : AppColors.background,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.borderColor),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.add,
+                                color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _isUploadingFiles ? 'Uploading...' : 'Choose files...',
+                                style: TextStyle(
+                                  color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                      ),
+                      if (_selectedFiles.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Column(
+                          children: List.generate(_selectedFiles.length, (index) {
+                            final file = _selectedFiles[index];
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppColors.borderColor),
+                              ),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    _getFileIcon(file.extension),
+                                    style: const TextStyle(fontSize: 20),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          file.name,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        Text(
+                                          '${(file.size / 1024).toStringAsFixed(2)} KB',
+                                          style: TextStyle(
+                                            color: Colors.grey[400],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                                    onPressed: () => _removeFile(index),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ),
                       ],
-                    ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -1116,6 +996,284 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('Error creating task: $e');
         // Show error message to user
       }
+    }
+  }
+
+  Future<void> _requestInitialPermissions() async {
+    try {
+      print('🔐 [Permissions] Requesting initial permissions...');
+      
+      // Request all necessary permissions at start
+      Map<Permission, PermissionStatus> statuses = await [
+        Permission.microphone,
+        Permission.storage,
+        Permission.photos,
+        Permission.videos,
+        Permission.audio,
+      ].request();
+      
+      print('📱 [Permissions] Initial status:');
+      statuses.forEach((permission, status) {
+        print('  - ${permission.toString()}: $status');
+      });
+    } catch (e) {
+      print('❌ [Permissions] Error requesting initial permissions: $e');
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return "$minutes:$seconds";
+  }
+
+  Future<void> _startRecording() async {
+    try {
+      print('\n🎤 [Recording] Starting recording process...');
+      
+      // Disable scrolling when recording starts
+      setState(() {
+        _canScroll = false;
+      });
+
+      // Check microphone permission before starting
+      final micPermission = await Permission.microphone.status;
+      print('📱 [Recording] Permission check:');
+      print('  - Microphone: $micPermission');
+      
+      if (!micPermission.isGranted) {
+        print('❌ [Recording] Microphone permission not granted, requesting...');
+        final status = await Permission.microphone.request();
+        if (status != PermissionStatus.granted) {
+          print('❌ [Recording] Microphone permission denied');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Microphone permission is required for recording'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+          return;
+        }
+      }
+
+      // Create directory if it doesn't exist
+      final appDir = await getApplicationDocumentsDirectory();
+      print('📁 [Recording] App documents directory: ${appDir.path}');
+      
+      final dirPath = '${appDir.path}/recordings';
+      print('📁 [Recording] Creating recordings directory at: $dirPath');
+      
+      try {
+        await Directory(dirPath).create(recursive: true);
+      } catch (e) {
+        print('⚠️ [Recording] Directory creation warning (may already exist): $e');
+      }
+      
+      final filePath = '$dirPath/audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      print('📝 [Recording] Will save recording to: $filePath');
+
+      if (_isEmulatorTestMode) {
+        // Create a test audio file for emulator testing
+        print('🔧 [Recording] Running in emulator test mode');
+        await _createTestAudioFile(filePath);
+        setState(() {
+          _isRecording = true;
+          _recordedFilePath = filePath;
+        });
+        print('✅ [Recording] Test file created at: $filePath');
+        return;
+      }
+
+      // Check if recorder is ready
+      final isRecorderReady = await _audioRecorder.hasPermission();
+      print('🎤 [Recording] Recorder ready status: $isRecorderReady');
+      
+      if (!isRecorderReady) {
+        print('❌ [Recording] Recorder not ready');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to access microphone. Please check your permissions.'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+
+      print('⚙️ [Recording] Configuring recorder...');
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: filePath,
+      );
+      print('✅ [Recording] Recording started successfully');
+
+      setState(() {
+        _isRecording = true;
+        _recordedFilePath = filePath;
+      });
+      print('🔄 [Recording] State updated: isRecording=$_isRecording, filePath=$_recordedFilePath');
+
+      // Start the recording timer
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          _recordingDuration += const Duration(seconds: 1);
+        });
+      });
+
+    } catch (e) {
+      print('❌ [Recording] Error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start recording: $e'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      setState(() {
+        _canScroll = true;  // Re-enable scrolling if recording fails
+      });
+    }
+  }
+
+  Future<void> _createTestAudioFile(String filePath) async {
+    try {
+      // Create a simple test audio file (1 second of silence)
+      final file = File(filePath);
+      final List<int> headerBytes = [
+        0x52, 0x49, 0x46, 0x46, // "RIFF"
+        0x24, 0x00, 0x00, 0x00, // File size
+        0x57, 0x41, 0x56, 0x45, // "WAVE"
+        0x66, 0x6D, 0x74, 0x20, // "fmt "
+        0x10, 0x00, 0x00, 0x00, // Format chunk size
+        0x01, 0x00,             // Format tag (PCM)
+        0x01, 0x00,             // Channels (mono)
+        0x44, 0xAC, 0x00, 0x00, // Sample rate (44100 Hz)
+        0x88, 0x58, 0x01, 0x00, // Bytes per second
+        0x02, 0x00,             // Block align
+        0x10, 0x00,             // Bits per sample
+        0x64, 0x61, 0x74, 0x61, // "data"
+        0x00, 0x00, 0x00, 0x00  // Data chunk size
+      ];
+      
+      await file.writeAsBytes(headerBytes);
+      print('✅ [Recording] Created test audio file with silence');
+    } catch (e) {
+      print('❌ [Recording] Error creating test file: $e');
+      throw e;
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    if (!_isRecording) {
+      print('⚠️ [Recording] Stop called but not currently recording');
+      return;
+    }
+
+    try {
+      print('\n🛑 [Recording] Stopping recording...');
+      final path = await _audioRecorder.stop();
+      print('✅ [Recording] Recording stopped. File saved at: $path');
+
+      setState(() {
+        _isRecording = false;
+        _canScroll = true;  // Re-enable scrolling
+        _recordingDuration = Duration.zero;
+      });
+      print('🔄 [Recording] State updated: isRecording=$_isRecording');
+
+      // Verify file exists and check its size
+      final file = File(path ?? '');
+      if (await file.exists()) {
+        final size = await file.length();
+        print('📁 [Recording] File verification:');
+        print('  - Path: ${file.path}');
+        print('  - Size: $size bytes');
+        print('  - Exists: true');
+        
+        // Read first few bytes to verify it's not empty
+        if (size > 0) {
+          final bytes = await file.openRead(0, min(size, 16)).toList();
+          print('  - First few bytes: $bytes');
+          print('✅ [Recording] File verification complete - file is valid');
+        }
+      } else {
+        print('❌ [Recording] Warning: Recording file not found at: ${file.path}');
+      }
+    } catch (e) {
+      print('❌ [Recording] Error in _stopRecording: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to stop recording: $e')),
+      );
+      setState(() {
+        _canScroll = true;  // Re-enable scrolling on error
+      });
+    }
+  }
+
+  Future<void> _playRecording() async {
+    if (_recordedFilePath == null || _isRecording) return;
+    
+    try {
+      if (_isPlaying) {
+        await _audioPlayer.stop();
+        _playbackTimer?.cancel();
+        setState(() {
+          _isPlaying = false;
+          _playbackPosition = Duration.zero;
+          _canScroll = true;
+        });
+      } else {
+        await _audioPlayer.play(DeviceFileSource(_recordedFilePath!));
+        setState(() {
+          _isPlaying = true;
+          _canScroll = false;
+        });
+
+        // Listen for playback completion
+        _audioPlayer.onPlayerComplete.listen((event) {
+          _playbackTimer?.cancel();
+          setState(() {
+            _isPlaying = false;
+            _playbackPosition = Duration.zero;
+            _canScroll = true;
+          });
+        });
+      }
+    } catch (e) {
+      print('❌ [Playback] Error: $e');
+      _playbackTimer?.cancel();
+      setState(() {
+        _isPlaying = false;
+        _playbackPosition = Duration.zero;
+        _canScroll = true;
+      });
+    }
+  }
+
+  Future<void> _deleteRecording() async {
+    if (_recordedFilePath == null) {
+      print('⚠️ [Delete] No recording to delete');
+      return;
+    }
+    
+    try {
+      print('\n🗑️ [Delete] Attempting to delete recording at: $_recordedFilePath');
+      final file = File(_recordedFilePath!);
+      if (await file.exists()) {
+        await file.delete();
+        print('✅ [Delete] Recording deleted successfully');
+      } else {
+        print('⚠️ [Delete] File does not exist');
+      }
+      setState(() {
+        _recordedFilePath = null;
+      });
+      print('🔄 [Delete] State updated: recordedFilePath=null');
+    } catch (e) {
+      print('❌ [Delete] Error: $e');
     }
   }
 } 
