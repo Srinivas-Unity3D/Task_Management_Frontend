@@ -66,10 +66,10 @@ class NavigationMenu extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.accentCyan.withOpacity(0.1) : Colors.transparent,
+          color: isSelected ? const Color(0xFF0D1526) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: isSelected 
-              ? Border.all(color: AppColors.accentCyan, width: 1)
+              ? Border.all(color: const Color(0xFF7DF9FF), width: 1)
               : null,
         ),
         child: Row(
