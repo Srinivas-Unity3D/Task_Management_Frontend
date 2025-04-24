@@ -3,6 +3,7 @@ import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../models/task.dart';
 import '../widgets/role_dropdown.dart';
+import '../services/api_service.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   const CreateTaskScreen({Key? key}) : super(key: key);
@@ -15,6 +16,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _apiService = ApiService();
   String? _selectedAssignee;
   TaskPriority _priority = TaskPriority.low;
   DateTime? _dueDate;
@@ -23,6 +25,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   String _alarmFrequency = '30 minutes';  // Changed to have default value
   TaskStatus _status = TaskStatus.pending;
   bool _isRecording = false;
+  List<String> _users = [];
+  bool _isLoadingUsers = true;
 
   final List<String> _frequencyOptions = const [
     '30 minutes',
@@ -32,6 +36,31 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     '6 hours',
     '8 hours',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUsers();
+  }
+
+  Future<void> _fetchUsers() async {
+    try {
+      setState(() {
+        _isLoadingUsers = true;
+      });
+      
+      final users = await _apiService.getUsers();
+      setState(() {
+        _users = users;
+        _isLoadingUsers = false;
+      });
+    } catch (e) {
+      print('Error fetching users: $e');
+      setState(() {
+        _isLoadingUsers = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -111,40 +140,29 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0D1526),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF1E293B)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedAssignee,
-                      hint: const Text(
-                        'Select assignee',
-                        style: TextStyle(color: Color(0xFF94A3B8)),
+                _isLoadingUsers
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.accentCyan),
+                        ),
+                      )
+                    : RoleDropdown(
+                        label: 'Assignee',
+                        hint: 'Select assignee',
+                        items: _users,
+                        value: _selectedAssignee,
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedAssignee = value;
+                          });
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please select an assignee';
+                          }
+                          return null;
+                        },
                       ),
-                      isExpanded: true,
-                      icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF94A3B8)),
-                      dropdownColor: const Color(0xFF0D1526),
-                      items: const [
-                        DropdownMenuItem(value: 'Ayan', child: Text('Ayan')),
-                        DropdownMenuItem(value: 'Azim', child: Text('Azim')),
-                        DropdownMenuItem(value: 'Durga', child: Text('Durga')),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedAssignee = value;
-                        });
-                      },
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 16),
                 // Priority and Due Date Row
                 Row(
