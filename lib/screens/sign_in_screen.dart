@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/custom_button.dart';
+import '../services/api_service.dart';
 import 'registration_screen.dart';
+import 'dashboard_screen.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({Key? key}) : super(key: key);
@@ -13,26 +15,59 @@ class SignInScreen extends StatefulWidget {
 
 class _SignInScreenState extends State<SignInScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _apiService = ApiService();
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _handleSignIn() async {
     if (_formKey.currentState?.validate() ?? false) {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
       try {
-        // Implement your sign in logic here
-        await Future.delayed(const Duration(seconds: 2)); // Simulated delay
-      } finally {
+        final response = await _apiService.login(
+          _usernameController.text,
+          _passwordController.text,
+        );
+
         if (mounted) {
-          setState(() => _isLoading = false);
+          setState(() {
+            _isLoading = false;
+          });
+
+          if (response['success']) {
+            // Store user data (you might want to use shared preferences here)
+            final userData = response['data'];
+            
+            // Navigate to Dashboard
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => const DashboardScreen(),
+              ),
+            );
+          } else {
+            setState(() {
+              _errorMessage = response['message'];
+            });
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = 'An unexpected error occurred';
+          });
         }
       }
     }
@@ -90,12 +125,12 @@ class _SignInScreenState extends State<SignInScreen> {
                             ),
                             SizedBox(height: isSmallScreen ? 20 : 24),
                             CustomTextField(
-                              label: 'Email',
-                              hint: 'Enter your email',
-                              controller: _emailController,
+                              label: 'Username',
+                              hint: 'Enter your username',
+                              controller: _usernameController,
                               validator: (value) {
                                 if (value?.isEmpty ?? true) {
-                                  return 'Please enter your email';
+                                  return 'Please enter your username';
                                 }
                                 return null;
                               },
@@ -113,6 +148,17 @@ class _SignInScreenState extends State<SignInScreen> {
                                 return null;
                               },
                             ),
+                            if (_errorMessage != null) ...[
+                              const SizedBox(height: 16),
+                              Text(
+                                _errorMessage!,
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
                             SizedBox(height: isSmallScreen ? 24 : 32),
                             CustomButton(
                               text: 'Sign In',
