@@ -41,14 +41,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // TODO: Replace with actual API calls
-      // Simulated data for now
+      // Get the stored user data from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final username = prefs.getString('username') ?? 'Srinivas';
+      final role = prefs.getString('role') ?? 'Developer';
+
       _user = User(
         userId: '1',
-        username: 'Srinivas',
-        email: 'srinivas@example.com',
+        username: username,
+        email: '$username@example.com',
         phone: '+1234567890',
-        role: 'Developer',
+        role: role,
         fcmToken: null,
       );
 
@@ -64,12 +67,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           assignedBy: '2',
           assignedTo: '1',
         ),
-        // Add more sample tasks as needed
       ];
 
-      // Calculate stats from tasks
       _taskStats = TaskStats.fromTasks(tasks);
-
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -88,20 +88,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: const Color(0xFF131B2E),
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Stack(
         children: [
-          // Bell Icon centered in container
           const Center(
             child: Icon(
               Icons.notifications_outlined,
-              color: Color(0xFF7DF9FF),
+              color: AppColors.accentCyan,
               size: 24,
             ),
           ),
-          // Red dot only if there are unread notifications
           if (hasUnreadNotifications)
             Positioned(
               top: 12,
@@ -124,88 +122,101 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
+        backgroundColor: AppColors.background,
         body: Center(
-          child: CircularProgressIndicator(
-            color: Color(0xFF7DF9FF),
-          ),
+          child: CircularProgressIndicator(color: AppColors.accentCyan),
         ),
       );
     }
 
     return Scaffold(
-      body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 480),
-          color: Colors.white,
-          child: SingleChildScrollView(
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 50),
-              color: const Color(0xFF0A0F1C),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ProfileSection(user: _user),
-                  const SizedBox(height: 32),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'My Dashboard',
-                        style: TextStyle(
-                          color: Color(0xFF7DF9FF),
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Inter',
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 480),
+                height: constraints.maxHeight,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ProfileSection(user: _user),
+                              const SizedBox(height: 32),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'My Dashboard',
+                                    style: TextStyle(
+                                      color: AppColors.accentCyan,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w700,
+                                      fontFamily: 'Inter',
+                                    ),
+                                  ),
+                                  _buildNotificationIcon(
+                                    hasUnreadNotifications: _hasUnreadNotifications,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 32),
+                              StatsCard(
+                                title: 'Active Tasks',
+                                count: _taskStats.activeTasks.toString(),
+                                icon: Icons.assignment,
+                                onTap: () {
+                                  // TODO: Navigate to active tasks
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              StatsCard(
+                                title: 'In Progress',
+                                count: _taskStats.inProgressTasks.toString(),
+                                icon: Icons.trending_up,
+                                iconColor: Colors.blue,
+                                onTap: () {
+                                  // TODO: Navigate to in-progress tasks
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              StatsCard(
+                                title: 'Completed',
+                                count: _taskStats.completedTasks.toString(),
+                                icon: Icons.check_circle,
+                                iconColor: Colors.green,
+                                onTap: () {
+                                  // TODO: Navigate to completed tasks
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              StatsCard(
+                                title: 'Snoozed',
+                                count: _taskStats.snoozedTasks.toString(),
+                                icon: Icons.snooze,
+                                iconColor: Colors.orange,
+                                onTap: () {
+                                  // TODO: Navigate to snoozed tasks
+                                },
+                              ),
+                              const SizedBox(height: 24),
+                            ],
+                          ),
                         ),
                       ),
-                      _buildNotificationIcon(
-                        hasUnreadNotifications: _hasUnreadNotifications,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                  StatsCard(
-                    title: 'Active Tasks',
-                    count: _taskStats.activeTasks.toString(),
-                    icon: Icons.assignment,
-                    onTap: () {
-                      // TODO: Navigate to active tasks list
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  StatsCard(
-                    title: 'In Progress',
-                    count: _taskStats.inProgressTasks.toString(),
-                    icon: Icons.trending_up,
-                    iconColor: Colors.blue,
-                    onTap: () {
-                      // TODO: Navigate to in-progress tasks
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  StatsCard(
-                    title: 'Completed',
-                    count: _taskStats.completedTasks.toString(),
-                    icon: Icons.check_circle,
-                    iconColor: Colors.green,
-                    onTap: () {
-                      // TODO: Navigate to completed tasks
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  StatsCard(
-                    title: 'Snoozed',
-                    count: _taskStats.snoozedTasks.toString(),
-                    icon: Icons.snooze,
-                    iconColor: Colors.orange,
-                    onTap: () {
-                      // TODO: Navigate to snoozed tasks
-                    },
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );

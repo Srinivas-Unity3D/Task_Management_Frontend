@@ -82,9 +82,17 @@ class _SignInScreenState extends State<SignInScreen> {
           });
 
           if (response['success']) {
-            // Save credentials if remember me is checked
-            await _saveCredentials();
+            // Store user data
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('username', _usernameController.text);
+            // You should get the role from your API response
+            await prefs.setString('role', response['data']['role'] ?? 'Developer');
             
+            if (_rememberMe) {
+              await prefs.setBool('isLoggedIn', true);
+              await prefs.setString('password', _passwordController.text);
+            }
+
             // Navigate to Dashboard
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
