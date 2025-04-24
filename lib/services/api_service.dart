@@ -161,6 +161,7 @@ class ApiService {
     required String deadline,
     required String priority,
     required String status,
+    String? audioNote,
   }) async {
     try {
       final response = await http.post(
@@ -177,6 +178,7 @@ class ApiService {
           'deadline': deadline,
           'priority': priority,
           'status': status,
+          if (audioNote != null) 'audio_note': audioNote,
         }),
       );
 

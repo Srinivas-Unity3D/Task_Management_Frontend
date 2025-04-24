@@ -1,4 +1,4 @@
-package sunrack.com.taskmanagement
+package com.example.taskmanagement
 
 import io.flutter.embedding.android.FlutterActivity
 
