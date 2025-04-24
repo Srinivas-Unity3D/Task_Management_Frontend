@@ -17,6 +17,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   String? _selectedAssignee;
   TaskPriority _priority = TaskPriority.low;
   DateTime? _dueDate;
+  DateTime? _alarmStartDate;
+  TimeOfDay? _alarmStartTime;
+  String _alarmFrequency = '1 hour';  // Default value
   TaskStatus _status = TaskStatus.pending;
   bool _isRecording = false;
 
@@ -248,6 +251,199 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Alarm Section
+                const Text(
+                  'Alarm',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Alarm Start Date and Time
+                Row(
+                  children: [
+                    // Start Date
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Start Date',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now().add(const Duration(days: 365)),
+                                builder: (context, child) {
+                                  return Theme(
+                                    data: Theme.of(context).copyWith(
+                                      colorScheme: const ColorScheme.dark(
+                                        primary: Color(0xFF7DF9FF),
+                                        surface: Color(0xFF0D1526),
+                                      ),
+                                    ),
+                                    child: child!,
+                                  );
+                                },
+                              );
+                              if (date != null) {
+                                setState(() {
+                                  _alarmStartDate = date;
+                                });
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D1526),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF1E293B)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    _alarmStartDate != null
+                                        ? '${_alarmStartDate!.day}/${_alarmStartDate!.month}/${_alarmStartDate!.year}'
+                                        : 'Select date',
+                                    style: TextStyle(
+                                      color: _alarmStartDate != null ? Colors.white : const Color(0xFF94A3B8),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // Start Time
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Start Time',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay.now(),
+                                builder: (context, child) {
+                                  return Theme(
+                                    data: Theme.of(context).copyWith(
+                                      colorScheme: const ColorScheme.dark(
+                                        primary: Color(0xFF7DF9FF),
+                                        surface: Color(0xFF0D1526),
+                                      ),
+                                    ),
+                                    child: child!,
+                                  );
+                                },
+                              );
+                              if (time != null) {
+                                setState(() {
+                                  _alarmStartTime = time;
+                                });
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D1526),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF1E293B)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    _alarmStartTime != null
+                                        ? _alarmStartTime!.format(context)
+                                        : 'Select time',
+                                    style: TextStyle(
+                                      color: _alarmStartTime != null ? Colors.white : const Color(0xFF94A3B8),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const Icon(Icons.access_time, color: Color(0xFF94A3B8), size: 16),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Alarm Frequency
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Frequency',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D1526),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF1E293B)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _alarmFrequency,
+                          isExpanded: true,
+                          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF94A3B8)),
+                          dropdownColor: const Color(0xFF0D1526),
+                          items: const [
+                            DropdownMenuItem(value: '1 hour', child: Text('Every 1 hour')),
+                            DropdownMenuItem(value: '2 hours', child: Text('Every 2 hours')),
+                            DropdownMenuItem(value: '4 hours', child: Text('Every 4 hours')),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _alarmFrequency = value!;
+                            });
+                          },
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                        ),
                       ),
                     ),
                   ],
