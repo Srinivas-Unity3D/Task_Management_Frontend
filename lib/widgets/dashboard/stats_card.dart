@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
+import '../../theme/colors.dart';
 
 class StatsCard extends StatelessWidget {
   final String title;
   final String count;
+  final IconData icon;
+  final Color? iconColor;
+  final VoidCallback? onTap;
 
   const StatsCard({
     Key? key,
     required this.title,
     required this.count,
+    required this.icon,
+    this.iconColor,
+    this.onTap,
   }) : super(key: key);
 
   @override

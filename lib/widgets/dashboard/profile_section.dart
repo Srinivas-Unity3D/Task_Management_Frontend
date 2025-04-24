@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
+import '../../models/user.dart';
+import '../../theme/colors.dart';
 import 'navigation_menu.dart';
 
 class ProfileSection extends StatelessWidget {
-  const ProfileSection({Key? key}) : super(key: key);
+  final User user;
+  
+  const ProfileSection({
+    Key? key,
+    required this.user,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -31,10 +38,10 @@ class ProfileSection extends StatelessWidget {
                   width: 40,
                   height: 40,
                   color: const Color(0xFF798598),
-                  child: const Center(
+                  child: Center(
                     child: Text(
-                      'S',
-                      style: TextStyle(
+                      user.username[0].toUpperCase(),
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.w500,
@@ -48,18 +55,18 @@ class ProfileSection extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Srinivas',
-                    style: TextStyle(
-                      color: const Color(0xFF7DF9FF),
+                    user.username,
+                    style: const TextStyle(
+                      color: Color(0xFF7DF9FF),
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       fontFamily: 'Inter',
                     ),
                   ),
                   Text(
-                    'Developer',
-                    style: TextStyle(
-                      color: const Color(0xFF798598),
+                    user.role,
+                    style: const TextStyle(
+                      color: Color(0xFF798598),
                       fontSize: 14,
                       fontWeight: FontWeight.w400,
                       fontFamily: 'Inter',
