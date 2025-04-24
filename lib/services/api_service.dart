@@ -152,4 +152,54 @@ class ApiService {
       throw Exception('Failed to load users');
     }
   }
+
+  Future<Map<String, dynamic>> createTask({
+    required String title,
+    required String description,
+    required String assignedTo,
+    required String assignedBy,
+    required String deadline,
+    required String priority,
+    required String status,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/create_task'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode({
+          'title': title,
+          'description': description,
+          'assigned_to': assignedTo,
+          'assigned_by': assignedBy,
+          'deadline': deadline,
+          'priority': priority,
+          'status': status,
+        }),
+      );
+
+      final data = json.decode(response.body);
+      
+      if (response.statusCode == 201) {  // API returns 201 for successful creation
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Task created successfully',
+          'task_id': data['task_id'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Failed to create task',
+        };
+      }
+    } catch (e) {
+      print('Error creating task: $e');
+      return {
+        'success': false,
+        'message': 'Connection error. Please try again.',
+      };
+    }
+  }
 } 

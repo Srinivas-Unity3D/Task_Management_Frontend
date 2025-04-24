@@ -19,11 +19,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _descriptionController = TextEditingController();
   final _apiService = ApiService();
   String? _selectedAssignee;
-  TaskPriority _priority = TaskPriority.low;
+  String _priority = 'Low';  // Changed from enum to String
   DateTime? _dueDate;
   DateTime? _alarmStartDate;
   TimeOfDay? _alarmStartTime;
-  String _alarmFrequency = '30 minutes';  // Changed to have default value
+  String _alarmFrequency = '30 minutes';
   TaskStatus _status = TaskStatus.pending;
   bool _isRecording = false;
   List<String> _users = [];
@@ -37,6 +37,13 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     '4 hours',
     '6 hours',
     '8 hours',
+  ];
+
+  final List<String> _priorityOptions = const [
+    'Low',
+    'Medium',
+    'High',
+    'Urgent'
   ];
 
   @override
@@ -182,49 +189,22 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                   children: [
                     // Priority
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Priority',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0D1526),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFF1E293B)),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<TaskPriority>(
-                                value: _priority,
-                                isExpanded: true,
-                                icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF94A3B8)),
-                                dropdownColor: const Color(0xFF0D1526),
-                                items: TaskPriority.values.map((priority) {
-                                  return DropdownMenuItem(
-                                    value: priority,
-                                    child: Text(
-                                      priority.toString().split('.').last,
-                                      style: const TextStyle(color: Colors.white),
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _priority = value!;
-                                  });
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: RoleDropdown(
+                        label: 'Priority',
+                        hint: 'Select priority',
+                        items: _priorityOptions,
+                        value: _priority,
+                        onChanged: (value) {
+                          setState(() {
+                            _priority = value ?? 'Low';
+                          });
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please select priority';
+                          }
+                          return null;
+                        },
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -655,10 +635,26 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     );
   }
 
-  void _handleCreateTask() {
+  void _handleCreateTask() async {
     if (_formKey.currentState?.validate() ?? false) {
-      // TODO: Implement task creation
-      Navigator.pop(context);
+      try {
+        final response = await _apiService.createTask(
+          title: _titleController.text,
+          description: _descriptionController.text,
+          assignedTo: _selectedAssignee!,
+          assignedBy: _currentUsername!,
+          deadline: _dueDate!.toIso8601String(),
+          priority: _priority.toLowerCase(),
+          status: _status.toString().split('.').last,
+        );
+
+        if (response['success']) {
+          Navigator.pop(context);
+        }
+      } catch (e) {
+        print('Error creating task: $e');
+        // Show error message to user
+      }
     }
   }
 } 
