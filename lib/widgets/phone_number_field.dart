@@ -10,6 +10,7 @@ class PhoneNumberField extends StatefulWidget {
   final String? Function(String?)? validator;
   final Function(PhoneNumber)? onInputChanged;
   final bool showError;
+  final Function(String)? onChanged;
 
   const PhoneNumberField({
     Key? key,
@@ -19,6 +20,7 @@ class PhoneNumberField extends StatefulWidget {
     this.validator,
     this.onInputChanged,
     this.showError = false,
+    this.onChanged,
   }) : super(key: key);
 
   @override
@@ -30,7 +32,6 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
   String initialCountry = 'IN';
   PhoneNumber number = PhoneNumber(isoCode: 'IN');
   String? _errorText;
-  bool _isDirty = false;
 
   @override
   void initState() {
@@ -150,6 +151,9 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
 
   @override
   Widget build(BuildContext context) {
+    // Get error text using the validator
+    final String? errorText = widget.showError ? widget.validator?.call(_phoneController.text) : null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -172,7 +176,7 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
                   color: AppColors.inputBackground,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: (!_isDirty && _errorText != null) ? Colors.red : AppColors.borderColor,
+                    color: errorText != null ? Colors.red : AppColors.borderColor,
                     width: 1,
                   ),
                 ),
@@ -214,23 +218,25 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
                     color: AppColors.textGrey,
                     fontSize: 16,
                   ),
+                  // Remove default error style
+                  errorStyle: const TextStyle(
+                    color: Colors.transparent,
+                    fontSize: 0,
+                    height: 0,
+                  ),
                   filled: true,
                   fillColor: AppColors.inputBackground,
-                  errorStyle: const TextStyle(
-                    color: Colors.red,
-                    fontSize: 12,
-                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide(
-                      color: AppColors.borderColor,
+                      color: errorText != null ? Colors.red : AppColors.borderColor,
                       width: 1,
                     ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide(
-                      color: (!_isDirty && _errorText != null) ? Colors.red : AppColors.borderColor,
+                      color: errorText != null ? Colors.red : AppColors.borderColor,
                       width: 1,
                     ),
                   ),
@@ -241,37 +247,16 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
                       width: 1,
                     ),
                   ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Colors.red,
-                      width: 1,
-                    ),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Colors.red,
-                      width: 1,
-                    ),
-                  ),
                   contentPadding: const EdgeInsets.all(16),
                 ),
-                validator: (value) {
-                  if (!_isDirty) {
-                    final error = widget.validator?.call(value);
-                    setState(() {
-                      _errorText = error;
-                    });
-                    return error;
-                  }
-                  return null;
-                },
+                // Remove validator to prevent double validation
+                validator: (_) => null,
                 onChanged: (value) {
-                  setState(() {
-                    _isDirty = true;
-                    _errorText = null;
-                  });
+                  // Handle both callbacks
+                  if (widget.showError && widget.onChanged != null) {
+                    widget.onChanged?.call(value);
+                  }
+                  
                   if (widget.onInputChanged != null) {
                     widget.onInputChanged!(
                       PhoneNumber(
@@ -286,11 +271,12 @@ class _PhoneNumberFieldState extends State<PhoneNumberField> {
             ),
           ],
         ),
-        if (!_isDirty && _errorText != null)
+        // Show error text below the field
+        if (errorText != null)
           Padding(
             padding: const EdgeInsets.only(top: 8, left: 16),
             child: Text(
-              _errorText!,
+              errorText,
               style: const TextStyle(
                 color: Colors.red,
                 fontSize: 12,

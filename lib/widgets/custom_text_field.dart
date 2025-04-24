@@ -11,6 +11,8 @@ class CustomTextField extends StatefulWidget {
   final Widget? suffixIcon;
   final TextInputType? keyboardType;
   final List<TextInputFormatter>? inputFormatters;
+  final bool showError;
+  final Function(String)? onChanged;
 
   const CustomTextField({
     Key? key,
@@ -22,6 +24,8 @@ class CustomTextField extends StatefulWidget {
     this.suffixIcon,
     this.keyboardType,
     this.inputFormatters,
+    this.showError = false,
+    this.onChanged,
   }) : super(key: key);
 
   @override
@@ -30,10 +34,11 @@ class CustomTextField extends StatefulWidget {
 
 class _CustomTextFieldState extends State<CustomTextField> {
   bool _obscureText = true;
-  bool _isDirty = false;
 
   @override
   Widget build(BuildContext context) {
+    final String? errorText = widget.showError ? widget.validator?.call(widget.controller.text) : null;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -61,23 +66,23 @@ class _CustomTextFieldState extends State<CustomTextField> {
               fontSize: 16,
             ),
             errorStyle: const TextStyle(
-              color: Colors.red,
-              fontSize: 12,
+              color: Colors.transparent,
               height: 0,
+              fontSize: 0,
             ),
             filled: true,
             fillColor: AppColors.inputBackground,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: AppColors.borderColor,
+                color: errorText != null ? Colors.red : AppColors.borderColor,
                 width: 1,
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: AppColors.borderColor,
+                color: errorText != null ? Colors.red : AppColors.borderColor,
                 width: 1,
               ),
             ),
@@ -103,18 +108,24 @@ class _CustomTextFieldState extends State<CustomTextField> {
                   )
                 : widget.suffixIcon,
           ),
-          validator: (value) {
-            if (!_isDirty) {
-              return widget.validator?.call(value);
-            }
-            return null;
-          },
+          validator: (_) => null,
           onChanged: (value) {
-            setState(() {
-              _isDirty = true;
-            });
+            if (widget.showError && widget.onChanged != null) {
+              widget.onChanged?.call(value);
+            }
           },
         ),
+        if (errorText != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, left: 16),
+            child: Text(
+              errorText,
+              style: const TextStyle(
+                color: Colors.red,
+                fontSize: 12,
+              ),
+            ),
+          ),
       ],
     );
   }

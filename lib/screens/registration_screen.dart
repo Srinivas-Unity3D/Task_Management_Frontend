@@ -27,12 +27,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   
   String? _selectedRole;
   bool _isLoading = false;
+  bool _showErrors = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   PhoneNumber? _phoneNumber;
   String? _errorMessage;
-  bool _showRoleError = false;
-  bool _formDirty = false;
 
   final List<String> _roles = [
     'Software Developer',
@@ -69,9 +68,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     return true;
   }
 
+  void _clearErrors() {
+    if (mounted) {
+      setState(() {
+        _showErrors = false;
+      });
+    }
+  }
+
   Future<void> _handleRegistration() async {
     setState(() {
-      _showRoleError = true;
+      _showErrors = true;
     });
 
     if (!(_formKey.currentState?.validate() ?? false)) {
@@ -202,6 +209,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               label: 'Username',
                               hint: 'Enter your username',
                               controller: _usernameController,
+                              showError: _showErrors,
+                              onChanged: (_) => _clearErrors(),
                               validator: (value) {
                                 if (value?.isEmpty ?? true) {
                                   return 'Please enter your username';
@@ -214,7 +223,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               label: 'Email',
                               hint: 'Enter your email',
                               controller: _emailController,
-                              keyboardType: TextInputType.emailAddress,
+                              showError: _showErrors,
+                              onChanged: (_) => _clearErrors(),
                               validator: (value) {
                                 if (value?.isEmpty ?? true) {
                                   return 'Please enter your email';
@@ -230,6 +240,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               label: 'Mobile Number',
                               hint: 'Enter mobile number',
                               controller: _mobileController,
+                              showError: _showErrors,
+                              onChanged: (_) => _clearErrors(),
                               onInputChanged: (PhoneNumber number) {
                                 setState(() {
                                   _phoneNumber = number;
@@ -248,13 +260,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               hint: 'Choose role',
                               items: _roles,
                               value: _selectedRole,
-                              showError: _showRoleError,
+                              showError: _showErrors,
                               onChanged: (String? newValue) {
                                 setState(() {
                                   _selectedRole = newValue;
-                                  if (_showRoleError) {
-                                    _showRoleError = false;
-                                  }
                                 });
                               },
                               validator: (value) {
@@ -269,6 +278,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               label: 'Password',
                               hint: 'Enter your password',
                               controller: _passwordController,
+                              showError: _showErrors,
                               isPassword: _obscurePassword,
                               suffixIcon: IconButton(
                                 icon: Icon(
@@ -293,6 +303,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               label: 'Confirm Password',
                               hint: 'Confirm your password',
                               controller: _confirmPasswordController,
+                              showError: _showErrors,
                               isPassword: _obscureConfirmPassword,
                               suffixIcon: IconButton(
                                 icon: Icon(
@@ -308,6 +319,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               validator: (value) {
                                 if (value?.isEmpty ?? true) {
                                   return 'Please confirm your password';
+                                }
+                                if (value != _passwordController.text) {
+                                  return 'Passwords do not match';
                                 }
                                 return null;
                               },
