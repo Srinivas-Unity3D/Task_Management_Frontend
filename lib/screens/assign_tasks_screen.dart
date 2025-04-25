@@ -262,44 +262,29 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
               ],
             ),
           ),
-          // Assign Task Button
-          TextButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CreateTaskScreen(),
-                ),
-              );
-            },
-            style: TextButton.styleFrom(
-              backgroundColor: const Color(0xFF7DF9FF),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
+          // Edit Button
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: const Color(0xFF7DF9FF),
+              shape: BoxShape.circle,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Text(
-                  'Assign Task',
-                  style: TextStyle(
-                    color: Color(0xFF0F172A),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              icon: const Icon(
+                Icons.edit,
+                color: Color(0xFF0F172A),
+                size: 16,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CreateTaskScreen(),
                   ),
-                ),
-                SizedBox(width: 4),
-                Icon(
-                  Icons.arrow_forward,
-                  color: Color(0xFF0F172A),
-                  size: 16,
-                ),
-              ],
+                );
+              },
             ),
           ),
         ],
