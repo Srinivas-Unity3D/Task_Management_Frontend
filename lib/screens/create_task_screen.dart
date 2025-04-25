@@ -945,10 +945,79 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
         if (response['success'] == true) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Task created successfully')),
+            // Show success dialog
+            await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (BuildContext context) {
+                return Dialog(
+                  backgroundColor: const Color(0xFF0F172A),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF7DF9FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.check,
+                            color: Color(0xFF0F172A),
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        const Text(
+                          'Task Created Successfully!',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Task "${_titleController.text}" has been created and assigned to $_selectedAssignee.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop(); // Close dialog
+                            Navigator.pop(context, true); // Return to previous screen
+                          },
+                          style: TextButton.styleFrom(
+                            backgroundColor: const Color(0xFF7DF9FF),
+                            minimumSize: const Size(double.infinity, 48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'OK',
+                            style: TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             );
-            Navigator.pop(context, true);
           }
         } else {
           if (mounted) {
