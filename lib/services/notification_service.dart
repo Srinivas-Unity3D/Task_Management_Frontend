@@ -12,14 +12,17 @@ class NotificationService {
 
   Future<void> initialize() async {
     if (_isInitialized) return;
-    
-    // Load notification sound
     await _audioPlayer.setSource(AssetSource('sounds/notification.mp3'));
     _isInitialized = true;
   }
 
   Future<void> playNotificationSound() async {
     try {
+      // Stop any previous playing sound
+      await _audioPlayer.stop();
+      // Set the source again to ensure it's ready to play
+      await _audioPlayer.setSource(AssetSource('sounds/notification.mp3'));
+      // Play the sound
       await _audioPlayer.resume();
     } catch (e) {
       print('Error playing notification sound: $e');

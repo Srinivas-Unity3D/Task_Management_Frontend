@@ -50,7 +50,12 @@ class SocketService {
         .build()
     );
 
-    // Set up event listeners
+    _setupSocketListeners();
+    print('🔌 Connecting to socket server...');
+    _socket!.connect();
+  }
+
+  void _setupSocketListeners() {
     _socket!.onConnect((_) {
       print('🔌 Socket connected successfully');
       connected.value = true;
@@ -72,47 +77,27 @@ class SocketService {
       }
     });
 
-    _socket!.onError((error) {
-      print('🔌 Socket error: $error');
-      connected.value = false;
-    });
-
-    _socket!.onConnectError((error) {
-      print('🔌 Socket connect error: $error');
-      connected.value = false;
-      // Only attempt to reconnect if we still have a username
-      if (_currentUsername != null) {
-        Future.delayed(Duration(seconds: 3), () {
-          if (_socket != null && !_socket!.connected) {
-            print('🔌 Attempting to reconnect after error...');
-            _socket!.connect();
-          }
-        });
-      }
-    });
-
-    // Set up event handlers for notifications
-    _socket!.on('connect_response', (data) {
-      print('🔌 Received connect response: $data');
-    });
-
-    _socket!.on('register_response', (data) {
-      print('🔌 Received register response: $data');
-    });
-
     _socket!.on('task_notification', (data) async {
-      print('📨 Received task notification: $data');
+      print('🔔 SocketService - Received task notification: $data');
       
-      // Play sound and vibrate for notifications
-      await _notificationService.handleNewNotification();
+      // Check if the current user is the sender
+      final String? sender = data['sender'] ?? data['assigned_by'];
+      final String? targetUser = data['target_user'] ?? data['assigned_to'];
       
-      print('📨 Number of task notification listeners: ${_taskNotificationListeners.length}');
+      // Only play sound and vibrate if the current user is the target and not the sender
+      if (targetUser == _currentUsername && sender != _currentUsername) {
+        print('🔔 SocketService - Playing notification for target user: $targetUser');
+        await _notificationService.handleNewNotification();
+      }
+      
+      print('🔔 SocketService - Number of task notification listeners: ${_taskNotificationListeners.length}');
       for (var listener in _taskNotificationListeners) {
         try {
+          print('🔔 SocketService - Calling notification listener');
           listener(data);
-          print('📨 Successfully called task notification listener');
+          print('🔔 SocketService - Successfully called notification listener');
         } catch (e) {
-          print('📨 Error in task notification listener: $e');
+          print('❌ SocketService - Error in notification listener: $e');
         }
       }
     });
@@ -130,8 +115,23 @@ class SocketService {
       }
     });
 
-    print('🔌 Connecting to socket server...');
-    _socket!.connect();
+    _socket!.onError((error) {
+      print('❌ Socket error: $error');
+    });
+
+    _socket!.onConnectError((error) {
+      print('❌ Socket connect error: $error');
+      connected.value = false;
+      // Only attempt to reconnect if we still have a username
+      if (_currentUsername != null) {
+        Future.delayed(Duration(seconds: 3), () {
+          if (_socket != null && !_socket!.connected) {
+            print('🔌 Attempting to reconnect after error...');
+            _socket!.connect();
+          }
+        });
+      }
+    });
   }
 
   void disconnect() {

@@ -16,6 +16,7 @@ import '../services/api_service.dart';
 import '../screens/create_task_screen.dart';
 import '../screens/assign_tasks_screen.dart';
 import '../services/socket_service.dart';
+import '../widgets/common_notification_icon.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -255,44 +256,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  Widget _buildNotificationIcon({required bool hasUnreadNotifications}) {
-    return GestureDetector(
-      onTap: _clearNotifications,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Stack(
-          children: [
-            const Center(
-              child: Icon(
-                Icons.notifications_outlined,
-                color: AppColors.accentCyan,
-                size: 24,
-              ),
-            ),
-            if (hasUnreadNotifications)
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showSidePanel() {
     showGeneralDialog(
       context: context,
@@ -362,8 +325,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   fontFamily: 'Inter',
                 ),
               ),
-              _buildNotificationIcon(
+              CommonNotificationIcon(
                 hasUnreadNotifications: _hasUnreadNotifications,
+                onNotificationCleared: _clearNotifications,
               ),
             ],
           ),
@@ -426,8 +390,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   fontFamily: 'Inter',
                 ),
               ),
-              _buildNotificationIcon(
+              CommonNotificationIcon(
                 hasUnreadNotifications: _hasUnreadNotifications,
+                onNotificationCleared: _clearNotifications,
               ),
             ],
           ),
@@ -521,10 +486,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Task History',
+                    'History',
                     style: TextStyle(
                       color: AppColors.accentCyan,
                       fontSize: 24,
@@ -532,35 +498,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       fontFamily: 'Inter',
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Container(
                         width: 8,
                         height: 8,
                         decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.completed,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Completed',
-                        style: TextStyle(
                           color: AppColors.textGrey,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.orange,
                         ),
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 8),
                       const Text(
                         'Snoozed',
                         style: TextStyle(
@@ -572,8 +521,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
-              _buildNotificationIcon(
+              CommonNotificationIcon(
                 hasUnreadNotifications: _hasUnreadNotifications,
+                onNotificationCleared: _clearNotifications,
               ),
             ],
           ),
@@ -908,8 +858,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  _buildNotificationIcon(
+                  CommonNotificationIcon(
                     hasUnreadNotifications: _hasUnreadNotifications,
+                    onNotificationCleared: _clearNotifications,
                   ),
                 ],
               ),

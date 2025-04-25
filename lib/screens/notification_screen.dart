@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/colors.dart';
 import '../services/socket_service.dart';
-import 'package:intl/intl.dart';
 
 class NotificationScreen extends StatefulWidget {
   const NotificationScreen({Key? key}) : super(key: key);
@@ -11,189 +10,139 @@ class NotificationScreen extends StatefulWidget {
 }
 
 class _NotificationScreenState extends State<NotificationScreen> {
-  final List<Map<String, dynamic>> _notifications = [
-    {
-      'type': 'New Task Assignment',
-      'description': 'Project Alpha needs review',
-      'time': DateTime.now().subtract(const Duration(minutes: 10)),
-      'user': 'Durga',
-      'role': 'Product Manager',
-      'status': 'pending'
-    },
-    {
-      'type': 'Meeting Reminder',
-      'description': 'Team standup at 2 PM',
-      'time': DateTime.now().subtract(const Duration(hours: 1)),
-      'user': 'Azim',
-      'role': 'Admin',
-      'status': 'pending'
-    },
-    {
-      'type': 'System Update',
-      'description': 'New features available',
-      'time': DateTime.now().subtract(const Duration(hours: 2)),
-      'user': 'Ayan',
-      'role': 'Developer',
-      'status': 'pending'
-    },
-  ];
-
-  final _socketService = SocketService();
+  final List<Map<String, dynamic>> _notifications = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _socketService.listenToTaskNotifications(_handleNewNotification);
+    _loadNotifications();
   }
 
-  @override
-  void dispose() {
-    _socketService.removeTaskNotificationListener(_handleNewNotification);
-    super.dispose();
-  }
-
-  void _handleNewNotification(dynamic data) {
-    if (mounted) {
+  Future<void> _loadNotifications() async {
+    setState(() => _isLoading = true);
+    try {
+      // TODO: Implement notification fetching from your backend
+      // For now, we'll use dummy data
+      await Future.delayed(const Duration(seconds: 1)); // Simulate network delay
       setState(() {
-        _notifications.insert(0, data);
+        _notifications.addAll([
+          {
+            'id': '1',
+            'title': 'New Task Assigned',
+            'message': 'Website Redesign task has been assigned to you',
+            'timestamp': DateTime.now().subtract(const Duration(hours: 1)),
+            'type': 'task_assigned',
+            'isRead': false,
+          },
+          {
+            'id': '2',
+            'title': 'Task Updated',
+            'message': 'API Integration task deadline has been updated',
+            'timestamp': DateTime.now().subtract(const Duration(hours: 2)),
+            'type': 'task_updated',
+            'isRead': true,
+          },
+        ]);
       });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading notifications: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  String _getTimeAgo(DateTime time) {
-    final now = DateTime.now();
-    final difference = now.difference(time);
-
-    if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
-    } else if (difference.inHours < 24) {
+  String _getTimeAgo(DateTime dateTime) {
+    final difference = DateTime.now().difference(dateTime);
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
       return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
     } else {
-      return DateFormat('MMM d').format(time);
+      return 'Just now';
     }
   }
 
-  Color _getTypeColor(String type) {
-    switch (type) {
-      case 'New Task Assignment':
-        return Colors.red;
-      case 'Meeting Reminder':
-        return Colors.orange;
-      case 'System Update':
-        return Colors.green;
+  Widget _buildNotificationItem(Map<String, dynamic> notification) {
+    final IconData icon;
+    final Color iconColor;
+    
+    switch (notification['type']) {
+      case 'task_assigned':
+        icon = Icons.assignment;
+        iconColor = AppColors.accentCyan;
+        break;
+      case 'task_updated':
+        icon = Icons.edit;
+        iconColor = Colors.orange;
+        break;
       default:
-        return Colors.blue;
+        icon = Icons.notifications;
+        iconColor = Colors.grey;
     }
-  }
 
-  Widget _buildNotificationCard(Map<String, dynamic> notification) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
+        border: notification['isRead'] 
+            ? null 
+            : Border.all(color: AppColors.accentCyan, width: 1),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: iconColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: _getTypeColor(notification['type']),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
                 Text(
-                  notification['type'],
+                  notification['title'],
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 14,
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(height: 4),
                 Text(
-                  _getTimeAgo(notification['time']),
+                  notification['message'],
                   style: const TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              notification['description'],
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 12,
-                  backgroundColor: Colors.white24,
-                  child: Text(
-                    notification['user'][0],
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  notification['user'],
-                  style: const TextStyle(
-                    color: Colors.white,
+                    color: AppColors.textGrey,
                     fontSize: 14,
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(height: 8),
                 Text(
-                  notification['role'],
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
+                  _getTimeAgo(notification['timestamp']),
+                  style: TextStyle(
+                    color: AppColors.textGrey.withOpacity(0.7),
                     fontSize: 12,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: () {
-                    // TODO: Implement snooze functionality
-                  },
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF64748B),
-                  ),
-                  child: const Text('Snooze'),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () {
-                    // TODO: Implement mark as complete functionality
-                  },
-                  style: TextButton.styleFrom(
-                    backgroundColor: const Color(0xFF7DF9FF),
-                    foregroundColor: const Color(0xFF0F172A),
-                  ),
-                  child: const Text('Mark as Complete'),
-                ),
-              ],
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -201,37 +150,78 @@ class _NotificationScreenState extends State<NotificationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.background,
         elevation: 0,
         title: const Text(
           'Notifications',
           style: TextStyle(
-            color: Color(0xFF7DF9FF),
+            color: AppColors.accentCyan,
             fontSize: 20,
             fontWeight: FontWeight.w600,
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back, color: AppColors.accentCyan),
           onPressed: () => Navigator.pop(context),
         ),
-      ),
-      body: _notifications.isEmpty
-          ? const Center(
-              child: Text(
-                'No new notifications',
+        actions: [
+          if (_notifications.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  for (var notification in _notifications) {
+                    notification['isRead'] = true;
+                  }
+                });
+              },
+              child: const Text(
+                'Mark all as read',
                 style: TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 16,
+                  color: AppColors.accentCyan,
+                  fontSize: 14,
                 ),
               ),
-            )
-          : ListView.builder(
-              itemCount: _notifications.length,
-              itemBuilder: (context, index) => _buildNotificationCard(_notifications[index]),
             ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.accentCyan),
+            )
+          : _notifications.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.notifications_off_outlined,
+                        size: 64,
+                        color: AppColors.textGrey.withOpacity(0.5),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No notifications yet',
+                        style: TextStyle(
+                          color: AppColors.textGrey.withOpacity(0.5),
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadNotifications,
+                  color: AppColors.accentCyan,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(24),
+                    itemCount: _notifications.length,
+                    itemBuilder: (context, index) => _buildNotificationItem(
+                      _notifications[index],
+                    ),
+                  ),
+                ),
     );
   }
 } 
