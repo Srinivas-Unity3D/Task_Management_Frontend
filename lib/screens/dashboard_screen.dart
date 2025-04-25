@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/dashboard/profile_section.dart';
 import '../widgets/dashboard/navigation_menu.dart';
@@ -85,6 +86,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _hasUnreadNotifications = true;
         });
         
+        // Play notification sound and vibrate
+        SystemSound.play(SystemSoundType.alert);
+        HapticFeedback.vibrate();
+        
         // Show notification for new tasks or updates
         if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
           _showTaskNotification(data['task']);
@@ -106,6 +111,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         setState(() {
           _hasUnreadNotifications = true;
         });
+        
+        // Play notification sound and vibrate
+        SystemSound.play(SystemSoundType.alert);
+        HapticFeedback.vibrate();
       }
       // Always refresh the task list
       _loadTasks();
