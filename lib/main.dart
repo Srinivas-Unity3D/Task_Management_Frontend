@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/socket_service.dart';
 
 import 'screens/sign_in_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -15,8 +16,18 @@ void main() async {  // Made async to properly handle initialization
     DeviceOrientation.portraitDown,
   ]);
 
-  // Check if user is logged in
+  // Initialize socket service
+  final socketService = SocketService();
+  socketService.init('http://134.209.149.12:5000');  // Updated to match your server IP
+  
+  // Get current user and register with socket
   final prefs = await SharedPreferences.getInstance();
+  final username = prefs.getString('username');
+  if (username != null) {
+    socketService.registerUser(username);
+  }
+
+  // Check if user is logged in
   final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
 
   runApp(MyApp(isLoggedIn: isLoggedIn));

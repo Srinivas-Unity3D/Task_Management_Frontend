@@ -15,6 +15,7 @@ import '../widgets/custom_text_field.dart';
 import '../services/api_service.dart';
 import '../screens/create_task_screen.dart';
 import '../screens/assign_tasks_screen.dart';
+import '../services/socket_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -26,6 +27,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ApiService _apiService = ApiService();
+  final _socketService = SocketService();
   late User _user;
   TaskStats? _taskStats;
   bool _isLoading = true;
@@ -36,10 +38,124 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDashboardData();
+    _loadUserAndSetupSocket();
   }
 
-  Future<void> _loadDashboardData() async {
+  @override
+  void dispose() {
+    // Remove socket listeners when disposing
+    _socketService.removeTaskNotificationListener(_handleTaskNotification);
+    _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
+    super.dispose();
+  }
+
+  Future<void> _loadUserAndSetupSocket() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final username = prefs.getString('username');
+      if (username != null) {
+        // Connect socket with username
+        _socketService.connect(username);
+        // Setup socket listeners
+        _setupSocketListeners();
+      }
+      _loadTasks();
+    } catch (e) {
+      print('Error loading user data: $e');
+    }
+  }
+
+  void _setupSocketListeners() {
+    // Listen for task notifications
+    _socketService.listenToTaskNotifications(_handleTaskNotification);
+    // Listen for dashboard updates
+    _socketService.listenToDashboardUpdates(_handleDashboardUpdate);
+  }
+
+  void _handleTaskNotification(dynamic data) {
+    if (mounted) {
+      setState(() {
+        _hasUnreadNotifications = true;
+      });
+      
+      // Show notification for new tasks
+      if (data['type'] == 'task_created') {
+        _showTaskNotification(data['task']);
+        // Refresh tasks list
+        _loadTasks();
+      }
+    }
+  }
+
+  void _handleDashboardUpdate(dynamic data) {
+    if (mounted) {
+      setState(() {
+        _hasUnreadNotifications = true;
+      });
+      // Refresh the task list
+      _loadTasks();
+    }
+  }
+
+  void _clearNotifications() {
+    setState(() {
+      _hasUnreadNotifications = false;
+    });
+  }
+
+  void _showTaskNotification(Map<String, dynamic> task) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'New Task Assigned',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              task['title'] ?? 'No title',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ],
+        ),
+        backgroundColor: Color(0xFF1E293B),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        action: SnackBarAction(
+          label: 'VIEW',
+          textColor: Color(0xFF7DF9FF),
+          onPressed: () {
+            // Navigate to task details
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CreateTaskScreen(
+                  isEditMode: true,
+                  taskId: task['task_id'],
+                  initialTitle: task['title'],
+                  initialDescription: task['description'],
+                  initialAssignee: task['assigned_to'],
+                  initialPriority: task['priority'],
+                  initialDueDate: DateTime.parse(task['deadline']),
+                  initialStatus: task['status'],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadTasks() async {
     setState(() => _isLoading = true);
 
     try {
@@ -95,6 +211,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _handleLogout() async {
     final prefs = await SharedPreferences.getInstance();
+    // Disconnect socket
+    _socketService.disconnect();
     // Clear all stored data
     await prefs.clear();
     
@@ -109,36 +227,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildNotificationIcon({required bool hasUnreadNotifications}) {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Stack(
-        children: [
-          const Center(
-            child: Icon(
-              Icons.notifications_outlined,
-              color: AppColors.accentCyan,
-              size: 24,
-            ),
-          ),
-          if (hasUnreadNotifications)
-            Positioned(
-              top: 12,
-              right: 12,
-        child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                ),
+    return GestureDetector(
+      onTap: _clearNotifications,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Stack(
+          children: [
+            const Center(
+              child: Icon(
+                Icons.notifications_outlined,
+                color: AppColors.accentCyan,
+                size: 24,
               ),
             ),
-        ],
+            if (hasUnreadNotifications)
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -858,7 +979,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   // Content Area
                   Expanded(
                     child: RefreshIndicator(
-                      onRefresh: _loadDashboardData,
+                      onRefresh: _loadTasks,
                       child: _buildCurrentView(),
                     ),
                   ),
