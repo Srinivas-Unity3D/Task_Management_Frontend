@@ -19,6 +19,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   String? _currentUserId;
   String? _currentRole;
   bool get _isAdmin => _currentRole?.toLowerCase() == 'admin' || _currentRole?.toLowerCase() == 'super admin';
+  bool _hasUnreadNotifications = false;
 
   @override
   void initState() {
@@ -76,6 +77,41 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
     }
   }
 
+  Widget _buildNotificationIcon({required bool hasUnreadNotifications}) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: const Color(0xFF131B2E),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Stack(
+        children: [
+          const Center(
+            child: Icon(
+              Icons.notifications_outlined,
+              color: Color(0xFF7DF9FF),
+              size: 24,
+            ),
+          ),
+          if (hasUnreadNotifications)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -93,11 +129,8 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-                onPressed: () {
-                  // TODO: Implement notifications
-                },
+              _buildNotificationIcon(
+                hasUnreadNotifications: _hasUnreadNotifications,
               ),
             ],
           ),
@@ -264,18 +297,14 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
           ),
           // Edit Button
           Container(
-            width: 32,
             height: 32,
             decoration: BoxDecoration(
               color: const Color(0xFF7DF9FF),
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              icon: const Icon(
-                Icons.edit,
-                color: Color(0xFF0F172A),
-                size: 16,
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
               onPressed: () {
                 Navigator.push(
@@ -285,6 +314,19 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                   ),
                 );
               },
+              icon: const Icon(
+                Icons.edit,
+                color: Color(0xFF0F172A),
+                size: 16,
+              ),
+              label: const Text(
+                'Edit',
+                style: TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
         ],
