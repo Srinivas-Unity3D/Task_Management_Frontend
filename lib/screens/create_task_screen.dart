@@ -397,31 +397,52 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CustomTextField(
-                        controller: _titleController,
-                        label: 'Title',
-                        hint: 'Enter task title',
-                        enabled: !widget.isEditMode,
+                      // Title
+                      AbsorbPointer(
+                        absorbing: widget.isEditMode,
+                        child: Opacity(
+                          opacity: widget.isEditMode ? 0.7 : 1.0,
+                          child: CustomTextField(
+                            controller: _titleController,
+                            label: 'Title',
+                            hint: 'Enter task title',
+                            enabled: !widget.isEditMode,
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      CustomTextField(
-                        controller: _descriptionController,
-                        label: 'Description',
-                        hint: 'Enter task description',
-                        maxLines: 4,
-                        enabled: !widget.isEditMode,
+                      // Description
+                      AbsorbPointer(
+                        absorbing: widget.isEditMode,
+                        child: Opacity(
+                          opacity: widget.isEditMode ? 0.7 : 1.0,
+                          child: CustomTextField(
+                            controller: _descriptionController,
+                            label: 'Description',
+                            hint: 'Enter task description',
+                            maxLines: 4,
+                            enabled: !widget.isEditMode,
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      RoleDropdown(
-                        label: 'Assignee',
-                        hint: 'Select assignee',
-                        items: _users,
-                        value: _selectedAssignee,
-                        onChanged: widget.isEditMode ? null : (String? value) {
-                          setState(() {
-                            _selectedAssignee = value;
-                          });
-                        },
+                      // Assignee
+                      AbsorbPointer(
+                        absorbing: widget.isEditMode,
+                        child: Opacity(
+                          opacity: widget.isEditMode ? 0.7 : 1.0,
+                          child: RoleDropdown(
+                            label: 'Assignee',
+                            hint: 'Select assignee',
+                            items: _users,
+                            value: _selectedAssignee,
+                            onChanged: widget.isEditMode ? null : (String? value) {
+                              setState(() {
+                                _selectedAssignee = value;
+                              });
+                            },
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       // Priority and Due Date Row
@@ -438,12 +459,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                 setState(() {
                                   _priority = value ?? 'Low';
                                 });
-                              },
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please select priority';
-                                }
-                                return null;
                               },
                             ),
                           ),
@@ -466,7 +481,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                   onTap: () async {
                                     final date = await showDatePicker(
                                       context: context,
-                                      initialDate: DateTime.now(),
+                                      initialDate: _dueDate ?? DateTime.now(),
                                       firstDate: DateTime.now(),
                                       lastDate: DateTime.now().add(const Duration(days: 365)),
                                       builder: (context, child) {
