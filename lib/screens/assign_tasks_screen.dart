@@ -184,7 +184,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                             ),
                           )
                         : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                            padding: const EdgeInsets.all(24),
                             itemCount: _assignments.length,
                             itemBuilder: (context, index) {
                               final assignment = _assignments[index];
