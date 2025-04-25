@@ -6,7 +6,7 @@ class RoleDropdown extends StatelessWidget {
   final String hint;
   final List<String> items;
   final String? value;
-  final Function(String?) onChanged;
+  final void Function(String?)? onChanged;
   final String? Function(String?)? validator;
   final bool showError;
 
@@ -15,8 +15,8 @@ class RoleDropdown extends StatelessWidget {
     required this.label,
     required this.hint,
     required this.items,
-    required this.value,
-    required this.onChanged,
+    this.value,
+    this.onChanged,
     this.validator,
     this.showError = false,
   }) : super(key: key);
@@ -138,7 +138,7 @@ class RoleDropdown extends StatelessWidget {
                               color: Colors.transparent,
                               child: InkWell(
                                 onTap: () {
-                                  onChanged(item);
+                                  onChanged?.call(item);
                                   Navigator.pop(context);
                                 },
                                 child: Container(

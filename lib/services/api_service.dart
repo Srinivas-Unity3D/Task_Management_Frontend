@@ -3,9 +3,11 @@ import 'package:http/http.dart' as http;
 import '../models/attachment.dart';
 import '../models/task_assignment.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
 
 class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
+  final Dio _dio = Dio();
 
   Future<Map<String, dynamic>> register({
     required String username,
@@ -310,6 +312,26 @@ class ApiService {
       }
     } catch (e) {
       throw Exception('Error fetching task assignments: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> getTaskVoiceNotes(String taskId) async {
+    try {
+      final response = await _dio.get('/tasks/$taskId/voice-notes');
+      return response.data;
+    } catch (e) {
+      print('Error getting task voice notes: $e');
+      return {'success': false, 'message': 'Failed to get voice notes'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getTaskAttachments(String taskId) async {
+    try {
+      final response = await _dio.get('/tasks/$taskId/attachments');
+      return response.data;
+    } catch (e) {
+      print('Error getting task attachments: $e');
+      return {'success': false, 'message': 'Failed to get attachments'};
     }
   }
 } 

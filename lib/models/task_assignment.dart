@@ -1,23 +1,19 @@
 class TaskAssignment {
-  final String assignerId;
-  final String assignerName;
-  final String assignerRole;
-  final String assigneeId;
-  final String assigneeName;
-  final String assigneeRole;
+  final String taskId;
   final String taskName;
+  final String description;
+  final String assignerName;
+  final String assigneeName;
   final DateTime dueDate;
   final String priority;
   final String currentTask;
 
   TaskAssignment({
-    required this.assignerId,
-    required this.assignerName,
-    required this.assignerRole,
-    required this.assigneeId,
-    required this.assigneeName,
-    required this.assigneeRole,
+    required this.taskId,
     required this.taskName,
+    required this.description,
+    required this.assignerName,
+    required this.assigneeName,
     required this.dueDate,
     required this.priority,
     required this.currentTask,
@@ -25,16 +21,27 @@ class TaskAssignment {
 
   factory TaskAssignment.fromJson(Map<String, dynamic> json) {
     return TaskAssignment(
-      assignerId: json['assigner_id'],
-      assignerName: json['assigner_name'],
-      assignerRole: json['assigner_role'],
-      assigneeId: json['assignee_id'],
-      assigneeName: json['assignee_name'],
-      assigneeRole: json['assignee_role'],
+      taskId: json['task_id'],
       taskName: json['task_name'],
+      description: json['description'],
+      assignerName: json['assigner_name'],
+      assigneeName: json['assignee_name'],
       dueDate: DateTime.parse(json['due_date']),
       priority: json['priority'],
       currentTask: json['current_task'],
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'task_id': taskId,
+      'task_name': taskName,
+      'description': description,
+      'assigner_name': assignerName,
+      'assignee_name': assigneeName,
+      'due_date': dueDate.toIso8601String(),
+      'priority': priority,
+      'current_task': currentTask,
+    };
   }
 } 

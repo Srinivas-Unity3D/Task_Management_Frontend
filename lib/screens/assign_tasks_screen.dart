@@ -310,7 +310,16 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const CreateTaskScreen(),
+                    builder: (context) => CreateTaskScreen(
+                      isEditMode: true,
+                      taskId: assignment.taskId,
+                      initialTitle: assignment.taskName,
+                      initialDescription: assignment.description,
+                      initialAssignee: assignment.assigneeName,
+                      initialPriority: assignment.priority,
+                      initialDueDate: assignment.dueDate,
+                      initialStatus: assignment.currentTask,
+                    ),
                   ),
                 );
               },

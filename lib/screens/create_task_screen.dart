@@ -3,6 +3,7 @@ import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../models/task.dart';
 import '../models/attachment.dart';
+import '../models/voice_note.dart';
 import '../widgets/role_dropdown.dart';
 import '../services/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,7 +18,26 @@ import 'dart:math';
 import 'dart:async';
 
 class CreateTaskScreen extends StatefulWidget {
-  const CreateTaskScreen({Key? key}) : super(key: key);
+  final bool isEditMode;
+  final String? taskId;
+  final String? initialTitle;
+  final String? initialDescription;
+  final String? initialAssignee;
+  final String? initialPriority;
+  final DateTime? initialDueDate;
+  final String? initialStatus;
+
+  const CreateTaskScreen({
+    Key? key,
+    this.isEditMode = false,
+    this.taskId,
+    this.initialTitle,
+    this.initialDescription,
+    this.initialAssignee,
+    this.initialPriority,
+    this.initialDueDate,
+    this.initialStatus,
+  }) : super(key: key);
 
   @override
   State<CreateTaskScreen> createState() => _CreateTaskScreenState();
@@ -45,6 +65,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _isLoadingUsers = true;
   String? _currentUsername;
   bool _isLoading = false;
+  List<VoiceNote> _voiceNotes = [];
+  List<Attachment> _existingAttachments = [];
 
   final List<String> _frequencyOptions = const [
     '30 minutes',
@@ -85,6 +107,67 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _getCurrentUser();
     _setupAudioPlayer();
     _requestInitialPermissions();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    if (widget.isEditMode) {
+      _titleController.text = widget.initialTitle ?? '';
+      _descriptionController.text = widget.initialDescription ?? '';
+      _selectedAssignee = widget.initialAssignee;
+      _priority = widget.initialPriority ?? 'Low';
+      _dueDate = widget.initialDueDate;
+      _status = _parseStatus(widget.initialStatus ?? 'pending');
+      
+      // Fetch existing voice notes and attachments
+      await _fetchTaskDetails();
+    }
+  }
+
+  Future<void> _fetchTaskDetails() async {
+    try {
+      setState(() => _isLoading = true);
+      
+      // Fetch voice notes
+      final voiceNotesResponse = await _apiService.getTaskVoiceNotes(widget.taskId!);
+      if (voiceNotesResponse['success']) {
+        setState(() {
+          _voiceNotes = (voiceNotesResponse['voice_notes'] as List)
+              .map((note) => VoiceNote.fromJson(note))
+              .toList();
+        });
+      }
+
+      // Fetch attachments
+      final attachmentsResponse = await _apiService.getTaskAttachments(widget.taskId!);
+      if (attachmentsResponse['success']) {
+        setState(() {
+          _existingAttachments = (attachmentsResponse['attachments'] as List)
+              .map((attachment) => Attachment.fromJson(attachment))
+              .toList();
+        });
+      }
+
+      setState(() => _isLoading = false);
+    } catch (e) {
+      print('Error fetching task details: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  TaskStatus _parseStatus(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return TaskStatus.pending;
+      case 'in_progress':
+        return TaskStatus.inProgress;
+      case 'completed':
+        return TaskStatus.completed;
+      case 'snoozed':
+        return TaskStatus.snoozed;
+      default:
+        return TaskStatus.pending;
+    }
   }
 
   void _setupAudioPlayer() {
@@ -284,584 +367,574 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: (!_isRecording && !_isPlaying) 
-              ? const AlwaysScrollableScrollPhysics() 
-              : const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Create New Task',
-                  style: TextStyle(
-                    color: Color(0xFF7DF9FF),
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'Inter',
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Task Title
-                CustomTextField(
-                  label: 'Task Title',
-                  controller: _titleController,
-                  hint: 'Enter task title',
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter a task title';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                // Description
-                CustomTextField(
-                  label: 'Description',
-                  controller: _descriptionController,
-                  hint: 'Enter task description',
-                  maxLines: 4,
-                ),
-                const SizedBox(height: 16),
-                // Assignee Dropdown
-                _isLoadingUsers
-                    ? const Center(
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.accentCyan),
-                        ),
-                      )
-                    : RoleDropdown(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Text(
+          widget.isEditMode ? 'Edit Task' : 'Create Task',
+          style: const TextStyle(
+            color: Color(0xFF7DF9FF),
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+              ),
+            )
+          : SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CustomTextField(
+                        controller: _titleController,
+                        label: 'Title',
+                        hint: 'Enter task title',
+                        enabled: !widget.isEditMode,
+                      ),
+                      const SizedBox(height: 16),
+                      CustomTextField(
+                        controller: _descriptionController,
+                        label: 'Description',
+                        hint: 'Enter task description',
+                        maxLines: 4,
+                        enabled: !widget.isEditMode,
+                      ),
+                      const SizedBox(height: 16),
+                      RoleDropdown(
                         label: 'Assignee',
                         hint: 'Select assignee',
                         items: _users,
                         value: _selectedAssignee,
-                        onChanged: (value) {
+                        onChanged: widget.isEditMode ? null : (String? value) {
                           setState(() {
                             _selectedAssignee = value;
                           });
                         },
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please select an assignee';
-                          }
-                          return null;
-                        },
                       ),
-                const SizedBox(height: 16),
-                // Priority and Due Date Row
-                Row(
-                  children: [
-                    // Priority
-                    Expanded(
-                      child: RoleDropdown(
-                        label: 'Priority',
-                        hint: 'Select priority',
-                        items: _priorityOptions,
-                        value: _priority,
-                        onChanged: (value) {
-                          setState(() {
-                            _priority = value ?? 'Low';
-                          });
-                        },
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please select priority';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // Due Date
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      const SizedBox(height: 16),
+                      // Priority and Due Date Row
+                      Row(
                         children: [
-                          const Text(
-                            'Due Date',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
+                          // Priority
+                          Expanded(
+                            child: RoleDropdown(
+                              label: 'Priority',
+                              hint: 'Select priority',
+                              items: _priorityOptions,
+                              value: _priority,
+                              onChanged: (value) {
+                                setState(() {
+                                  _priority = value ?? 'Low';
+                                });
+                              },
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please select priority';
+                                }
+                                return null;
+                              },
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          GestureDetector(
-                            onTap: () async {
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: DateTime.now(),
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now().add(const Duration(days: 365)),
-                                builder: (context, child) {
-                                  return Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: const ColorScheme.dark(
-                                        primary: Color(0xFF7DF9FF),
-                                        surface: Color(0xFF0D1526),
-                                      ),
+                          const SizedBox(width: 16),
+                          // Due Date
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Due Date',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                GestureDetector(
+                                  onTap: () async {
+                                    final date = await showDatePicker(
+                                      context: context,
+                                      initialDate: DateTime.now(),
+                                      firstDate: DateTime.now(),
+                                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                                      builder: (context, child) {
+                                        return Theme(
+                                          data: Theme.of(context).copyWith(
+                                            colorScheme: const ColorScheme.dark(
+                                              primary: Color(0xFF7DF9FF),
+                                              surface: Color(0xFF0D1526),
+                                            ),
+                                          ),
+                                          child: child!,
+                                        );
+                                      },
+                                    );
+                                    if (date != null) {
+                                      setState(() {
+                                        _dueDate = date;
+                                      });
+                                    }
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0D1526),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFF1E293B)),
                                     ),
-                                    child: child!,
-                                  );
-                                },
-                              );
-                              if (date != null) {
-                                setState(() {
-                                  _dueDate = date;
-                                });
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0D1526),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFF1E293B)),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    _dueDate != null
-                                        ? '${_dueDate!.day}/${_dueDate!.month}/${_dueDate!.year}'
-                                        : 'dd/mm/yyyy',
-                                    style: TextStyle(
-                                      color: _dueDate != null ? Colors.white : const Color(0xFF94A3B8),
-                                      fontSize: 14,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          _dueDate != null
+                                              ? '${_dueDate!.day}/${_dueDate!.month}/${_dueDate!.year}'
+                                              : 'dd/mm/yyyy',
+                                          style: TextStyle(
+                                            color: _dueDate != null ? Colors.white : const Color(0xFF94A3B8),
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
+                                      ],
                                     ),
                                   ),
-                                  const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // Status
+                      const Text(
+                        'Status',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _buildStatusButton(TaskStatus.pending, 'Pending'),
+                          const SizedBox(width: 12),
+                          _buildStatusButton(TaskStatus.inProgress, 'In Progress'),
+                          const SizedBox(width: 12),
+                          _buildStatusButton(TaskStatus.completed, 'Completed'),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // Alarm Section
+                      const Text(
+                        'Alarm Settings',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Start Date
+                      GestureDetector(
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: _alarmStartDate ?? DateTime.now(),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                            builder: (context, child) {
+                              return Theme(
+                                data: Theme.of(context).copyWith(
+                                  colorScheme: const ColorScheme.dark(
+                                    primary: Color(0xFF7DF9FF),
+                                    surface: Color(0xFF0D1526),
+                                  ),
+                                ),
+                                child: child!,
+                              );
+                            },
+                          );
+                          if (date != null) {
+                            setState(() {
+                              _alarmStartDate = date;
+                            });
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0D1526),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF1E293B)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _alarmStartDate != null
+                                    ? '${_alarmStartDate!.day}/${_alarmStartDate!.month}/${_alarmStartDate!.year}'
+                                    : 'Select Start Date',
+                                style: TextStyle(
+                                  color: _alarmStartDate != null ? Colors.white : const Color(0xFF94A3B8),
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Start Time
+                      GestureDetector(
+                        onTap: () async {
+                          final time = await showTimePicker(
+                            context: context,
+                            initialTime: _alarmStartTime ?? TimeOfDay.now(),
+                            builder: (context, child) {
+                              return Theme(
+                                data: Theme.of(context).copyWith(
+                                  colorScheme: const ColorScheme.dark(
+                                    primary: Color(0xFF7DF9FF),
+                                    surface: Color(0xFF0D1526),
+                                  ),
+                                ),
+                                child: child!,
+                              );
+                            },
+                          );
+                          if (time != null) {
+                            setState(() {
+                              _alarmStartTime = time;
+                            });
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0D1526),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF1E293B)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _alarmStartTime != null
+                                    ? '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}'
+                                    : 'Select Start Time',
+                                style: TextStyle(
+                                  color: _alarmStartTime != null ? Colors.white : const Color(0xFF94A3B8),
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const Icon(Icons.access_time, color: Color(0xFF94A3B8), size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Frequency Dropdown
+                      RoleDropdown(
+                        label: 'Frequency',
+                        hint: 'Select frequency',
+                        items: _frequencyOptions,
+                        value: _alarmFrequency,
+                        onChanged: (value) {
+                          setState(() {
+                            _alarmFrequency = value ?? '30 minutes';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // Voice Notes
+                      const Text(
+                        'Voice Notes',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.inputBackground,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.borderColor),
+                        ),
+                        child: Column(
+                          children: [
+                            // Record Button
+                            ElevatedButton.icon(
+                              onPressed: _isPlaying ? null : (_isRecording ? _stopRecording : _startRecording),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _isRecording ? Colors.red : AppColors.accentCyan,
+                                foregroundColor: AppColors.background,
+                                minimumSize: const Size(double.infinity, 48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              icon: Icon(_isRecording ? Icons.stop : Icons.mic),
+                              label: Text(
+                                _isRecording ? 'Stop Recording' : 'Start Recording',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            if (_isRecording || _isPlaying) ...[
+                              const SizedBox(height: 16),
+                              // Timeline indicator
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.background,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      _isRecording 
+                                        ? 'Recording: ${_formatDuration(_recordingDuration)}'
+                                        : 'Playing: ${_formatDuration(_playbackPosition)} / ${_formatDuration(_totalDuration)}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    if (_isPlaying && _totalDuration.inSeconds > 0) ...[
+                                      const SizedBox(height: 8),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: LinearProgressIndicator(
+                                          value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
+                                          backgroundColor: AppColors.borderColor,
+                                          valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accentCyan),
+                                          minHeight: 4,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                            if (_recordedFilePath != null && !_isRecording) ...[
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: _isRecording ? null : _playRecording,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.accentCyan,
+                                        foregroundColor: AppColors.background,
+                                        minimumSize: const Size(double.infinity, 48),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                      icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
+                                      label: Text(
+                                        _isPlaying ? 'Stop Playing' : 'Play Recording',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  if (!_isPlaying) ...[
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      onPressed: _deleteRecording,
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      tooltip: 'Delete Recording',
+                                    ),
+                                  ],
                                 ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Attachments
+                      const Text(
+                        'Attachments',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.inputBackground,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.borderColor),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            GestureDetector(
+                              onTap: _isUploadingFiles ? null : _pickFiles,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: _isUploadingFiles ? AppColors.borderColor : AppColors.background,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppColors.borderColor),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.add,
+                                      color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _isUploadingFiles ? 'Uploading...' : 'Choose files...',
+                                      style: TextStyle(
+                                        color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (_selectedFiles.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              Column(
+                                children: List.generate(_selectedFiles.length, (index) {
+                                  final file = _selectedFiles[index];
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.background,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: AppColors.borderColor),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          _getFileIcon(file.extension),
+                                          style: const TextStyle(fontSize: 20),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                file.name,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 14,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Text(
+                                                '${(file.size / 1024).toStringAsFixed(2)} KB',
+                                                style: TextStyle(
+                                                  color: Colors.grey[400],
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                                          onPressed: () => _removeFile(index),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      // Action Buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                backgroundColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: TextButton(
+                              onPressed: _handleCreateTask,
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                backgroundColor: const Color(0xFF7DF9FF),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: Text(
+                                widget.isEditMode ? 'Save' : 'Create Task',
+                                style: const TextStyle(
+                                  color: Color(0xFF0F172A),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Status
-                const Text(
-                  'Status',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _buildStatusButton(TaskStatus.pending, 'Pending'),
-                    const SizedBox(width: 12),
-                    _buildStatusButton(TaskStatus.inProgress, 'In Progress'),
-                    const SizedBox(width: 12),
-                    _buildStatusButton(TaskStatus.completed, 'Completed'),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Alarm Section
-                const Text(
-                  'Alarm Settings',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Start Date
-                GestureDetector(
-                  onTap: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: _alarmStartDate ?? DateTime.now(),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                      builder: (context, child) {
-                        return Theme(
-                          data: Theme.of(context).copyWith(
-                            colorScheme: const ColorScheme.dark(
-                              primary: Color(0xFF7DF9FF),
-                              surface: Color(0xFF0D1526),
-                            ),
-                          ),
-                          child: child!,
-                        );
-                      },
-                    );
-                    if (date != null) {
-                      setState(() {
-                        _alarmStartDate = date;
-                      });
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0D1526),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF1E293B)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          _alarmStartDate != null
-                              ? '${_alarmStartDate!.day}/${_alarmStartDate!.month}/${_alarmStartDate!.year}'
-                              : 'Select Start Date',
-                          style: TextStyle(
-                            color: _alarmStartDate != null ? Colors.white : const Color(0xFF94A3B8),
-                            fontSize: 14,
-                          ),
-                        ),
-                        const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Start Time
-                GestureDetector(
-                  onTap: () async {
-                    final time = await showTimePicker(
-                      context: context,
-                      initialTime: _alarmStartTime ?? TimeOfDay.now(),
-                      builder: (context, child) {
-                        return Theme(
-                          data: Theme.of(context).copyWith(
-                            colorScheme: const ColorScheme.dark(
-                              primary: Color(0xFF7DF9FF),
-                              surface: Color(0xFF0D1526),
-                            ),
-                          ),
-                          child: child!,
-                        );
-                      },
-                    );
-                    if (time != null) {
-                      setState(() {
-                        _alarmStartTime = time;
-                      });
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0D1526),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF1E293B)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          _alarmStartTime != null
-                              ? '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}'
-                              : 'Select Start Time',
-                          style: TextStyle(
-                            color: _alarmStartTime != null ? Colors.white : const Color(0xFF94A3B8),
-                            fontSize: 14,
-                          ),
-                        ),
-                        const Icon(Icons.access_time, color: Color(0xFF94A3B8), size: 16),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Frequency Dropdown
-                RoleDropdown(
-                  label: 'Frequency',
-                  hint: 'Select frequency',
-                  items: _frequencyOptions,
-                  value: _alarmFrequency,
-                  onChanged: (value) {
-                    setState(() {
-                      _alarmFrequency = value ?? '30 minutes';
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                // Voice Notes
-                const Text(
-                  'Voice Notes',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.inputBackground,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.borderColor),
-                  ),
-                  child: Column(
-                    children: [
-                      // Record Button
-                      ElevatedButton.icon(
-                        onPressed: _isPlaying ? null : (_isRecording ? _stopRecording : _startRecording),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _isRecording ? Colors.red : AppColors.accentCyan,
-                          foregroundColor: AppColors.background,
-                          minimumSize: const Size(double.infinity, 48),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        icon: Icon(_isRecording ? Icons.stop : Icons.mic),
-                        label: Text(
-                          _isRecording ? 'Stop Recording' : 'Start Recording',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      if (_isRecording || _isPlaying) ...[
-                        const SizedBox(height: 16),
-                        // Timeline indicator
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppColors.background,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Column(
-                            children: [
-                              Text(
-                                _isRecording 
-                                  ? 'Recording: ${_formatDuration(_recordingDuration)}'
-                                  : 'Playing: ${_formatDuration(_playbackPosition)} / ${_formatDuration(_totalDuration)}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                              if (_isPlaying && _totalDuration.inSeconds > 0) ...[
-                                const SizedBox(height: 8),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
-                                    backgroundColor: AppColors.borderColor,
-                                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accentCyan),
-                                    minHeight: 4,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                      if (_recordedFilePath != null && !_isRecording) ...[
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _isRecording ? null : _playRecording,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.accentCyan,
-                                  foregroundColor: AppColors.background,
-                                  minimumSize: const Size(double.infinity, 48),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                                icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
-                                label: Text(
-                                  _isPlaying ? 'Stop Playing' : 'Play Recording',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (!_isPlaying) ...[
-                              const SizedBox(width: 8),
-                              IconButton(
-                                onPressed: _deleteRecording,
-                                icon: const Icon(Icons.delete, color: Colors.red),
-                                tooltip: 'Delete Recording',
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                // Attachments
-                const Text(
-                  'Attachments',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.inputBackground,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.borderColor),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      GestureDetector(
-                        onTap: _isUploadingFiles ? null : _pickFiles,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: _isUploadingFiles ? AppColors.borderColor : AppColors.background,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.borderColor),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.add,
-                                color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _isUploadingFiles ? 'Uploading...' : 'Choose files...',
-                                style: TextStyle(
-                                  color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (_selectedFiles.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        Column(
-                          children: List.generate(_selectedFiles.length, (index) {
-                            final file = _selectedFiles[index];
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: AppColors.background,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppColors.borderColor),
-                              ),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    _getFileIcon(file.extension),
-                                    style: const TextStyle(fontSize: 20),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          file.name,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        Text(
-                                          '${(file.size / 1024).toStringAsFixed(2)} KB',
-                                          style: TextStyle(
-                                            color: Colors.grey[400],
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.close, color: Colors.red, size: 20),
-                                    onPressed: () => _removeFile(index),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 32),
-                // Action Buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: _handleCreateTask,
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: const Color(0xFF7DF9FF),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text(
-                          'Create Task',
-                          style: TextStyle(
-                            color: Color(0xFF0F172A),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
-      ),
     );
   }
 

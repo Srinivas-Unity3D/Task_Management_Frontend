@@ -14,6 +14,7 @@ class CustomTextField extends StatefulWidget {
   final bool showError;
   final Function(String)? onChanged;
   final int? maxLines;
+  final bool enabled;
 
   const CustomTextField({
     Key? key,
@@ -28,6 +29,7 @@ class CustomTextField extends StatefulWidget {
     this.showError = false,
     this.onChanged,
     this.maxLines = 1,
+    this.enabled = true,
   }) : super(key: key);
 
   @override
