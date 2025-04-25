@@ -880,8 +880,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   fontFamily: 'Inter',
                 ),
               ),
-              _buildNotificationIcon(
-                hasUnreadNotifications: _hasUnreadNotifications,
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CreateTaskScreen(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.cardBackground,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add,
+                          color: AppColors.accentCyan,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _buildNotificationIcon(
+                    hasUnreadNotifications: _hasUnreadNotifications,
+                  ),
+                ],
               ),
             ],
           ),
@@ -894,69 +924,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color: const Color(0xFF131B2E),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Column(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
                 children: [
-                  // Fixed plus button section
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const CreateTaskScreen(),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF7DF9FF),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.add,
-                            color: Color(0xFF0F172A),
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
+                  _buildTeamMemberItem(
+                    name: 'Ayan',
+                    role: 'Developer',
+                    currentTask: 'Website Redesign',
+                    onAssign: () {
+                      _showAssignTaskDialog('Ayan');
+                    },
                   ),
-                  // Scrollable content
-                  Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      children: [
-                        _buildTeamMemberItem(
-                          name: 'Ayan',
-                          role: 'Developer',
-                          currentTask: 'Website Redesign',
-                          onAssign: () {
-                            _showAssignTaskDialog('Ayan');
-                          },
-                        ),
-                        _buildTeamMemberItem(
-                          name: 'Azim',
-                          role: 'Admin',
-                          currentTask: 'API Integration',
-                          onAssign: () {
-                            _showAssignTaskDialog('Azim');
-                          },
-                        ),
-                        _buildTeamMemberItem(
-                          name: 'Durga',
-                          role: 'Product Manager',
-                          currentTask: 'User Research',
-                          onAssign: () {
-                            _showAssignTaskDialog('Durga');
-                          },
-                        ),
-                      ],
-                    ),
+                  _buildTeamMemberItem(
+                    name: 'Azim',
+                    role: 'Admin',
+                    currentTask: 'API Integration',
+                    onAssign: () {
+                      _showAssignTaskDialog('Azim');
+                    },
+                  ),
+                  _buildTeamMemberItem(
+                    name: 'Durga',
+                    role: 'Product Manager',
+                    currentTask: 'User Research',
+                    onAssign: () {
+                      _showAssignTaskDialog('Durga');
+                    },
                   ),
                 ],
               ),

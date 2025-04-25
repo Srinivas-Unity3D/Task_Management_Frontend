@@ -129,8 +129,38 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              _buildNotificationIcon(
-                hasUnreadNotifications: _hasUnreadNotifications,
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CreateTaskScreen(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF131B2E),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add,
+                          color: Color(0xFF7DF9FF),
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _buildNotificationIcon(
+                    hasUnreadNotifications: _hasUnreadNotifications,
+                  ),
+                ],
               ),
             ],
           ),
@@ -145,36 +175,6 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
               ),
               child: Column(
                 children: [
-                  // Add button section
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const CreateTaskScreen(),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF7DF9FF),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.add,
-                            color: Color(0xFF0F172A),
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                   // Task assignments list
                   Expanded(
                     child: _isLoading
