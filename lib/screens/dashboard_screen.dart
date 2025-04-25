@@ -18,6 +18,7 @@ import '../screens/create_task_screen.dart';
 import '../screens/assign_tasks_screen.dart';
 import '../services/socket_service.dart';
 import '../widgets/common_notification_icon.dart';
+import '../services/audio_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -30,6 +31,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ApiService _apiService = ApiService();
   final _socketService = SocketService();
+  final _audioService = AudioService();
   late User _user;
   TaskStats? _taskStats;
   bool _isLoading = true;
@@ -40,7 +42,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserAndSetupSocket();
+    _initializeServices();
   }
 
   @override
@@ -48,7 +50,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Remove socket listeners when disposing
     _socketService.removeTaskNotificationListener(_handleTaskNotification);
     _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
+    _audioService.dispose();
     super.dispose();
+  }
+
+  Future<void> _initializeServices() async {
+    try {
+      print('🔄 Dashboard - Initializing services...');
+      await _audioService.initialize();
+      print('🔄 Dashboard - Audio service initialized');
+      await _loadUserAndSetupSocket();
+      print('🔄 Dashboard - Socket service initialized');
+    } catch (e) {
+      print('🔄 Dashboard - Error initializing services: $e');
+    }
   }
 
   Future<void> _loadUserAndSetupSocket() async {
@@ -74,6 +89,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _socketService.listenToDashboardUpdates(_handleDashboardUpdate);
   }
 
+  void _playNotificationSound() async {
+    try {
+      print('🔔 Dashboard - Playing notification sound...');
+      await _audioService.playNotificationSound();
+      await HapticFeedback.mediumImpact();
+      print('🔔 Dashboard - Notification sound and haptic feedback completed');
+    } catch (e) {
+      print('🔔 Dashboard - Error playing notification: $e');
+    }
+  }
+
   void _handleTaskNotification(dynamic data) {
     if (mounted) {
       // Check if the current user is the creator/updater
@@ -87,8 +113,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
         
         // Play notification sound and vibrate
-        SystemSound.play(SystemSoundType.alert);
-        HapticFeedback.vibrate();
+        _playNotificationSound();
         
         // Show notification for new tasks or updates
         if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
@@ -113,8 +138,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
         
         // Play notification sound and vibrate
-        SystemSound.play(SystemSoundType.alert);
-        HapticFeedback.vibrate();
+        _playNotificationSound();
       }
       // Always refresh the task list
       _loadTasks();
