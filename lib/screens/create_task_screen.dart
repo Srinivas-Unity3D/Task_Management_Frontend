@@ -306,18 +306,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                 ),
                 const SizedBox(height: 24),
                 // Task Title
-                const Text(
-                  'Task Title',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
                 CustomTextField(
-                  controller: _titleController,
                   label: 'Task Title',
+                  controller: _titleController,
                   hint: 'Enter task title',
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -328,32 +319,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                 ),
                 const SizedBox(height: 16),
                 // Description
-                const Text(
-                  'Description',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
                 CustomTextField(
-                  controller: _descriptionController,
                   label: 'Description',
+                  controller: _descriptionController,
                   hint: 'Enter task description',
                   maxLines: 4,
                 ),
                 const SizedBox(height: 16),
                 // Assignee Dropdown
-                const Text(
-                  'Assignee',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
                 _isLoadingUsers
                     ? const Center(
                         child: CircularProgressIndicator(
