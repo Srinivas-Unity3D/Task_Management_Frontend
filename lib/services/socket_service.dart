@@ -1,5 +1,6 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
+import 'notification_service.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
@@ -9,6 +10,7 @@ class SocketService {
   String? _serverUrl;
   final List<Function(dynamic)> _taskNotificationListeners = [];
   final List<Function(dynamic)> _dashboardUpdateListeners = [];
+  final _notificationService = NotificationService();
 
   // Singleton pattern
   factory SocketService() {
@@ -17,10 +19,10 @@ class SocketService {
 
   SocketService._internal();
 
-  void init(String serverUrl) {
+  void init(String serverUrl) async {
     print('🔌 Initializing socket service with URL: $serverUrl');
     _serverUrl = serverUrl;
-    // Don't connect immediately, wait for login
+    await _notificationService.initialize();
   }
 
   void connect(String username) {
@@ -98,8 +100,12 @@ class SocketService {
       print('🔌 Received register response: $data');
     });
 
-    _socket!.on('task_notification', (data) {
+    _socket!.on('task_notification', (data) async {
       print('📨 Received task notification: $data');
+      
+      // Play sound and vibrate for notifications
+      await _notificationService.handleNewNotification();
+      
       print('📨 Number of task notification listeners: ${_taskNotificationListeners.length}');
       for (var listener in _taskNotificationListeners) {
         try {

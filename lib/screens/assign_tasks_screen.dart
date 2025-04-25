@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/task_assignment.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
+import '../services/socket_service.dart';
 import '../theme/colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import './create_task_screen.dart';
@@ -15,6 +17,8 @@ class AssignTasksScreen extends StatefulWidget {
 
 class _AssignTasksScreenState extends State<AssignTasksScreen> {
   final _apiService = ApiService();
+  final _socketService = SocketService();
+  final _notificationService = NotificationService();
   List<TaskAssignment> _assignments = [];
   bool _isLoading = true;
   String? _currentUserId;
@@ -25,7 +29,30 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   @override
   void initState() {
     super.initState();
+    _initializeServices();
     _loadUserAndAssignments();
+  }
+
+  Future<void> _initializeServices() async {
+    await _notificationService.initialize();
+    _socketService.listenToTaskNotifications(_handleNewNotification);
+  }
+
+  @override
+  void dispose() {
+    _socketService.removeTaskNotificationListener(_handleNewNotification);
+    super.dispose();
+  }
+
+  void _handleNewNotification(dynamic data) async {
+    if (mounted) {
+      setState(() {
+        _hasUnreadNotifications = true;
+      });
+      
+      // Play sound and vibrate
+      await _notificationService.handleNewNotification();
+    }
   }
 
   Future<void> _loadUserAndAssignments() async {
@@ -81,6 +108,9 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   Widget _buildNotificationIcon({required bool hasUnreadNotifications}) {
     return GestureDetector(
       onTap: () {
+        setState(() {
+          _hasUnreadNotifications = false; // Reset notification indicator when opening notifications
+        });
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const NotificationScreen()),
