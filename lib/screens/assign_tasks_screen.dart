@@ -201,7 +201,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                     Text(
                       assignment.assignerName,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: Color(0xFF7DF9FF),
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -216,7 +216,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                     Text(
                       assignment.assigneeName,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: Color(0xFFFFB86B),
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -224,19 +224,34 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                // Task Name
-                Text(
-                  assignment.taskName,
-                  style: const TextStyle(
-                    color: Color(0xFF7DF9FF),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+                // Task Name with Priority Dot
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: _getPriorityColor(assignment.priority),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        assignment.taskName,
+                        style: const TextStyle(
+                          color: Color(0xFF7DF9FF),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
-                // Due Date with priority color
+                // Due Date
                 Text(
                   'Due: ${assignment.dueDate.toString().split(' ')[0]}',
                   style: TextStyle(
