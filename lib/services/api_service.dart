@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../models/attachment.dart';
 
 class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
@@ -23,7 +24,7 @@ class ApiService {
       print(requestBody);
 
       final response = await http.post(
-        Uri.parse('$baseUrl/signup'),  // Changed from /register to /signup
+        Uri.parse('$baseUrl/signup'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -162,25 +163,35 @@ class ApiService {
     required String priority,
     required String status,
     String? audioNote,
+    List<TaskAttachment>? attachments,
   }) async {
     try {
+      print('Creating task with data:');
+      final requestBody = {
+        'title': title,
+        'description': description,
+        'assigned_to': assignedTo,
+        'assigned_by': assignedBy,
+        'deadline': deadline,
+        'priority': priority,
+        'status': status,
+        if (audioNote != null) 'audio_note': audioNote,
+        if (attachments != null && attachments.isNotEmpty)
+          'attachments': attachments.map((a) => a.toJson()).toList(),
+      };
+      print(requestBody);
+
       final response = await http.post(
         Uri.parse('$baseUrl/create_task'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: json.encode({
-          'title': title,
-          'description': description,
-          'assigned_to': assignedTo,
-          'assigned_by': assignedBy,
-          'deadline': deadline,
-          'priority': priority,
-          'status': status,
-          if (audioNote != null) 'audio_note': audioNote,
-        }),
+        body: json.encode(requestBody),
       );
+
+      print('Response status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
 
       final data = json.decode(response.body);
       
@@ -198,6 +209,68 @@ class ApiService {
       }
     } catch (e) {
       print('Error creating task: $e');
+      return {
+        'success': false,
+        'message': 'Connection error. Please try again.',
+      };
+    }
+  }
+
+  // Add method to download attachment
+  Future<Map<String, dynamic>> getAttachment(String attachmentId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/attachments/$attachmentId'),
+        headers: {
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to download attachment',
+        };
+      }
+    } catch (e) {
+      print('Error downloading attachment: $e');
+      return {
+        'success': false,
+        'message': 'Connection error. Please try again.',
+      };
+    }
+  }
+
+  // Add method to get audio note
+  Future<Map<String, dynamic>> getAudioNote(String taskId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/tasks/$taskId/audio'),
+        headers: {
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to download audio note',
+        };
+      }
+    } catch (e) {
+      print('Error downloading audio note: $e');
       return {
         'success': false,
         'message': 'Connection error. Please try again.',
