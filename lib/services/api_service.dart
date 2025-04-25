@@ -163,7 +163,8 @@ class ApiService {
     required String priority,
     required String status,
     String? audioNote,
-    List<TaskAttachment>? attachments,
+    List<String>? attachments,
+    Map<String, dynamic>? alarmSettings,
   }) async {
     try {
       print('Creating task with data:');
@@ -175,9 +176,13 @@ class ApiService {
         'deadline': deadline,
         'priority': priority,
         'status': status,
-        if (audioNote != null) 'audio_note': audioNote,
+        if (audioNote != null) 'audio_note': {
+          'audio_data': audioNote,
+          'duration': 0, // Add duration if available
+        },
         if (attachments != null && attachments.isNotEmpty)
-          'attachments': attachments.map((a) => a.toJson()).toList(),
+          'attachments': attachments,
+        if (alarmSettings != null) 'alarm_settings': alarmSettings,
       };
       print(requestBody);
 
@@ -193,25 +198,26 @@ class ApiService {
       print('Response status code: ${response.statusCode}');
       print('Response body: ${response.body}');
 
-      final data = json.decode(response.body);
-      
-      if (response.statusCode == 201) {  // API returns 201 for successful creation
+      final responseData = json.decode(response.body);
+      if (response.statusCode == 201) {
         return {
           'success': true,
-          'message': data['message'] ?? 'Task created successfully',
-          'task_id': data['task_id'],
+          'message': responseData['message'] ?? 'Task created successfully',
+          'statusCode': response.statusCode,
         };
       } else {
         return {
           'success': false,
-          'message': data['message'] ?? 'Failed to create task',
+          'message': responseData['message'] ?? 'Failed to create task',
+          'statusCode': response.statusCode,
         };
       }
     } catch (e) {
       print('Error creating task: $e');
       return {
         'success': false,
-        'message': 'Connection error. Please try again.',
+        'message': 'Error creating task: $e',
+        'statusCode': 500,
       };
     }
   }

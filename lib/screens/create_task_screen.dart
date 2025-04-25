@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../models/task.dart';
+import '../models/attachment.dart';
 import '../widgets/role_dropdown.dart';
 import '../services/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -43,6 +44,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   List<String> _users = [];
   bool _isLoadingUsers = true;
   String? _currentUsername;
+  bool _isLoading = false;
 
   final List<String> _frequencyOptions = const [
     '30 minutes',
@@ -469,172 +471,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                // Alarm Section
-                const Text(
-                  'Alarm',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Alarm Start Date and Time
-                Row(
-                  children: [
-                    // Start Date
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Start Date',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          GestureDetector(
-                            onTap: () async {
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: DateTime.now(),
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now().add(const Duration(days: 365)),
-                                builder: (context, child) {
-                                  return Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: const ColorScheme.dark(
-                                        primary: Color(0xFF7DF9FF),
-                                        surface: Color(0xFF0D1526),
-                                      ),
-                                    ),
-                                    child: child!,
-                                  );
-                                },
-                              );
-                              if (date != null) {
-                                setState(() {
-                                  _alarmStartDate = date;
-                                });
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0D1526),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFF1E293B)),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    _alarmStartDate != null
-                                        ? '${_alarmStartDate!.day}/${_alarmStartDate!.month}/${_alarmStartDate!.year}'
-                                        : 'Select date',
-                                    style: TextStyle(
-                                      color: _alarmStartDate != null ? Colors.white : const Color(0xFF94A3B8),
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // Start Time
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Start Time',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          GestureDetector(
-                            onTap: () async {
-                              final time = await showTimePicker(
-                                context: context,
-                                initialTime: TimeOfDay.now(),
-                                builder: (context, child) {
-                                  return Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: const ColorScheme.dark(
-                                        primary: Color(0xFF7DF9FF),
-                                        surface: Color(0xFF0D1526),
-                                      ),
-                                    ),
-                                    child: child!,
-                                  );
-                                },
-                              );
-                              if (time != null) {
-                                setState(() {
-                                  _alarmStartTime = time;
-                                });
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0D1526),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFF1E293B)),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    _alarmStartTime != null
-                                        ? _alarmStartTime!.format(context)
-                                        : 'Select time',
-                                    style: TextStyle(
-                                      color: _alarmStartTime != null ? Colors.white : const Color(0xFF94A3B8),
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  const Icon(Icons.access_time, color: Color(0xFF94A3B8), size: 16),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Alarm Frequency
-                RoleDropdown(
-                  label: 'Frequency',
-                  hint: 'Select frequency',
-                  items: _frequencyOptions,
-                  value: _alarmFrequency,
-                  onChanged: (value) {
-                    setState(() {
-                      _alarmFrequency = value ?? '30 minutes';
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please select a frequency';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
                 // Status
                 const Text(
                   'Status',
@@ -653,6 +489,129 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                     const SizedBox(width: 12),
                     _buildStatusButton(TaskStatus.completed, 'Completed'),
                   ],
+                ),
+                const SizedBox(height: 16),
+                // Alarm Section
+                const Text(
+                  'Alarm Settings',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Start Date
+                GestureDetector(
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: _alarmStartDate ?? DateTime.now(),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      builder: (context, child) {
+                        return Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: const ColorScheme.dark(
+                              primary: Color(0xFF7DF9FF),
+                              surface: Color(0xFF0D1526),
+                            ),
+                          ),
+                          child: child!,
+                        );
+                      },
+                    );
+                    if (date != null) {
+                      setState(() {
+                        _alarmStartDate = date;
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D1526),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF1E293B)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _alarmStartDate != null
+                              ? '${_alarmStartDate!.day}/${_alarmStartDate!.month}/${_alarmStartDate!.year}'
+                              : 'Select Start Date',
+                          style: TextStyle(
+                            color: _alarmStartDate != null ? Colors.white : const Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                        ),
+                        const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Start Time
+                GestureDetector(
+                  onTap: () async {
+                    final time = await showTimePicker(
+                      context: context,
+                      initialTime: _alarmStartTime ?? TimeOfDay.now(),
+                      builder: (context, child) {
+                        return Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: const ColorScheme.dark(
+                              primary: Color(0xFF7DF9FF),
+                              surface: Color(0xFF0D1526),
+                            ),
+                          ),
+                          child: child!,
+                        );
+                      },
+                    );
+                    if (time != null) {
+                      setState(() {
+                        _alarmStartTime = time;
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D1526),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF1E293B)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _alarmStartTime != null
+                              ? '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}'
+                              : 'Select Start Time',
+                          style: TextStyle(
+                            color: _alarmStartTime != null ? Colors.white : const Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                        ),
+                        const Icon(Icons.access_time, color: Color(0xFF94A3B8), size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Frequency Dropdown
+                RoleDropdown(
+                  label: 'Frequency',
+                  hint: 'Select frequency',
+                  items: _frequencyOptions,
+                  value: _alarmFrequency,
+                  onChanged: (value) {
+                    setState(() {
+                      _alarmFrequency = value ?? '30 minutes';
+                    });
+                  },
                 ),
                 const SizedBox(height: 16),
                 // Voice Notes
@@ -966,16 +925,36 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     );
   }
 
-  void _handleCreateTask() async {
-    if (_formKey.currentState?.validate() ?? false) {
+  Future<void> _handleCreateTask() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+      });
+
       try {
         String? audioBase64;
+        List<String> attachments = [];
+
         if (_recordedFilePath != null) {
-          final file = File(_recordedFilePath!);
-          if (await file.exists()) {
-            final bytes = await file.readAsBytes();
-            audioBase64 = base64Encode(bytes);
+          final bytes = await File(_recordedFilePath!).readAsBytes();
+          audioBase64 = base64Encode(bytes);
+        }
+
+        if (_selectedFiles.isNotEmpty) {
+          for (PlatformFile file in _selectedFiles) {
+            final bytes = await file.bytes!.toList();
+            attachments.add(base64Encode(bytes));
           }
+        }
+
+        // Create alarm settings map only if all required alarm fields are present
+        Map<String, dynamic>? alarmSettings;
+        if (_alarmStartDate != null && _alarmStartTime != null) {
+          alarmSettings = {
+            'start_date': _alarmStartDate!.toIso8601String().split('T')[0],
+            'start_time': '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}:00',
+            'frequency': _alarmFrequency,
+          };
         }
 
         final response = await _apiService.createTask(
@@ -987,14 +966,36 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           priority: _priority.toLowerCase(),
           status: _status.toString().split('.').last,
           audioNote: audioBase64,
+          attachments: attachments,
+          alarmSettings: alarmSettings,
         );
 
-        if (response['success']) {
-          Navigator.pop(context);
+        if (response['success'] == true) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Task created successfully')),
+            );
+            Navigator.pop(context, true);
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(response['message'] ?? 'Failed to create task')),
+            );
+          }
         }
       } catch (e) {
-        print('Error creating task: $e');
-        // Show error message to user
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: ${e.toString()}')),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       }
     }
   }
