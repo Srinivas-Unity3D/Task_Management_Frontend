@@ -16,6 +16,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:async';
+import '../services/socket_service.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   final bool isEditMode;
@@ -50,6 +51,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _apiService = ApiService();
   final _audioPlayer = AudioPlayer();
   late final AudioRecorder _audioRecorder;
+  final _socketService = SocketService();
   
   String? _selectedAssignee;
   String _priority = 'Low';
@@ -108,6 +110,65 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _setupAudioPlayer();
     _requestInitialPermissions();
     _initializeData();
+    _setupSocketListeners();
+  }
+
+  @override
+  void dispose() {
+    _recordingTimer?.cancel();
+    _playbackTimer?.cancel();
+    _positionSubscription?.cancel();
+    _durationSubscription?.cancel();
+    _audioPlayer.dispose();
+    _audioRecorder.dispose();
+    _socketService.removeTaskNotificationListener(_handleTaskNotification);
+    _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
+    super.dispose();
+  }
+
+  void _setupSocketListeners() {
+    _socketService.listenToTaskNotifications(_handleTaskNotification);
+    _socketService.listenToDashboardUpdates(_handleDashboardUpdate);
+  }
+
+  void _handleTaskNotification(dynamic data) {
+    // Handle notifications while screen is active
+    if (mounted && ModalRoute.of(context)!.isCurrent) {
+      // Check if the current user is the creator/updater
+      final bool isCreator = data['task']?['assigned_by'] == _currentUsername;
+      final bool isUpdater = data['task']?['updated_by'] == _currentUsername;
+      
+      // Only show notification if user is not the creator/updater
+      if (!isCreator && !isUpdater) {
+        if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
+          // Show a temporary success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                data['type'] == 'task_created' 
+                    ? 'New task has been created'
+                    : 'Task has been updated'
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  void _handleDashboardUpdate(dynamic data) {
+    // Handle dashboard updates while screen is active
+    if (mounted && ModalRoute.of(context)!.isCurrent) {
+      // Check if the current user is the creator/updater
+      final bool isCreator = data['assigned_by'] == _currentUsername;
+      final bool isUpdater = data['updated_by'] == _currentUsername;
+      
+      // Only process updates if user is not the creator/updater
+      if (!isCreator && !isUpdater) {
+        // Handle any necessary UI updates
+      }
+    }
   }
 
   Future<void> _initializeData() async {
@@ -241,17 +302,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         _isLoadingUsers = false;
       });
     }
-  }
-
-  @override
-  void dispose() {
-    _recordingTimer?.cancel();
-    _playbackTimer?.cancel();
-    _positionSubscription?.cancel();
-    _durationSubscription?.cancel();
-    _audioPlayer.dispose();
-    _audioRecorder.dispose();
-    super.dispose();
   }
 
   Future<bool> _requestStoragePermission() async {

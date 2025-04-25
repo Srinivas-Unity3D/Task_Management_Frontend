@@ -74,25 +74,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _handleTaskNotification(dynamic data) {
     if (mounted) {
-      setState(() {
-        _hasUnreadNotifications = true;
-      });
+      // Check if the current user is the creator/updater
+      final bool isCreator = data['task']?['assigned_by'] == _user.username;
+      final bool isUpdater = data['task']?['updated_by'] == _user.username;
       
-      // Show notification for new tasks
-      if (data['type'] == 'task_created') {
-        _showTaskNotification(data['task']);
-        // Refresh tasks list
-        _loadTasks();
+      // Only show notification if user is not the creator/updater
+      if (!isCreator && !isUpdater) {
+        setState(() {
+          _hasUnreadNotifications = true;
+        });
+        
+        // Show notification for new tasks or updates
+        if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
+          _showTaskNotification(data['task']);
+        }
       }
+      
+      // Always refresh tasks list to keep it up to date
+      _loadTasks();
     }
   }
 
   void _handleDashboardUpdate(dynamic data) {
     if (mounted) {
-      setState(() {
-        _hasUnreadNotifications = true;
-      });
-      // Refresh the task list
+      // Only show notification if user is not the creator/updater
+      final bool isCreator = data['assigned_by'] == _user.username;
+      final bool isUpdater = data['updated_by'] == _user.username;
+      
+      if (!isCreator && !isUpdater) {
+        setState(() {
+          _hasUnreadNotifications = true;
+        });
+      }
+      // Always refresh the task list
       _loadTasks();
     }
   }
@@ -104,6 +118,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _showTaskNotification(Map<String, dynamic> task) {
+    final bool isUpdate = task['updated_by'] != null;
+    final String title = isUpdate ? 'Task Updated' : 'New Task Assigned';
+    final String message = isUpdate 
+        ? '${task['title']} updated by ${task['updated_by']}'
+        : task['title'] ?? 'No title';
+
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Column(
@@ -111,7 +133,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'New Task Assigned',
+              title,
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -119,7 +141,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             SizedBox(height: 4),
             Text(
-              task['title'] ?? 'No title',
+              message,
               style: TextStyle(color: Colors.white70),
             ),
           ],
@@ -148,11 +170,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   initialStatus: task['status'],
                 ),
               ),
-            );
+            ).then((_) => _loadTasks()); // Refresh after returning from edit screen
           },
         ),
       ),
     );
+
+    // Set notification dot if the notification is not being actively viewed
+    if (!ModalRoute.of(context)!.isCurrent) {
+      setState(() {
+        _hasUnreadNotifications = true;
+      });
+    }
   }
 
   Future<void> _loadTasks() async {
