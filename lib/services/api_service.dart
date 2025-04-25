@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/attachment.dart';
+import '../models/task_assignment.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
@@ -81,6 +83,12 @@ class ApiService {
       final data = json.decode(response.body);
       
       if (response.statusCode == 200) {
+        // Store user data in SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_id', data['user_id']);
+        await prefs.setString('username', data['username']);
+        await prefs.setString('role', data['role']);
+        
         return {
           'success': true,
           'data': data,
@@ -281,6 +289,27 @@ class ApiService {
         'success': false,
         'message': 'Connection error. Please try again.',
       };
+    }
+  }
+
+  Future<List<TaskAssignment>> getTaskAssignments(String userId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/tasks/assignments/$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body)['assignments'];
+        return data.map((json) => TaskAssignment.fromJson(json)).toList();
+      } else {
+        throw Exception('Failed to fetch task assignments');
+      }
+    } catch (e) {
+      throw Exception('Error fetching task assignments: $e');
     }
   }
 } 

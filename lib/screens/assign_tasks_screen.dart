@@ -1,0 +1,294 @@
+import 'package:flutter/material.dart';
+import '../models/task_assignment.dart';
+import '../services/api_service.dart';
+import '../theme/colors.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import './create_task_screen.dart';
+
+class AssignTasksScreen extends StatefulWidget {
+  const AssignTasksScreen({Key? key}) : super(key: key);
+
+  @override
+  State<AssignTasksScreen> createState() => _AssignTasksScreenState();
+}
+
+class _AssignTasksScreenState extends State<AssignTasksScreen> {
+  final _apiService = ApiService();
+  List<TaskAssignment> _assignments = [];
+  bool _isLoading = true;
+  String? _currentUserId;
+  String? _currentRole;
+  bool get _isAdmin => _currentRole?.toLowerCase() == 'admin' || _currentRole?.toLowerCase() == 'super admin';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserAndAssignments();
+  }
+
+  Future<void> _loadUserAndAssignments() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _currentUserId = prefs.getString('user_id');
+      _currentRole = prefs.getString('role');
+      if (_currentUserId != null) {
+        await _fetchAssignments();
+      }
+    } catch (e) {
+      print('Error loading user and assignments: $e');
+    }
+  }
+
+  Future<void> _fetchAssignments() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+      final assignments = await _apiService.getTaskAssignments(_currentUserId!);
+      setState(() {
+        _assignments = assignments;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error fetching assignments: $e')),
+        );
+      }
+    }
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'low':
+        return Colors.green;
+      case 'medium':
+        return Colors.yellow;
+      case 'high':
+        return Colors.orange;
+      case 'urgent':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Assign Tasks',
+                style: TextStyle(
+                  color: Color(0xFF7DF9FF),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                onPressed: () {
+                  // TODO: Implement notifications
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF131B2E),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  // Add button section
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CreateTaskScreen(),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF7DF9FF),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.add,
+                            color: Color(0xFF0F172A),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Task assignments list
+                  Expanded(
+                    child: _isLoading
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                            itemCount: _assignments.length,
+                            itemBuilder: (context, index) {
+                              final assignment = _assignments[index];
+                              return _buildTaskAssignmentItem(assignment);
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTaskAssignmentItem(TaskAssignment assignment) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1526),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          // Avatar for assigner
+          CircleAvatar(
+            backgroundColor: const Color(0xFF7DF9FF),
+            child: Text(
+              assignment.assignerName[0].toUpperCase(),
+              style: const TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Task Details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Assigner and Assignee
+                Row(
+                  children: [
+                    Text(
+                      assignment.assignerName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Text(
+                      ' → ',
+                      style: TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      assignment.assigneeName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                // Task Name
+                Text(
+                  assignment.taskName,
+                  style: const TextStyle(
+                    color: Color(0xFF7DF9FF),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+                const SizedBox(height: 4),
+                // Due Date with priority color
+                Text(
+                  'Due: ${assignment.dueDate.toString().split(' ')[0]}',
+                  style: TextStyle(
+                    color: _getPriorityColor(assignment.priority),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Assign Task Button
+          TextButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CreateTaskScreen(),
+                ),
+              );
+            },
+            style: TextButton.styleFrom(
+              backgroundColor: const Color(0xFF7DF9FF),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Text(
+                  'Assign Task',
+                  style: TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(width: 4),
+                Icon(
+                  Icons.arrow_forward,
+                  color: Color(0xFF0F172A),
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+} 

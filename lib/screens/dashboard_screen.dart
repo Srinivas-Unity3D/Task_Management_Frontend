@@ -14,6 +14,7 @@ import '../widgets/dashboard/side_panel.dart';
 import '../widgets/custom_text_field.dart';
 import '../services/api_service.dart';
 import '../screens/create_task_screen.dart';
+import '../screens/assign_tasks_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -825,7 +826,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case ViewState.history:
         return _buildHistoryView();
       case ViewState.assignTasks:
-        return _buildAssignTasksView();
+        return const AssignTasksScreen();
     }
   }
 
