@@ -334,4 +334,67 @@ class ApiService {
       return {'success': false, 'message': 'Failed to get attachments'};
     }
   }
+
+  Future<Map<String, dynamic>> updateTask({
+    required String taskId,
+    required String priority,
+    required String status,
+    required String deadline,
+    String? audioNote,
+    List<String>? attachments,
+    Map<String, dynamic>? alarmSettings,
+    required String updatedBy,
+  }) async {
+    try {
+      print('Updating task with data:');
+      final requestBody = {
+        'priority': priority,
+        'status': status,
+        'deadline': deadline,
+        'updated_by': updatedBy,
+        if (audioNote != null) 'audio_note': {
+          'audio_data': audioNote,
+          'duration': 0, // Add duration if available
+        },
+        if (attachments != null && attachments.isNotEmpty)
+          'attachments': attachments,
+        if (alarmSettings != null) 'alarm_settings': alarmSettings,
+      };
+      print(requestBody);
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/tasks/$taskId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode(requestBody),
+      );
+
+      print('Response status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      final responseData = json.decode(response.body);
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': responseData['message'] ?? 'Task updated successfully',
+          'statusCode': response.statusCode,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': responseData['message'] ?? 'Failed to update task',
+          'statusCode': response.statusCode,
+        };
+      }
+    } catch (e) {
+      print('Error updating task: $e');
+      return {
+        'success': false,
+        'message': 'Error updating task: $e',
+        'statusCode': 500,
+      };
+    }
+  }
 } 

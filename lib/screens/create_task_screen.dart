@@ -987,146 +987,172 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<void> _handleCreateTask() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
+    if (!_formKey.currentState!.validate()) return;
 
-      try {
-        String? audioBase64;
-        List<String> attachments = [];
+    setState(() => _isLoading = true);
 
-        if (_recordedFilePath != null) {
-          final bytes = await File(_recordedFilePath!).readAsBytes();
-          audioBase64 = base64Encode(bytes);
-        }
+    try {
+      String? audioBase64;
+      List<String> attachments = [];
 
-        if (_selectedFiles.isNotEmpty) {
-          for (PlatformFile file in _selectedFiles) {
-            final bytes = await file.bytes!.toList();
-            attachments.add(base64Encode(bytes));
-          }
-        }
+      if (_recordedFilePath != null) {
+        final bytes = await File(_recordedFilePath!).readAsBytes();
+        audioBase64 = base64Encode(bytes);
+      }
 
-        // Create alarm settings map only if all required alarm fields are present
-        Map<String, dynamic>? alarmSettings;
-        if (_alarmStartDate != null && _alarmStartTime != null) {
-          alarmSettings = {
-            'start_date': _alarmStartDate!.toIso8601String().split('T')[0],
-            'start_time': '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}:00',
-            'frequency': _alarmFrequency,
-          };
-        }
-
-        final response = await _apiService.createTask(
-          title: _titleController.text,
-          description: _descriptionController.text,
-          assignedTo: _selectedAssignee!,
-          assignedBy: _currentUsername!,
-          deadline: _dueDate!.toIso8601String(),
-          priority: _priority.toLowerCase(),
-          status: _status.toString().split('.').last,
-          audioNote: audioBase64,
-          attachments: attachments,
-          alarmSettings: alarmSettings,
-        );
-
-        if (response['success'] == true) {
-          if (mounted) {
-            // Show success dialog
-            await showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (BuildContext context) {
-                return Dialog(
-                  backgroundColor: const Color(0xFF0F172A),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF7DF9FF),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.check,
-                            color: Color(0xFF0F172A),
-                            size: 32,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        const Text(
-                          'Task Created Successfully!',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Task "${_titleController.text}" has been created and assigned to $_selectedAssignee.',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFF94A3B8),
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context).pop(); // Close dialog
-                            Navigator.pop(context, true); // Return to previous screen
-                          },
-                          style: TextButton.styleFrom(
-                            backgroundColor: const Color(0xFF7DF9FF),
-                            minimumSize: const Size(double.infinity, 48),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'OK',
-                            style: TextStyle(
-                              color: Color(0xFF0F172A),
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(response['message'] ?? 'Failed to create task')),
-            );
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: ${e.toString()}')),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
+      if (_selectedFiles.isNotEmpty) {
+        for (PlatformFile file in _selectedFiles) {
+          final bytes = await file.bytes!.toList();
+          attachments.add(base64Encode(bytes));
         }
       }
+
+      // Create alarm settings map only if all required alarm fields are present
+      Map<String, dynamic>? alarmSettings;
+      if (_alarmStartDate != null && _alarmStartTime != null) {
+        alarmSettings = {
+          'start_date': _alarmStartDate!.toIso8601String().split('T')[0],
+          'start_time': '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}:00',
+          'frequency': _alarmFrequency,
+        };
+      }
+
+      final response = widget.isEditMode
+          ? await _apiService.updateTask(
+              taskId: widget.taskId!,
+              priority: _priority.toLowerCase(),
+              status: _getStatusString(_status),
+              deadline: _dueDate!.toIso8601String(),
+              audioNote: audioBase64,
+              attachments: attachments,
+              alarmSettings: alarmSettings,
+              updatedBy: _currentUsername!,
+            )
+          : await _apiService.createTask(
+              title: _titleController.text,
+              description: _descriptionController.text,
+              assignedTo: _selectedAssignee!,
+              assignedBy: _currentUsername!,
+              deadline: _dueDate!.toIso8601String(),
+              priority: _priority.toLowerCase(),
+              status: _getStatusString(_status),
+              audioNote: audioBase64,
+              attachments: attachments,
+              alarmSettings: alarmSettings,
+            );
+
+      if (response['success'] == true) {
+        if (mounted) {
+          // Show success dialog
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (BuildContext context) {
+              return Dialog(
+                backgroundColor: const Color(0xFF0F172A),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF7DF9FF),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check,
+                          color: Color(0xFF0F172A),
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        widget.isEditMode ? 'Task Updated Successfully!' : 'Task Created Successfully!',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.isEditMode
+                            ? 'Task has been updated successfully.'
+                            : 'Task "${_titleController.text}" has been created and assigned to $_selectedAssignee.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop(); // Close dialog
+                          Navigator.pop(context, true); // Return to previous screen
+                        },
+                        style: TextButton.styleFrom(
+                          backgroundColor: const Color(0xFF7DF9FF),
+                          minimumSize: const Size(double.infinity, 48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text(
+                          'OK',
+                          style: TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(response['message'] ?? 'Failed to save task')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _getStatusString(TaskStatus status) {
+    switch (status) {
+      case TaskStatus.pending:
+        return 'pending';
+      case TaskStatus.inProgress:
+        return 'in_progress';
+      case TaskStatus.completed:
+        return 'completed';
+      case TaskStatus.snoozed:
+        return 'snoozed';
+      default:
+        return 'pending';
     }
   }
 
