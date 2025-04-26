@@ -1,31 +1,34 @@
 class VoiceNote {
-  final String id;
-  final String taskId;
+  final String? id;
+  final String? taskId;
   final String? filePath;
   final String? audioData;
   final String? createdBy;
-  final DateTime createdAt;
+  final DateTime? createdAt;
   final Duration duration;
+  final String fileName;
 
   VoiceNote({
-    required this.id,
-    required this.taskId,
+    this.id,
+    this.taskId,
     this.filePath,
     this.audioData,
     this.createdBy,
-    required this.createdAt,
+    this.createdAt,
     required this.duration,
+    required this.fileName,
   });
 
   factory VoiceNote.fromJson(Map<String, dynamic> json) {
     return VoiceNote(
-      id: json['id'],
+      id: json['audio_id'] ?? json['id'],
       taskId: json['task_id'],
       filePath: json['file_path'],
       audioData: json['audio_data'],
       createdBy: json['created_by'],
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
       duration: Duration(milliseconds: json['duration'] ?? 0),
+      fileName: json['file_name'] ?? 'voice_note.wav',
     );
   }
 
@@ -36,8 +39,9 @@ class VoiceNote {
       'file_path': filePath,
       'audio_data': audioData,
       'created_by': createdBy,
-      'created_at': createdAt.toIso8601String(),
-      'duration_ms': duration.inMilliseconds,
+      'created_at': createdAt?.toIso8601String(),
+      'duration': duration.inMilliseconds,
+      'file_name': fileName,
     };
   }
 } 

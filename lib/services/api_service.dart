@@ -8,6 +8,7 @@ import '../models/voice_note.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 
 class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
@@ -247,71 +248,55 @@ class ApiService {
 
   Future<List<VoiceNote>> getTaskVoiceNotes(String taskId) async {
     try {
-      final response = await _dio.get('/tasks/$taskId/voice_notes');
+      print('📞 [API] Fetching voice notes for task: $taskId');
+      final response = await _dio.get('/api/tasks/$taskId/voice-notes');
+      
+      print('✅ [API] Voice notes response status: ${response.statusCode}');
+      print('✅ [API] Voice notes response data: ${response.data}');
+      
       if (response.statusCode == 200) {
-        final List<dynamic> voiceNotes = response.data['voice_notes'];
-        return voiceNotes.map((note) => VoiceNote.fromJson(note)).toList();
+        final List<dynamic> data = response.data;
+        return data.map((json) {
+          // Add audio_id to the json if it doesn't exist
+          if (!json.containsKey('audio_id') && !json.containsKey('id')) {
+            json['id'] = Uuid().v4();  // Generate a temporary ID if none exists
+          }
+          return VoiceNote.fromJson(json);
+        }).toList();
+      } else if (response.statusCode == 404) {
+        print('ℹ️ [API] No voice notes found for task');
+        return [];
       } else {
-        throw Exception('Failed to fetch voice notes');
+        throw Exception('Failed to fetch voice notes: ${response.statusMessage}');
       }
     } catch (e) {
       print('❌ [API] Error getting task voice notes: $e');
-      throw Exception('Failed to fetch voice notes: $e');
+      return [];  // Return empty list instead of throwing
     }
   }
 
-  Future<String> downloadVoiceNote(String taskId, String audioId) async {
+  Future<String?> downloadVoiceNote(VoiceNote voiceNote) async {
     try {
-      print('📥 [API] Downloading voice note - Task: $taskId, Audio: $audioId');
-      final response = await _dio.get(
-        '/tasks/$taskId/audio',
-        options: Options(
-          responseType: ResponseType.bytes,
-          headers: {
-            'Accept': '*/*',
-          },
-          validateStatus: (status) => true,
-        ),
-      );
-
-      print('📥 [API] Download response status: ${response.statusCode}');
-      if (response.statusCode == 200) {
-        final bytes = response.data as List<int>;
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/voice_note_$audioId.wav');
-        
-        // Check if file exists and delete it
-        if (await file.exists()) {
-          print('📥 [API] Deleting existing file: ${file.path}');
-          await file.delete();
-        }
-
-        // Write new file
-        await file.writeAsBytes(bytes, flush: true);
-        
-        // Verify file was written correctly
-        if (await file.exists()) {
-          final size = await file.length();
-          print('📥 [API] File saved successfully:');
-          print('  - Path: ${file.path}');
-          print('  - Size: $size bytes');
-          
-          if (size == 0) {
-            throw Exception('Downloaded file is empty');
-          }
-          
-          return file.path;
-        } else {
-          throw Exception('File was not created');
-        }
-      } else {
-        print('❌ [API] Error response: ${response.statusCode}');
-        print('❌ [API] Error data: ${response.data}');
-        throw Exception('Failed to download voice note: ${response.statusMessage}');
+      if (voiceNote.audioData == null) {
+        print('❌ [API] No audio data available for download');
+        return null;
       }
+
+      final tempDir = await getTemporaryDirectory();
+      final fileName = voiceNote.fileName.isNotEmpty ? voiceNote.fileName : 'voice_note.wav';
+      final file = File('${tempDir.path}/$fileName');
+
+      print('📝 [API] Saving voice note to: ${file.path}');
+      
+      // Decode base64 audio data and write to file
+      final bytes = base64.decode(voiceNote.audioData!);
+      await file.writeAsBytes(bytes);
+      
+      print('✅ [API] Voice note saved successfully');
+      return file.path;
     } catch (e) {
       print('❌ [API] Error downloading voice note: $e');
-      throw Exception('Failed to download voice note: $e');
+      return null;
     }
   }
 

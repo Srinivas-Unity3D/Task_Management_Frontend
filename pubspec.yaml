@@ -23,6 +23,7 @@ dependencies:
   socket_io_client: ^2.0.3+1
   intl: ^0.18.1
   open_file: ^3.3.2
+  uuid: ^4.2.1
 
 dev_dependencies:
   flutter_test:

@@ -1134,28 +1134,70 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
       // Handle audio recording
       if (_recordedFilePath != null) {
+        print('📝 [Upload] Processing audio file: $_recordedFilePath');
         final File audioFile = File(_recordedFilePath!);
         if (await audioFile.exists()) {
           final bytes = await audioFile.readAsBytes();
+          if (bytes.isEmpty) {
+            print('❌ [Upload] Audio file is empty');
+            throw Exception('Audio file is empty');
+          }
+          
+          print('📝 [Upload] Audio file size: ${bytes.length} bytes');
           final String base64Audio = base64Encode(bytes);
+          
+          // Get audio duration if available
+          int duration = 0;
+          try {
+            final audioPlayer = AudioPlayer();
+            await audioPlayer.setSourceDeviceFile(_recordedFilePath!);
+            final audioDuration = await audioPlayer.getDuration();
+            duration = audioDuration?.inMilliseconds ?? 0;
+            await audioPlayer.dispose();
+          } catch (e) {
+            print('⚠️ [Upload] Could not get audio duration: $e');
+          }
+
           audioNote = base64Audio;
+          print('✅ [Upload] Audio processed successfully');
+          print('  - Duration: ${duration}ms');
+          print('  - Base64 length: ${base64Audio.length}');
+        } else {
+          print('❌ [Upload] Audio file not found: $_recordedFilePath');
         }
       }
 
       // Handle file attachments
       if (_selectedFiles.isNotEmpty) {
+        print('📝 [Upload] Processing ${_selectedFiles.length} attachments');
         for (PlatformFile file in _selectedFiles) {
-          if (file.bytes != null) {
+          try {
+            if (file.bytes == null || file.bytes!.isEmpty) {
+              print('⚠️ [Upload] Skipping empty file: ${file.name}');
+              continue;
+            }
+
+            print('📝 [Upload] Processing file: ${file.name}');
+            print('  - Size: ${file.size} bytes');
+            print('  - Type: ${file.extension}');
+
             final String base64File = base64Encode(file.bytes!);
+            
             // Create a structured attachment object
             final Map<String, dynamic> attachmentData = {
               'file_name': file.name,
-              'file_type': file.extension ?? 'unknown',
+              'file_type': file.extension?.toLowerCase() ?? 'unknown',
               'file_size': file.size,
               'file_data': base64File
             };
+            
             // Add to attachments list
             attachments.add(attachmentData);
+            print('✅ [Upload] File processed successfully: ${file.name}');
+          } catch (e) {
+            print('❌ [Upload] Error processing file ${file.name}: $e');
+            // Continue with other files if one fails
+            continue;
           }
         }
       }
@@ -1171,7 +1213,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       }
 
       // Print request data for debugging
-      print('Sending request with data:');
+      print('📤 [Upload] Sending request with data:');
       final requestData = {
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -1182,13 +1224,19 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         'status': _getStatusString(_status),
         if (audioNote != null) 'audio_note': {
           'audio_data': audioNote,
-          'file_name': 'audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a',
-          'duration': 0
+          'file_name': 'voice_note_${DateTime.now().millisecondsSinceEpoch}.wav',
+          'duration': _recordingDuration.inMilliseconds
         },
         if (attachments.isNotEmpty) 'attachments': attachments,
         if (alarmSettings != null) 'alarm_settings': alarmSettings,
       };
-      print(requestData);
+      
+      // Print request summary (without the actual file data)
+      print('📤 [Upload] Request summary:');
+      print('  - Title: ${requestData['title']}');
+      print('  - Has audio: ${audioNote != null}');
+      print('  - Attachments count: ${attachments.length}');
+      print('  - Has alarm: ${alarmSettings != null}');
 
       final response = widget.isEditMode
           ? await _apiService.updateTask(
@@ -1617,17 +1665,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<String?> _getVoiceNoteFilePath(VoiceNote voiceNote) async {
-    if (voiceNote.filePath != null && File(voiceNote.filePath!).existsSync()) {
+    if (voiceNote.filePath != null && await File(voiceNote.filePath!).exists()) {
       return voiceNote.filePath;
     }
     
-    try {
-      final filePath = await _apiService.downloadVoiceNote(widget.taskId!, voiceNote.id);
-      return filePath;
-    } catch (e) {
-      _showErrorSnackBar('Failed to download voice note');
-      return null;
+    if (voiceNote.audioData != null) {
+      return await _apiService.downloadVoiceNote(voiceNote);
     }
+    
+    return null;
   }
 
   Future<String?> _getAttachmentFilePath(Attachment attachment) async {
@@ -1646,96 +1692,26 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<void> _playVoiceNote(VoiceNote voiceNote) async {
     try {
-      print('🎵 [Playback] Starting playback for voice note: ${voiceNote.id}');
-      
-      if (_isPlaying) {
-        print('🎵 [Playback] Stopping current playback');
-        await _audioPlayer.stop();
-        setState(() {
-          _isPlaying = false;
-          _currentlyPlayingNoteId = null;
-        });
-      }
-
       final filePath = await _getVoiceNoteFilePath(voiceNote);
       if (filePath == null) {
-        print('❌ [Playback] No valid file path available');
-        _showErrorSnackBar('Voice note file not available');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to play voice note - no audio data available')),
+        );
         return;
       }
 
-      // Verify file exists and is not empty
-      final file = File(filePath);
-      if (!await file.exists()) {
-        print('❌ [Playback] File does not exist: $filePath');
-        _showErrorSnackBar('Voice note file not found');
-        return;
+      final playerState = await _audioPlayer.state;
+      if (playerState == PlayerState.playing) {
+        await _audioPlayer.stop();
       }
 
-      final fileSize = await file.length();
-      if (fileSize == 0) {
-        print('❌ [Playback] File is empty: $filePath');
-        _showErrorSnackBar('Voice note file is empty');
-        return;
-      }
-
-      print('🎵 [Playback] Playing file:');
-      print('  - Path: $filePath');
-      print('  - Size: $fileSize bytes');
-
-      // Configure audio player
-      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
-      await _audioPlayer.setSourceDeviceFile(filePath);
-      await _audioPlayer.setVolume(1.0);
-      
-      // Start playback
+      await _audioPlayer.setSource(DeviceFileSource(filePath));
       await _audioPlayer.resume();
-      
-      setState(() {
-        _currentlyPlayingNoteId = voiceNote.id;
-        _isPlaying = true;
-      });
-
-      // Listen for playback completion
-      _audioPlayer.onPlayerComplete.listen((_) {
-        print('✅ [Playback] Playback completed');
-        setState(() {
-          _isPlaying = false;
-          _currentlyPlayingNoteId = null;
-        });
-      });
-
-      // Listen for errors using onPlayerStateChanged
-      _audioPlayer.onPlayerStateChanged.listen((state) {
-        if (state == PlayerState.completed) {
-          print('✅ [Playback] Playback completed normally');
-          setState(() {
-            _isPlaying = false;
-            _currentlyPlayingNoteId = null;
-          });
-        } else if (state == PlayerState.stopped) {
-          print('🛑 [Playback] Playback stopped');
-          setState(() {
-            _isPlaying = false;
-            _currentlyPlayingNoteId = null;
-          });
-        }
-      }, onError: (error) {
-        print('❌ [Playback] Error during playback: $error');
-        setState(() {
-          _isPlaying = false;
-          _currentlyPlayingNoteId = null;
-        });
-        _showErrorSnackBar('Error playing voice note');
-      });
-
     } catch (e) {
       print('❌ [Playback] Error: $e');
-      _showErrorSnackBar('Failed to play voice note');
-      setState(() {
-        _isPlaying = false;
-        _currentlyPlayingNoteId = null;
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to play voice note')),
+      );
     }
   }
 
@@ -1775,60 +1751,24 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             itemCount: _voiceNotes.length,
             itemBuilder: (context, index) {
               final voiceNote = _voiceNotes[index];
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.mic, color: Color(0xFF7DF9FF), size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Voice Note ${index + 1}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                            ),
-                          ),
-                          if (voiceNote.createdBy != null)
-                            Text(
-                              'By ${voiceNote.createdBy}',
-                              style: const TextStyle(
-                                color: Color(0xFF94A3B8),
-                                fontSize: 12,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '${voiceNote.duration.inMinutes}:${(voiceNote.duration.inSeconds % 60).toString().padLeft(2, '0')}',
-                      style: const TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontSize: 12,
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        _isPlaying ? Icons.stop : Icons.play_arrow,
-                        color: const Color(0xFF7DF9FF),
-                      ),
-                      onPressed: () {
-                        if (_isPlaying) {
-                          _stopPlayback();
-                        } else {
-                          _playVoiceNote(voiceNote);
-                        }
-                      },
-                    ),
-                  ],
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                child: ListTile(
+                  leading: StreamBuilder<PlayerState>(
+                    stream: _audioPlayer.onPlayerStateChanged,
+                    builder: (context, snapshot) {
+                      final isPlaying = snapshot.data == PlayerState.playing;
+                      return IconButton(
+                        icon: Icon(isPlaying ? Icons.stop : Icons.play_arrow),
+                        onPressed: () => _playVoiceNote(voiceNote),
+                      );
+                    }
+                  ),
+                  title: Text('Voice Note ${index + 1}'),
+                  subtitle: Text('Created by: ${voiceNote.createdBy ?? 'Unknown'}'),
+                  trailing: Text(
+                    '${(voiceNote.duration.inMilliseconds / 1000).toStringAsFixed(1)}s',
+                  ),
                 ),
               );
             },
