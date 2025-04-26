@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../models/attachment.dart';
 import '../models/task_assignment.dart';
+import '../models/voice_note.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
@@ -241,63 +245,111 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> getTaskVoiceNotes(String taskId) async {
+  Future<List<VoiceNote>> getTaskVoiceNotes(String taskId) async {
     try {
-      print('📞 [API] Fetching voice notes for task: $taskId');
       final response = await _dio.get('/tasks/$taskId/voice_notes');
-      print('✅ [API] Voice notes response status: ${response.statusCode}');
-      print('✅ [API] Voice notes response data: ${response.data}');
-      
-      if (response.statusCode == 404) {
-        print('ℹ️ [API] No voice notes found for task');
-        return {'success': true, 'voice_notes': []};
+      if (response.statusCode == 200) {
+        final List<dynamic> voiceNotes = response.data['voice_notes'];
+        return voiceNotes.map((note) => VoiceNote.fromJson(note)).toList();
+      } else {
+        throw Exception('Failed to fetch voice notes');
       }
-      
-      if (response.statusCode != 200) {
-        throw DioException(
-          requestOptions: response.requestOptions,
-          response: response,
-          message: 'Failed to get voice notes: ${response.statusMessage}',
-        );
-      }
-
-      return {
-        'success': true,
-        'voice_notes': response.data['voice_notes'] ?? [],
-      };
     } catch (e) {
       print('❌ [API] Error getting task voice notes: $e');
-      return {'success': false, 'message': 'Failed to get voice notes', 'voice_notes': []};
+      throw Exception('Failed to fetch voice notes: $e');
     }
   }
 
-  Future<Map<String, dynamic>> getTaskAttachments(String taskId) async {
+  Future<String> downloadVoiceNote(String taskId, String audioId) async {
     try {
-      print('📞 [API] Fetching attachments for task: $taskId');
-      final response = await _dio.get('/tasks/$taskId/attachments');
-      print('✅ [API] Attachments response status: ${response.statusCode}');
-      print('✅ [API] Attachments response data: ${response.data}');
-      
-      if (response.statusCode == 404) {
-        print('ℹ️ [API] No attachments found for task');
-        return {'success': true, 'attachments': []};
-      }
-      
-      if (response.statusCode != 200) {
-        throw DioException(
-          requestOptions: response.requestOptions,
-          response: response,
-          message: 'Failed to get attachments: ${response.statusMessage}',
-        );
-      }
+      print('📥 [API] Downloading voice note - Task: $taskId, Audio: $audioId');
+      final response = await _dio.get(
+        '/tasks/$taskId/audio',
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: {
+            'Accept': '*/*',
+          },
+          validateStatus: (status) => true,
+        ),
+      );
 
-      return {
-        'success': true,
-        'attachments': response.data['attachments'] ?? [],
-      };
+      print('📥 [API] Download response status: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        final bytes = response.data as List<int>;
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/voice_note_$audioId.wav');
+        
+        // Check if file exists and delete it
+        if (await file.exists()) {
+          print('📥 [API] Deleting existing file: ${file.path}');
+          await file.delete();
+        }
+
+        // Write new file
+        await file.writeAsBytes(bytes, flush: true);
+        
+        // Verify file was written correctly
+        if (await file.exists()) {
+          final size = await file.length();
+          print('📥 [API] File saved successfully:');
+          print('  - Path: ${file.path}');
+          print('  - Size: $size bytes');
+          
+          if (size == 0) {
+            throw Exception('Downloaded file is empty');
+          }
+          
+          return file.path;
+        } else {
+          throw Exception('File was not created');
+        }
+      } else {
+        print('❌ [API] Error response: ${response.statusCode}');
+        print('❌ [API] Error data: ${response.data}');
+        throw Exception('Failed to download voice note: ${response.statusMessage}');
+      }
+    } catch (e) {
+      print('❌ [API] Error downloading voice note: $e');
+      throw Exception('Failed to download voice note: $e');
+    }
+  }
+
+  Future<List<Attachment>> getTaskAttachments(String taskId) async {
+    try {
+      final response = await _dio.get('/tasks/$taskId/attachments');
+      if (response.statusCode == 200) {
+        final List<dynamic> attachments = response.data['attachments'];
+        return attachments.map((attachment) => Attachment.fromJson(attachment)).toList();
+      } else {
+        throw Exception('Failed to fetch attachments');
+      }
     } catch (e) {
       print('❌ [API] Error getting task attachments: $e');
-      return {'success': false, 'message': 'Failed to get attachments', 'attachments': []};
+      throw Exception('Failed to fetch attachments: $e');
+    }
+  }
+
+  Future<String> downloadAttachment(String attachmentId) async {
+    try {
+      final response = await _dio.get(
+        '/attachments/$attachmentId',
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      if (response.statusCode == 200) {
+        final bytes = response.data as List<int>;
+        final tempDir = await getTemporaryDirectory();
+        final fileName = response.headers.value('content-disposition')?.split('filename=').last ?? 'attachment_$attachmentId';
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsBytes(bytes);
+        return file.path;
+      } else {
+        throw Exception('Failed to download attachment');
+      }
+    } catch (e) {
+      print('❌ [API] Error downloading attachment: $e');
+      throw Exception('Failed to download attachment: $e');
     }
   }
 

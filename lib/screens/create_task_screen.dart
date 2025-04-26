@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:async';
 import '../services/socket_service.dart';
+import 'package:open_file/open_file.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   final bool isEditMode;
@@ -100,6 +101,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   List<PlatformFile> _selectedFiles = [];
   bool _isUploadingFiles = false;
 
+  bool _isLoadingVoiceNotes = true;
+  bool _isLoadingAttachments = true;
+  String? _currentlyPlayingNoteId;
+
   @override
   void initState() {
     super.initState();
@@ -181,85 +186,46 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       _status = _parseStatus(widget.initialStatus ?? 'pending');
       
       // Fetch existing voice notes and attachments
-      await _fetchTaskDetails();
+      await _loadTaskVoiceNotes();
+      await _loadTaskAttachments();
     }
   }
 
-  Future<void> _fetchTaskDetails() async {
+  Future<void> _loadTaskVoiceNotes() async {
     try {
-      setState(() => _isLoading = true);
-      
-      // Fetch voice notes
-      final voiceNotesResponse = await _apiService.getTaskVoiceNotes(widget.taskId!);
-      if (voiceNotesResponse['success']) {
-        setState(() {
-          _voiceNotes = (voiceNotesResponse['voice_notes'] as List)
-              .map((note) => VoiceNote.fromJson(note))
-              .toList();
-        });
+      setState(() {
+        _isLoadingVoiceNotes = true;
+      });
 
-        // For each voice note, download the audio data
-        for (var note in _voiceNotes) {
-          final audioResponse = await _apiService.getAudioNote(widget.taskId!);
-          if (audioResponse['success']) {
-            final audioData = audioResponse['data']['audio_data'];
-            // Save the audio data to a temporary file
-            final tempDir = await getTemporaryDirectory();
-            final tempFile = File('${tempDir.path}/voice_note_${note.id}.m4a');
-            await tempFile.writeAsBytes(base64Decode(audioData));
-            setState(() {
-              note = VoiceNote(
-                id: note.id,
-                taskId: note.taskId,
-                filePath: tempFile.path,
-                createdBy: note.createdBy,
-                createdAt: note.createdAt,
-                duration: note.duration,
-              );
-            });
-          }
-        }
-      }
-
-      // Fetch attachments
-      final attachmentsResponse = await _apiService.getTaskAttachments(widget.taskId!);
-      if (attachmentsResponse['success']) {
-        setState(() {
-          _existingAttachments = (attachmentsResponse['attachments'] as List)
-              .map((attachment) => Attachment.fromJson(attachment))
-              .toList();
-        });
-
-        // For each attachment, download the file data
-        for (var attachment in _existingAttachments) {
-          final attachmentResponse = await _apiService.getAttachment(attachment.id);
-          if (attachmentResponse['success']) {
-            final fileData = attachmentResponse['data']['file_data'];
-            // Save the file data to a temporary file
-            final tempDir = await getTemporaryDirectory();
-            final tempFile = File('${tempDir.path}/${attachment.fileName}');
-            await tempFile.writeAsBytes(base64Decode(fileData));
-            
-            // Add to selected files for upload
-            _selectedFiles.add(PlatformFile(
-              name: attachment.fileName,
-              size: attachment.fileSize,
-              path: tempFile.path,
-              bytes: await tempFile.readAsBytes(),
-            ));
-          }
-        }
-      }
-
-      setState(() => _isLoading = false);
+      final voiceNotes = await _apiService.getTaskVoiceNotes(widget.taskId!);
+      setState(() {
+        _voiceNotes = voiceNotes;
+        _isLoadingVoiceNotes = false;
+      });
     } catch (e) {
-      print('Error fetching task details: $e');
-      setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load task details')),
-        );
-      }
+      setState(() {
+        _isLoadingVoiceNotes = false;
+      });
+      _showErrorSnackBar('Failed to load voice notes');
+    }
+  }
+
+  Future<void> _loadTaskAttachments() async {
+    try {
+      setState(() {
+        _isLoadingAttachments = true;
+      });
+
+      final attachments = await _apiService.getTaskAttachments(widget.taskId!);
+      setState(() {
+        _existingAttachments = attachments;
+        _isLoadingAttachments = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingAttachments = false;
+      });
+      _showErrorSnackBar('Failed to load attachments');
     }
   }
 
@@ -1396,12 +1362,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     try {
       print('\n🎤 [Recording] Starting recording process...');
       
-      // Disable scrolling when recording starts
       setState(() {
         _canScroll = false;
       });
 
-      // Check microphone permission before starting
       final micPermission = await Permission.microphone.status;
       print('📱 [Recording] Permission check:');
       print('  - Microphone: $micPermission');
@@ -1421,7 +1385,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         }
       }
 
-      // Create directory if it doesn't exist
       final appDir = await getApplicationDocumentsDirectory();
       print('📁 [Recording] App documents directory: ${appDir.path}');
       
@@ -1434,11 +1397,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('⚠️ [Recording] Directory creation warning (may already exist): $e');
       }
       
-      final filePath = '$dirPath/audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final filePath = '$dirPath/audio_note_${DateTime.now().millisecondsSinceEpoch}.wav';
       print('📝 [Recording] Will save recording to: $filePath');
 
       if (_isEmulatorTestMode) {
-        // Create a test audio file for emulator testing
         print('🔧 [Recording] Running in emulator test mode');
         await _createTestAudioFile(filePath);
         setState(() {
@@ -1449,7 +1411,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         return;
       }
 
-      // Check if recorder is ready
       final isRecorderReady = await _audioRecorder.hasPermission();
       print('🎤 [Recording] Recorder ready status: $isRecorderReady');
       
@@ -1467,7 +1428,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       print('⚙️ [Recording] Configuring recorder...');
       await _audioRecorder.start(
         const RecordConfig(
-          encoder: AudioEncoder.aacLc,
+          encoder: AudioEncoder.wav,  // Changed to WAV format
           bitRate: 128000,
           sampleRate: 44100,
         ),
@@ -1481,7 +1442,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       });
       print('🔄 [Recording] State updated: isRecording=$_isRecording, filePath=$_recordedFilePath');
 
-      // Start the recording timer
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         setState(() {
           _recordingDuration += const Duration(seconds: 1);
@@ -1497,7 +1457,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         ),
       );
       setState(() {
-        _canScroll = true;  // Re-enable scrolling if recording fails
+        _canScroll = true;
       });
     }
   }
@@ -1656,79 +1616,140 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     }
   }
 
-  // Add a method to get or create temporary file for voice note
   Future<String?> _getVoiceNoteFilePath(VoiceNote voiceNote) async {
+    if (voiceNote.filePath != null && File(voiceNote.filePath!).existsSync()) {
+      return voiceNote.filePath;
+    }
+    
     try {
-      // If we already have a file path, use it
-      if (voiceNote.filePath != null && File(voiceNote.filePath!).existsSync()) {
-        return voiceNote.filePath;
-      }
-      
-      // If we have audio data, save it to a temporary file
-      if (voiceNote.audioData != null) {
-        final tempDir = await getTemporaryDirectory();
-        final tempFile = File('${tempDir.path}/voice_note_${voiceNote.id}.m4a');
-        
-        // Decode base64 and write to file
-        final bytes = base64Decode(voiceNote.audioData!);
-        await tempFile.writeAsBytes(bytes);
-        
-        return tempFile.path;
-      }
-      
-      return null;
+      final filePath = await _apiService.downloadVoiceNote(widget.taskId!, voiceNote.id);
+      return filePath;
     } catch (e) {
-      print('❌ [File] Error preparing voice note file: $e');
+      _showErrorSnackBar('Failed to download voice note');
+      return null;
+    }
+  }
+
+  Future<String?> _getAttachmentFilePath(Attachment attachment) async {
+    if (attachment.filePath != null && File(attachment.filePath!).existsSync()) {
+      return attachment.filePath;
+    }
+    
+    try {
+      final filePath = await _apiService.downloadAttachment(attachment.id);
+      return filePath;
+    } catch (e) {
+      _showErrorSnackBar('Failed to download attachment');
       return null;
     }
   }
 
   Future<void> _playVoiceNote(VoiceNote voiceNote) async {
     try {
+      print('🎵 [Playback] Starting playback for voice note: ${voiceNote.id}');
+      
+      if (_isPlaying) {
+        print('🎵 [Playback] Stopping current playback');
+        await _audioPlayer.stop();
+        setState(() {
+          _isPlaying = false;
+          _currentlyPlayingNoteId = null;
+        });
+      }
+
       final filePath = await _getVoiceNoteFilePath(voiceNote);
       if (filePath == null) {
-        print('❌ [Playback] No valid file path or audio data available');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to play voice note: File not available'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        print('❌ [Playback] No valid file path available');
+        _showErrorSnackBar('Voice note file not available');
         return;
       }
 
+      // Verify file exists and is not empty
+      final file = File(filePath);
+      if (!await file.exists()) {
+        print('❌ [Playback] File does not exist: $filePath');
+        _showErrorSnackBar('Voice note file not found');
+        return;
+      }
+
+      final fileSize = await file.length();
+      if (fileSize == 0) {
+        print('❌ [Playback] File is empty: $filePath');
+        _showErrorSnackBar('Voice note file is empty');
+        return;
+      }
+
+      print('🎵 [Playback] Playing file:');
+      print('  - Path: $filePath');
+      print('  - Size: $fileSize bytes');
+
+      // Configure audio player
+      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
+      await _audioPlayer.setSourceDeviceFile(filePath);
+      await _audioPlayer.setVolume(1.0);
+      
+      // Start playback
+      await _audioPlayer.resume();
+      
       setState(() {
+        _currentlyPlayingNoteId = voiceNote.id;
         _isPlaying = true;
-        _canScroll = false;
       });
 
-      await _audioPlayer.stop();
-      await _audioPlayer.play(DeviceFileSource(filePath));
+      // Listen for playback completion
+      _audioPlayer.onPlayerComplete.listen((_) {
+        print('✅ [Playback] Playback completed');
+        setState(() {
+          _isPlaying = false;
+          _currentlyPlayingNoteId = null;
+        });
+      });
 
-      // Update playback position
-      _playbackTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (mounted) {
-          _audioPlayer.getCurrentPosition().then((position) {
-            setState(() {
-              _playbackPosition = position ?? Duration.zero;
-            });
+      // Listen for errors using onPlayerStateChanged
+      _audioPlayer.onPlayerStateChanged.listen((state) {
+        if (state == PlayerState.completed) {
+          print('✅ [Playback] Playback completed normally');
+          setState(() {
+            _isPlaying = false;
+            _currentlyPlayingNoteId = null;
+          });
+        } else if (state == PlayerState.stopped) {
+          print('🛑 [Playback] Playback stopped');
+          setState(() {
+            _isPlaying = false;
+            _currentlyPlayingNoteId = null;
           });
         }
+      }, onError: (error) {
+        print('❌ [Playback] Error during playback: $error');
+        setState(() {
+          _isPlaying = false;
+          _currentlyPlayingNoteId = null;
+        });
+        _showErrorSnackBar('Error playing voice note');
       });
+
     } catch (e) {
-      print('❌ [Playback] Error playing voice note: $e');
+      print('❌ [Playback] Error: $e');
+      _showErrorSnackBar('Failed to play voice note');
       setState(() {
         _isPlaying = false;
-        _canScroll = true;
+        _currentlyPlayingNoteId = null;
       });
-      _playbackTimer?.cancel();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error playing voice note: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    }
+  }
+
+  Future<void> _openAttachment(Attachment attachment) async {
+    try {
+      final filePath = await _getAttachmentFilePath(attachment);
+      if (filePath == null) {
+        _showErrorSnackBar('Attachment file not available');
+        return;
+      }
+
+      await OpenFile.open(filePath);
+    } catch (e) {
+      _showErrorSnackBar('Failed to open attachment');
     }
   }
 
@@ -1817,7 +1838,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     );
   }
 
-  // Add a method to build existing attachments list
+  // Update the existing attachments list builder
   Widget _buildExistingAttachments() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1848,7 +1869,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.attach_file, color: Color(0xFF7DF9FF), size: 20),
+                    Text(
+                      _getFileIcon(attachment.fileType),
+                      style: const TextStyle(fontSize: 20),
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Column(
@@ -1863,24 +1887,52 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          Text(
-                            '${(attachment.fileSize / 1024).toStringAsFixed(2)} KB',
-                            style: const TextStyle(
-                              color: Color(0xFF94A3B8),
-                              fontSize: 12,
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                '${(attachment.fileSize / 1024).toStringAsFixed(2)} KB',
+                                style: const TextStyle(
+                                  color: Color(0xFF94A3B8),
+                                  fontSize: 12,
+                                ),
+                              ),
+                              if (attachment.createdBy != null) ...[
+                                const Text(
+                                  ' • ',
+                                  style: TextStyle(
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Text(
+                                  'By ${attachment.createdBy}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),
                     ),
+                    // Download button
                     IconButton(
-                      icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                      icon: const Icon(Icons.download, color: Color(0xFF7DF9FF)),
+                      onPressed: () => _openAttachment(attachment),
+                      tooltip: 'Download',
+                    ),
+                    // Delete button
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
                       onPressed: () {
                         setState(() {
                           _existingAttachments.removeAt(index);
                           _selectedFiles.removeAt(index);
                         });
                       },
+                      tooltip: 'Delete',
                     ),
                   ],
                 ),
@@ -1889,6 +1941,12 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 } 
