@@ -1072,15 +1072,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     setState(() => _isLoading = true);
 
     try {
-      String? audioBase64;
-      List<String> attachments = [];
+      String? audioNote;
+      List<Map<String, dynamic>> attachments = [];
 
       // Handle audio recording
       if (_recordedFilePath != null) {
         final File audioFile = File(_recordedFilePath!);
         if (await audioFile.exists()) {
           final bytes = await audioFile.readAsBytes();
-          audioBase64 = base64Encode(bytes);
+          final String base64Audio = base64Encode(bytes);
+          audioNote = base64Audio;
         }
       }
 
@@ -1089,7 +1090,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         for (PlatformFile file in _selectedFiles) {
           if (file.bytes != null) {
             final String base64File = base64Encode(file.bytes!);
-            attachments.add(base64File);
+            // Create a structured attachment object
+            final Map<String, dynamic> attachmentData = {
+              'file_name': file.name,
+              'file_type': file.extension ?? 'unknown',
+              'file_size': file.size,
+              'file_data': base64File
+            };
+            // Add to attachments list
+            attachments.add(attachmentData);
           }
         }
       }
@@ -1104,13 +1113,33 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         };
       }
 
+      // Print request data for debugging
+      print('Sending request with data:');
+      final requestData = {
+        'title': _titleController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'assigned_to': _selectedAssignee,
+        'assigned_by': _currentUsername,
+        'deadline': _dueDate!.toIso8601String(),
+        'priority': _priority.toLowerCase(),
+        'status': _getStatusString(_status),
+        if (audioNote != null) 'audio_note': {
+          'audio_data': audioNote,
+          'file_name': 'audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a',
+          'duration': 0
+        },
+        if (attachments.isNotEmpty) 'attachments': attachments,
+        if (alarmSettings != null) 'alarm_settings': alarmSettings,
+      };
+      print(requestData);
+
       final response = widget.isEditMode
           ? await _apiService.updateTask(
               taskId: widget.taskId!,
               priority: _priority.toLowerCase(),
               status: _getStatusString(_status),
               deadline: _dueDate!.toIso8601String(),
-              audioNote: audioBase64,
+              audioNote: audioNote,
               attachments: attachments.isNotEmpty ? attachments : null,
               alarmSettings: alarmSettings,
               updatedBy: _currentUsername ?? '',
@@ -1123,7 +1152,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               deadline: _dueDate!.toIso8601String(),
               priority: _priority.toLowerCase(),
               status: _getStatusString(_status),
-              audioNote: audioBase64,
+              audioNote: audioNote,
               attachments: attachments.isNotEmpty ? attachments : null,
               alarmSettings: alarmSettings,
             );

@@ -173,7 +173,7 @@ class ApiService {
     required String priority,
     required String status,
     String? audioNote,
-    List<String>? attachments,
+    List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
@@ -341,7 +341,7 @@ class ApiService {
     required String status,
     required String deadline,
     String? audioNote,
-    List<String>? attachments,
+    List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
     required String updatedBy,
   }) async {
