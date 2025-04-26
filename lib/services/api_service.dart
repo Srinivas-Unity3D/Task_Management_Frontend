@@ -7,7 +7,16 @@ import 'package:dio/dio.dart';
 
 class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(BaseOptions(
+    baseUrl: baseUrl,
+    connectTimeout: const Duration(seconds: 5),
+    receiveTimeout: const Duration(seconds: 3),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    validateStatus: (status) => true,
+  ));
 
   Future<Map<String, dynamic>> register({
     required String username,
@@ -232,64 +241,128 @@ class ApiService {
     }
   }
 
-  // Add method to download attachment
-  Future<Map<String, dynamic>> getAttachment(String attachmentId) async {
+  Future<Map<String, dynamic>> getTaskVoiceNotes(String taskId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/attachments/$attachmentId'),
-        headers: {
-          'Accept': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return {
-          'success': true,
-          'data': data,
-        };
-      } else {
-        return {
-          'success': false,
-          'message': 'Failed to download attachment',
-        };
+      print('📞 [API] Fetching voice notes for task: $taskId');
+      final response = await _dio.get('/tasks/$taskId/voice_notes');
+      print('✅ [API] Voice notes response status: ${response.statusCode}');
+      print('✅ [API] Voice notes response data: ${response.data}');
+      
+      if (response.statusCode == 404) {
+        print('ℹ️ [API] No voice notes found for task');
+        return {'success': true, 'voice_notes': []};
       }
+      
+      if (response.statusCode != 200) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          message: 'Failed to get voice notes: ${response.statusMessage}',
+        );
+      }
+
+      return {
+        'success': true,
+        'voice_notes': response.data['voice_notes'] ?? [],
+      };
     } catch (e) {
-      print('Error downloading attachment: $e');
+      print('❌ [API] Error getting task voice notes: $e');
+      return {'success': false, 'message': 'Failed to get voice notes', 'voice_notes': []};
+    }
+  }
+
+  Future<Map<String, dynamic>> getTaskAttachments(String taskId) async {
+    try {
+      print('📞 [API] Fetching attachments for task: $taskId');
+      final response = await _dio.get('/tasks/$taskId/attachments');
+      print('✅ [API] Attachments response status: ${response.statusCode}');
+      print('✅ [API] Attachments response data: ${response.data}');
+      
+      if (response.statusCode == 404) {
+        print('ℹ️ [API] No attachments found for task');
+        return {'success': true, 'attachments': []};
+      }
+      
+      if (response.statusCode != 200) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          message: 'Failed to get attachments: ${response.statusMessage}',
+        );
+      }
+
+      return {
+        'success': true,
+        'attachments': response.data['attachments'] ?? [],
+      };
+    } catch (e) {
+      print('❌ [API] Error getting task attachments: $e');
+      return {'success': false, 'message': 'Failed to get attachments', 'attachments': []};
+    }
+  }
+
+  Future<Map<String, dynamic>> getAudioNote(String taskId) async {
+    try {
+      print('📞 [API] Fetching audio note for task: $taskId');
+      final response = await _dio.get('/tasks/$taskId/audio');
+      print('✅ [API] Audio note response status: ${response.statusCode}');
+      print('✅ [API] Audio note response data: ${response.data}');
+      
+      if (response.statusCode == 404) {
+        print('ℹ️ [API] No audio note found for task');
+        return {'success': true, 'data': null};
+      }
+      
+      if (response.statusCode != 200) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          message: 'Failed to get audio note: ${response.statusMessage}',
+        );
+      }
+
+      return {
+        'success': true,
+        'data': response.data,
+      };
+    } catch (e) {
+      print('❌ [API] Error getting audio note: $e');
       return {
         'success': false,
-        'message': 'Connection error. Please try again.',
+        'message': 'Failed to download audio note',
       };
     }
   }
 
-  // Add method to get audio note
-  Future<Map<String, dynamic>> getAudioNote(String taskId) async {
+  Future<Map<String, dynamic>> getAttachment(String attachmentId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/tasks/$taskId/audio'),
-        headers: {
-          'Accept': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return {
-          'success': true,
-          'data': data,
-        };
-      } else {
-        return {
-          'success': false,
-          'message': 'Failed to download audio note',
-        };
+      print('📞 [API] Fetching attachment: $attachmentId');
+      final response = await _dio.get('/attachments/$attachmentId');
+      print('✅ [API] Attachment response status: ${response.statusCode}');
+      print('✅ [API] Attachment response data: ${response.data}');
+      
+      if (response.statusCode == 404) {
+        print('ℹ️ [API] Attachment not found');
+        return {'success': false, 'message': 'Attachment not found'};
       }
+      
+      if (response.statusCode != 200) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          message: 'Failed to get attachment: ${response.statusMessage}',
+        );
+      }
+
+      return {
+        'success': true,
+        'data': response.data,
+      };
     } catch (e) {
-      print('Error downloading audio note: $e');
+      print('❌ [API] Error downloading attachment: $e');
       return {
         'success': false,
-        'message': 'Connection error. Please try again.',
+        'message': 'Failed to download attachment',
       };
     }
   }
@@ -315,26 +388,6 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> getTaskVoiceNotes(String taskId) async {
-    try {
-      final response = await _dio.get('/tasks/$taskId/voice-notes');
-      return response.data;
-    } catch (e) {
-      print('Error getting task voice notes: $e');
-      return {'success': false, 'message': 'Failed to get voice notes'};
-    }
-  }
-
-  Future<Map<String, dynamic>> getTaskAttachments(String taskId) async {
-    try {
-      final response = await _dio.get('/tasks/$taskId/attachments');
-      return response.data;
-    } catch (e) {
-      print('Error getting task attachments: $e');
-      return {'success': false, 'message': 'Failed to get attachments'};
-    }
-  }
-
   Future<Map<String, dynamic>> updateTask({
     required String taskId,
     required String priority,
@@ -348,19 +401,30 @@ class ApiService {
     try {
       print('Updating task with data:');
       final requestBody = {
+        'task_id': taskId,
         'priority': priority,
         'status': status,
         'deadline': deadline,
         'updated_by': updatedBy,
         if (audioNote != null) 'audio_note': {
           'audio_data': audioNote,
-          'duration': 0, // Add duration if available
+          'file_name': 'audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a',
+          'duration': 0
         },
         if (attachments != null && attachments.isNotEmpty)
-          'attachments': attachments,
+          'attachments': attachments.map((attachment) => {
+            'file_name': attachment['file_name'],
+            'file_type': attachment['file_type'],
+            'file_size': attachment['file_size'],
+            'file_data': attachment['file_data'],
+          }).toList(),
         if (alarmSettings != null) 'alarm_settings': alarmSettings,
       };
-      print(requestBody);
+      print('Request body (excluding file data): ${json.encode({
+        ...requestBody,
+        if (audioNote != null) 'audio_note': {'file_name': 'audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a'},
+        if (attachments != null) 'attachments': attachments!.map((a) => a['file_name']).toList(),
+      })}');
 
       final response = await http.put(
         Uri.parse('$baseUrl/tasks/$taskId'),
@@ -374,18 +438,19 @@ class ApiService {
       print('Response status code: ${response.statusCode}');
       print('Response body: ${response.body}');
 
-      final responseData = json.decode(response.body);
       if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
         return {
           'success': true,
           'message': responseData['message'] ?? 'Task updated successfully',
-          'statusCode': response.statusCode,
+          'task_id': taskId,
         };
       } else {
+        final responseData = json.decode(response.body);
         return {
           'success': false,
           'message': responseData['message'] ?? 'Failed to update task',
-          'statusCode': response.statusCode,
+          'task_id': taskId,
         };
       }
     } catch (e) {
@@ -393,7 +458,7 @@ class ApiService {
       return {
         'success': false,
         'message': 'Error updating task: $e',
-        'statusCode': 500,
+        'task_id': taskId,
       };
     }
   }

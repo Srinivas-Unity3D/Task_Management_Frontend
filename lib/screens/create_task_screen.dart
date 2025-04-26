@@ -49,7 +49,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _apiService = ApiService();
-  final _audioPlayer = AudioPlayer();
+  final AudioPlayer _audioPlayer = AudioPlayer();
   late final AudioRecorder _audioRecorder;
   final _socketService = SocketService();
   
@@ -197,6 +197,28 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               .map((note) => VoiceNote.fromJson(note))
               .toList();
         });
+
+        // For each voice note, download the audio data
+        for (var note in _voiceNotes) {
+          final audioResponse = await _apiService.getAudioNote(widget.taskId!);
+          if (audioResponse['success']) {
+            final audioData = audioResponse['data']['audio_data'];
+            // Save the audio data to a temporary file
+            final tempDir = await getTemporaryDirectory();
+            final tempFile = File('${tempDir.path}/voice_note_${note.id}.m4a');
+            await tempFile.writeAsBytes(base64Decode(audioData));
+            setState(() {
+              note = VoiceNote(
+                id: note.id,
+                taskId: note.taskId,
+                filePath: tempFile.path,
+                createdBy: note.createdBy,
+                createdAt: note.createdAt,
+                duration: note.duration,
+              );
+            });
+          }
+        }
       }
 
       // Fetch attachments
@@ -207,12 +229,37 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               .map((attachment) => Attachment.fromJson(attachment))
               .toList();
         });
+
+        // For each attachment, download the file data
+        for (var attachment in _existingAttachments) {
+          final attachmentResponse = await _apiService.getAttachment(attachment.id);
+          if (attachmentResponse['success']) {
+            final fileData = attachmentResponse['data']['file_data'];
+            // Save the file data to a temporary file
+            final tempDir = await getTemporaryDirectory();
+            final tempFile = File('${tempDir.path}/${attachment.fileName}');
+            await tempFile.writeAsBytes(base64Decode(fileData));
+            
+            // Add to selected files for upload
+            _selectedFiles.add(PlatformFile(
+              name: attachment.fileName,
+              size: attachment.fileSize,
+              path: tempFile.path,
+              bytes: await tempFile.readAsBytes(),
+            ));
+          }
+        }
       }
 
       setState(() => _isLoading = false);
     } catch (e) {
       print('Error fetching task details: $e');
       setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load task details')),
+        );
+      }
     }
   }
 
@@ -307,29 +354,69 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Future<bool> _requestStoragePermission() async {
     print('📱 [Permissions] Checking storage permissions...');
     
-    // For Android 13 and above
-    if (await Permission.photos.request().isGranted &&
-        await Permission.videos.request().isGranted &&
-        await Permission.audio.request().isGranted) {
-      print('✅ [Permissions] Media permissions granted');
-      return true;
-    }
-    
-    // For Android 12 and below
-    if (await Permission.storage.request().isGranted) {
-      print('✅ [Permissions] Storage permission granted');
-      return true;
-    }
+    try {
+      // For Android 13 and above
+      if (await Permission.photos.request().isGranted &&
+          await Permission.videos.request().isGranted &&
+          await Permission.audio.request().isGranted) {
+        print('✅ [Permissions] Media permissions granted');
+        return true;
+      }
+      
+      // For Android 12 and below
+      final status = await Permission.storage.request();
+      if (status.isGranted) {
+        print('✅ [Permissions] Storage permission granted');
+        return true;
+      }
 
-    print('❌ [Permissions] Storage permissions denied');
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Storage permission is required to pick files'),
-        backgroundColor: Colors.red,
-        duration: Duration(seconds: 3),
-      ),
-    );
-    return false;
+      // If permissions are denied, show rationale
+      if (status.isPermanentlyDenied) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF0F172A),
+              title: const Text(
+                'Storage Permission Required',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: const Text(
+                'Storage permission is required to pick files. Please enable it in app settings.',
+                style: TextStyle(color: Color(0xFF94A3B8)),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel', style: TextStyle(color: Colors.white)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    openAppSettings();
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Open Settings', style: TextStyle(color: Color(0xFF7DF9FF))),
+                ),
+              ],
+            ),
+          );
+        }
+        return false;
+      }
+
+      print('❌ [Permissions] Storage permissions denied');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Storage permission is required to pick files'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return false;
+    } catch (e) {
+      print('❌ [Permissions] Error requesting storage permission: $e');
+      return false;
+    }
   }
 
   Future<void> _pickFiles() async {
@@ -841,6 +928,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           ],
                         ),
                       ),
+                      // Existing voice notes in edit mode
+                      if (widget.isEditMode) _buildExistingVoiceNotes(),
                       const SizedBox(height: 16),
                       // Attachments
                       const Text(
@@ -948,6 +1037,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           ],
                         ),
                       ),
+                      // Existing attachments in edit mode
+                      if (widget.isEditMode) _buildExistingAttachments(),
                       const SizedBox(height: 32),
                       // Action Buttons
                       Row(
@@ -1548,5 +1639,256 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     } catch (e) {
       print('❌ [Delete] Error: $e');
     }
+  }
+
+  // Add playback methods
+  Future<void> _stopPlayback() async {
+    try {
+      await _audioPlayer.stop();
+      setState(() {
+        _isPlaying = false;
+        _playbackPosition = Duration.zero;
+        _canScroll = true;
+      });
+      _playbackTimer?.cancel();
+    } catch (e) {
+      print('❌ [Playback] Error stopping playback: $e');
+    }
+  }
+
+  // Add a method to get or create temporary file for voice note
+  Future<String?> _getVoiceNoteFilePath(VoiceNote voiceNote) async {
+    try {
+      // If we already have a file path, use it
+      if (voiceNote.filePath != null && File(voiceNote.filePath!).existsSync()) {
+        return voiceNote.filePath;
+      }
+      
+      // If we have audio data, save it to a temporary file
+      if (voiceNote.audioData != null) {
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File('${tempDir.path}/voice_note_${voiceNote.id}.m4a');
+        
+        // Decode base64 and write to file
+        final bytes = base64Decode(voiceNote.audioData!);
+        await tempFile.writeAsBytes(bytes);
+        
+        return tempFile.path;
+      }
+      
+      return null;
+    } catch (e) {
+      print('❌ [File] Error preparing voice note file: $e');
+      return null;
+    }
+  }
+
+  Future<void> _playVoiceNote(VoiceNote voiceNote) async {
+    try {
+      final filePath = await _getVoiceNoteFilePath(voiceNote);
+      if (filePath == null) {
+        print('❌ [Playback] No valid file path or audio data available');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to play voice note: File not available'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        _isPlaying = true;
+        _canScroll = false;
+      });
+
+      await _audioPlayer.stop();
+      await _audioPlayer.play(DeviceFileSource(filePath));
+
+      // Update playback position
+      _playbackTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (mounted) {
+          _audioPlayer.getCurrentPosition().then((position) {
+            setState(() {
+              _playbackPosition = position ?? Duration.zero;
+            });
+          });
+        }
+      });
+    } catch (e) {
+      print('❌ [Playback] Error playing voice note: $e');
+      setState(() {
+        _isPlaying = false;
+        _canScroll = true;
+      });
+      _playbackTimer?.cancel();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error playing voice note: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Update the existing voice notes list builder
+  Widget _buildExistingVoiceNotes() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_voiceNotes.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Existing Voice Notes',
+            style: TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _voiceNotes.length,
+            itemBuilder: (context, index) {
+              final voiceNote = _voiceNotes[index];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.mic, color: Color(0xFF7DF9FF), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Voice Note ${index + 1}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                          if (voiceNote.createdBy != null)
+                            Text(
+                              'By ${voiceNote.createdBy}',
+                              style: const TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${voiceNote.duration.inMinutes}:${(voiceNote.duration.inSeconds % 60).toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 12,
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _isPlaying ? Icons.stop : Icons.play_arrow,
+                        color: const Color(0xFF7DF9FF),
+                      ),
+                      onPressed: () {
+                        if (_isPlaying) {
+                          _stopPlayback();
+                        } else {
+                          _playVoiceNote(voiceNote);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  // Add a method to build existing attachments list
+  Widget _buildExistingAttachments() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_existingAttachments.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Existing Attachments',
+            style: TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _existingAttachments.length,
+            itemBuilder: (context, index) {
+              final attachment = _existingAttachments[index];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.attach_file, color: Color(0xFF7DF9FF), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            attachment.fileName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '${(attachment.fileSize / 1024).toStringAsFixed(2)} KB',
+                            style: const TextStyle(
+                              color: Color(0xFF94A3B8),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                      onPressed: () {
+                        setState(() {
+                          _existingAttachments.removeAt(index);
+                          _selectedFiles.removeAt(index);
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ],
+    );
   }
 } 
