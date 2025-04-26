@@ -1037,7 +1037,37 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<void> _handleCreateTask() async {
+    // Validate form first
     if (!_formKey.currentState!.validate()) return;
+
+    // Validate required fields
+    if (_titleController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a title')),
+      );
+      return;
+    }
+
+    if (_descriptionController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a description')),
+      );
+      return;
+    }
+
+    if (_selectedAssignee == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select an assignee')),
+      );
+      return;
+    }
+
+    if (_dueDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a due date')),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -1045,15 +1075,22 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       String? audioBase64;
       List<String> attachments = [];
 
+      // Handle audio recording
       if (_recordedFilePath != null) {
-        final bytes = await File(_recordedFilePath!).readAsBytes();
-        audioBase64 = base64Encode(bytes);
+        final File audioFile = File(_recordedFilePath!);
+        if (await audioFile.exists()) {
+          final bytes = await audioFile.readAsBytes();
+          audioBase64 = base64Encode(bytes);
+        }
       }
 
+      // Handle file attachments
       if (_selectedFiles.isNotEmpty) {
         for (PlatformFile file in _selectedFiles) {
-          final bytes = await file.bytes!.toList();
-          attachments.add(base64Encode(bytes));
+          if (file.bytes != null) {
+            final String base64File = base64Encode(file.bytes!);
+            attachments.add(base64File);
+          }
         }
       }
 
@@ -1074,20 +1111,20 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               status: _getStatusString(_status),
               deadline: _dueDate!.toIso8601String(),
               audioNote: audioBase64,
-              attachments: attachments,
+              attachments: attachments.isNotEmpty ? attachments : null,
               alarmSettings: alarmSettings,
-              updatedBy: _currentUsername!,
+              updatedBy: _currentUsername ?? '',
             )
           : await _apiService.createTask(
-              title: _titleController.text,
-              description: _descriptionController.text,
+              title: _titleController.text.trim(),
+              description: _descriptionController.text.trim(),
               assignedTo: _selectedAssignee!,
-              assignedBy: _currentUsername!,
+              assignedBy: _currentUsername ?? '',
               deadline: _dueDate!.toIso8601String(),
               priority: _priority.toLowerCase(),
               status: _getStatusString(_status),
               audioNote: audioBase64,
-              attachments: attachments,
+              attachments: attachments.isNotEmpty ? attachments : null,
               alarmSettings: alarmSettings,
             );
 
