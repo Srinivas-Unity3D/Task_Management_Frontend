@@ -23,34 +23,49 @@ class NotificationService {
 
   Future<List<NotificationModel>> getNotifications() async {
     try {
-      // Get the user ID from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
+      final username = prefs.getString('username');
       
-      print('Fetching notifications for user: $userId');
-      print('API URL: ${ApiService.baseUrl}/notifications');
+      print('Fetching notifications for user: $userId, username: $username');
+
+      if (userId == null || username == null) {
+        throw Exception('User not logged in');
+      }
 
       final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/notifications'),
+        Uri.parse('${ApiService.baseUrl}/tasks/notifications?user_id=$userId&username=$username'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'Authorization': 'Bearer ${prefs.getString('token')}',
-          'user_id': userId ?? '',
         },
       );
 
-      print('Response status code: ${response.statusCode}');
-      print('Response body: ${response.body}');
+      print('Notifications response status: ${response.statusCode}');
+      print('Notifications response body: ${response.body}');
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        final notifications = data.map((json) => NotificationModel.fromJson(json)).toList();
-        print('Successfully fetched ${notifications.length} notifications');
-        return notifications;
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        if (responseData['success'] == true && responseData['notifications'] != null) {
+          final List<dynamic> notifications = responseData['notifications'];
+          return notifications.map((json) {
+            return NotificationModel(
+              id: json['id'] ?? '',
+              title: json['title'] ?? '',
+              description: json['description'] ?? '',
+              senderName: json['sender_name'] ?? '',
+              senderRole: json['sender_role'] ?? '',
+              timeAgo: _getTimeAgo(json['created_at'] ?? DateTime.now().toIso8601String()),
+              type: _getNotificationType(json['type'] ?? json['priority'] ?? ''),
+              isCompleted: json['is_read'] ?? false,
+            );
+          }).toList();
+        } else {
+          throw Exception('Invalid response format');
+        }
       } else {
-        print('Failed to load notifications. Status code: ${response.statusCode}');
-        throw Exception('Failed to load notifications: ${response.body}');
+        print('Failed to load notifications. Status: ${response.statusCode}, Body: ${response.body}');
+        throw Exception('Failed to load notifications');
       }
     } catch (e) {
       print('Error fetching notifications: $e');
@@ -87,24 +102,55 @@ class NotificationService {
     }
   }
 
+  String _getTimeAgo(String timestamp) {
+    try {
+      final DateTime time = DateTime.parse(timestamp);
+      final Duration difference = DateTime.now().difference(time);
+      
+      if (difference.inMinutes < 60) {
+        return '${difference.inMinutes}m ago';
+      } else if (difference.inHours < 24) {
+        return '${difference.inHours}h ago';
+      } else {
+        return '${difference.inDays}d ago';
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
+  String _getNotificationType(String input) {
+    final lower = input.toLowerCase();
+    if (lower.contains('task') || lower == 'high' || lower == 'urgent') {
+      return 'task';
+    } else if (lower.contains('meet')) {
+      return 'meeting';
+    } else {
+      return 'system';
+    }
+  }
+
   Future<void> markAsComplete(String notificationId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
+      final username = prefs.getString('username');
 
-      print('Marking notification $notificationId as complete for user: $userId');
-      
+      if (userId == null || username == null) {
+        throw Exception('User not logged in');
+      }
+
       final response = await http.patch(
-        Uri.parse('${ApiService.baseUrl}/notifications/$notificationId'),
+        Uri.parse('${ApiService.baseUrl}/tasks/notifications/$notificationId/complete'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'Authorization': 'Bearer ${prefs.getString('token')}',
-          'user_id': userId ?? '',
+          'user_id': userId,
+          'username': username,
         },
         body: json.encode({
-          'is_completed': true,
           'user_id': userId,
+          'username': username,
         }),
       );
 
@@ -112,7 +158,7 @@ class NotificationService {
       print('Mark complete response body: ${response.body}');
 
       if (response.statusCode != 200) {
-        throw Exception('Failed to mark notification as complete: ${response.body}');
+        throw Exception('Failed to mark notification as complete');
       }
     } catch (e) {
       print('Error marking notification as complete: $e');
@@ -124,20 +170,24 @@ class NotificationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
+      final username = prefs.getString('username');
 
-      print('Snoozing notification $notificationId for user: $userId');
-      
+      if (userId == null || username == null) {
+        throw Exception('User not logged in');
+      }
+
       final response = await http.patch(
-        Uri.parse('${ApiService.baseUrl}/notifications/$notificationId/snooze'),
+        Uri.parse('${ApiService.baseUrl}/tasks/notifications/$notificationId/snooze'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'Authorization': 'Bearer ${prefs.getString('token')}',
-          'user_id': userId ?? '',
+          'user_id': userId,
+          'username': username,
         },
         body: json.encode({
           'user_id': userId,
-          'snooze_duration': 30, // Snooze for 30 minutes by default
+          'username': username,
+          'snooze_duration': 30, // 30 minutes
         }),
       );
 
@@ -145,7 +195,7 @@ class NotificationService {
       print('Snooze response body: ${response.body}');
 
       if (response.statusCode != 200) {
-        throw Exception('Failed to snooze notification: ${response.body}');
+        throw Exception('Failed to snooze notification');
       }
     } catch (e) {
       print('Error snoozing notification: $e');
