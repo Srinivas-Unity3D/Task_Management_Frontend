@@ -182,27 +182,79 @@ class NotificationService {
         throw Exception('User not logged in');
       }
 
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/notifications/snooze'),
+      // First, get the task ID from the notification
+      final response = await http.get(
+        Uri.parse('${ApiService.baseUrl}/tasks/notifications?user_id=$userId&username=$username'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: json.encode({
-          'notification_id': notificationId,
-          'snooze_until': snoozeUntil.toIso8601String(),
-          'reason': reason,
-          'audio_note': audioNote
-        }),
       );
 
-      print('Snooze response status: ${response.statusCode}');
-      print('Snooze response body: ${response.body}');
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        if (responseData['success'] == true && responseData['notifications'] != null) {
+          final List<dynamic> notifications = responseData['notifications'];
+          final notification = notifications.firstWhere(
+            (n) => n['id'] == notificationId,
+            orElse: () => throw Exception('Notification not found')
+          );
 
-      if (response.statusCode != 200) {
-        final errorBody = json.decode(response.body);
-        final errorMessage = errorBody['message'] ?? 'Failed to snooze notification';
-        throw Exception(errorMessage);
+          final taskId = notification['task_id'];
+          if (taskId == null) {
+            throw Exception('Task ID not found in notification');
+          }
+
+          // Snooze the notification
+          final snoozeResponse = await http.post(
+            Uri.parse('${ApiService.baseUrl}/notifications/snooze'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: json.encode({
+              'notification_id': notificationId,
+              'snooze_until': snoozeUntil.toIso8601String(),
+              'reason': reason,
+              'audio_note': audioNote
+            }),
+          );
+
+          print('Snooze response status: ${snoozeResponse.statusCode}');
+          print('Snooze response body: ${snoozeResponse.body}');
+
+          if (snoozeResponse.statusCode == 200) {
+            // Mark the notification as read to clear it from the notification bar
+            await markAsComplete(notificationId);
+            
+            // Update the task status to snoozed
+            final taskResponse = await http.put(
+              Uri.parse('${ApiService.baseUrl}/tasks/$taskId'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: json.encode({
+                'status': 'snoozed',
+                'updated_by': username,
+                'snooze_until': snoozeUntil.toIso8601String(),
+                'snooze_reason': reason
+              }),
+            );
+
+            if (taskResponse.statusCode != 200) {
+              print('Failed to update task status to snoozed');
+            }
+          } else {
+            final errorBody = json.decode(snoozeResponse.body);
+            final errorMessage = errorBody['message'] ?? 'Failed to snooze notification';
+            throw Exception(errorMessage);
+          }
+        } else {
+          throw Exception('Invalid response format');
+        }
+      } else {
+        throw Exception('Failed to fetch notifications');
       }
     } catch (e) {
       print('Error snoozing notification: $e');
