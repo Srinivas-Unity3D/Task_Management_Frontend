@@ -153,7 +153,7 @@ class NotificationService {
       }
 
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/tasks/notifications/$notificationId/mark_read'),
+        Uri.parse('${ApiService.baseUrl}/notifications/mark_read/$notificationId'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
