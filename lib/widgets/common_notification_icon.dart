@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../screens/notification_screen.dart';
+import '../screens/notifications_screen.dart';
 
 class CommonNotificationIcon extends StatefulWidget {
   final bool hasUnreadNotifications;

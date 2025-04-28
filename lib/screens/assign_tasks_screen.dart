@@ -7,7 +7,7 @@ import '../theme/colors.dart';
 import '../widgets/common_notification_icon.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import './create_task_screen.dart';
-import './notification_screen.dart';
+import './notifications_screen.dart';
 
 class AssignTasksScreen extends StatefulWidget {
   const AssignTasksScreen({Key? key}) : super(key: key);
