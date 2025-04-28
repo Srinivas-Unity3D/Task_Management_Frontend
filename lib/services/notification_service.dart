@@ -4,6 +4,7 @@ import '../models/notification_model.dart';
 import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import './api_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -22,23 +23,38 @@ class NotificationService {
 
   Future<List<NotificationModel>> getNotifications() async {
     try {
+      // Get the user ID from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+      
+      print('Fetching notifications for user: $userId');
+      print('API URL: ${ApiService.baseUrl}/notifications');
+
       final response = await http.get(
         Uri.parse('${ApiService.baseUrl}/notifications'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Authorization': 'Bearer ${prefs.getString('token')}',
+          'user_id': userId ?? '',
         },
       );
 
+      print('Response status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => NotificationModel.fromJson(json)).toList();
+        final notifications = data.map((json) => NotificationModel.fromJson(json)).toList();
+        print('Successfully fetched ${notifications.length} notifications');
+        return notifications;
       } else {
-        throw Exception('Failed to load notifications');
+        print('Failed to load notifications. Status code: ${response.statusCode}');
+        throw Exception('Failed to load notifications: ${response.body}');
       }
     } catch (e) {
+      print('Error fetching notifications: $e');
       // For development, return mock data if API fails
-      print('Error fetching notifications, using mock data: $e');
       return [
         NotificationModel(
           id: '1',
@@ -73,21 +89,67 @@ class NotificationService {
 
   Future<void> markAsComplete(String notificationId) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+
+      print('Marking notification $notificationId as complete for user: $userId');
+      
       final response = await http.patch(
         Uri.parse('${ApiService.baseUrl}/notifications/$notificationId'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Authorization': 'Bearer ${prefs.getString('token')}',
+          'user_id': userId ?? '',
         },
-        body: json.encode({'is_completed': true}),
+        body: json.encode({
+          'is_completed': true,
+          'user_id': userId,
+        }),
       );
 
+      print('Mark complete response status: ${response.statusCode}');
+      print('Mark complete response body: ${response.body}');
+
       if (response.statusCode != 200) {
-        throw Exception('Failed to mark notification as complete');
+        throw Exception('Failed to mark notification as complete: ${response.body}');
       }
     } catch (e) {
       print('Error marking notification as complete: $e');
       throw Exception('Failed to mark notification as complete');
+    }
+  }
+
+  Future<void> snoozeNotification(String notificationId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+
+      print('Snoozing notification $notificationId for user: $userId');
+      
+      final response = await http.patch(
+        Uri.parse('${ApiService.baseUrl}/notifications/$notificationId/snooze'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer ${prefs.getString('token')}',
+          'user_id': userId ?? '',
+        },
+        body: json.encode({
+          'user_id': userId,
+          'snooze_duration': 30, // Snooze for 30 minutes by default
+        }),
+      );
+
+      print('Snooze response status: ${response.statusCode}');
+      print('Snooze response body: ${response.body}');
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to snooze notification: ${response.body}');
+      }
+    } catch (e) {
+      print('Error snoozing notification: $e');
+      throw Exception('Failed to snooze notification');
     }
   }
 
