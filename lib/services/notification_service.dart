@@ -172,7 +172,7 @@ class NotificationService {
     }
   }
 
-  Future<void> snoozeNotification(String notificationId, DateTime snoozeUntil) async {
+  Future<void> snoozeNotification(String notificationId, DateTime snoozeUntil, {String? reason, String? audioNote}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
@@ -183,25 +183,32 @@ class NotificationService {
       }
 
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/notifications/snooze/$notificationId'),
+        Uri.parse('${ApiService.baseUrl}/tasks/notifications/$notificationId/snooze'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: json.encode({
           'snooze_until': snoozeUntil.toIso8601String(),
+          'reason': reason,
+          'audio_note': audioNote,
+          'user_id': userId,
+          'username': username
         }),
       );
 
       print('Snooze response status: ${response.statusCode}');
       print('Snooze response body: ${response.body}');
 
-      if (response.statusCode != 200) {
-        throw Exception('Failed to snooze notification');
+      if (response.statusCode == 200) {
+        print('Successfully snoozed notification');
+      } else {
+        print('Failed to snooze notification. Status: ${response.statusCode}, Body: ${response.body}');
+        throw Exception('Failed to snooze notification: Server returned ${response.statusCode}');
       }
     } catch (e) {
       print('Error snoozing notification: $e');
-      throw Exception('Failed to snooze notification');
+      rethrow;
     }
   }
 

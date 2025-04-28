@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
+import '../widgets/snooze_dialog.dart';
 
 class NotificationScreen extends StatefulWidget {
   const NotificationScreen({Key? key}) : super(key: key);
@@ -49,18 +50,15 @@ class _NotificationScreenState extends State<NotificationScreen> {
   }
 
   Future<void> _handleSnooze(String notificationId) async {
-    try {
-      // Snooze for 30 minutes from now
-      final snoozeUntil = DateTime.now().add(const Duration(minutes: 30));
-      await _notificationService.snoozeNotification(notificationId, snoozeUntil);
-      await _loadNotifications();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
-      }
-    }
+    showDialog(
+      context: context,
+      builder: (context) => SnoozeDialog(
+        notificationId: notificationId,
+        onSnoozeComplete: () async {
+          await _loadNotifications();
+        },
+      ),
+    );
   }
 
   Future<void> _handleMarkComplete(String notificationId) async {
@@ -96,6 +94,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back,
+            color: Color(0xFF00E5FF),
+          ),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
         title: const Text(
           'Notifications',
           style: TextStyle(
