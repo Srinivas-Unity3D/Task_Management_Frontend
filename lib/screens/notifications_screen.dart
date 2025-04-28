@@ -12,6 +12,7 @@ class NotificationScreen extends StatefulWidget {
 class _NotificationScreenState extends State<NotificationScreen> {
   final NotificationService _notificationService = NotificationService();
   List<NotificationModel> _notifications = [];
+  List<NotificationModel> _unreadNotifications = [];
   bool _isLoading = true;
   String? _error;
 
@@ -33,6 +34,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       if (mounted) {
         setState(() {
           _notifications = notifications;
+          _unreadNotifications = notifications.where((n) => !n.isCompleted).toList();
           _isLoading = false;
         });
       }
@@ -48,7 +50,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   Future<void> _handleSnooze(String notificationId) async {
     try {
-      await _notificationService.snoozeNotification(notificationId);
+      // Snooze for 30 minutes from now
+      final snoozeUntil = DateTime.now().add(const Duration(minutes: 30));
+      await _notificationService.snoozeNotification(notificationId, snoozeUntil);
       await _loadNotifications();
     } catch (e) {
       if (mounted) {
@@ -130,123 +134,130 @@ class _NotificationScreenState extends State<NotificationScreen> {
                         style: TextStyle(color: Colors.white),
                       ),
                     )
-                  : ListView.builder(
-                      itemCount: _notifications.length,
-                      padding: const EdgeInsets.all(16),
-                      itemBuilder: (context, index) {
-                        final notification = _notifications[index];
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E2746),
-                            borderRadius: BorderRadius.circular(8),
+                  : _unreadNotifications.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No new notifications',
+                            style: TextStyle(color: Colors.white),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      color: _getDotColor(notification.type),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      notification.title,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    notification.timeAgo,
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.5),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
+                        )
+                      : ListView.builder(
+                          itemCount: _unreadNotifications.length,
+                          padding: const EdgeInsets.all(16),
+                          itemBuilder: (context, index) {
+                            final notification = _unreadNotifications[index];
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E2746),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                notification.description,
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.7),
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  CircleAvatar(
-                                    radius: 16,
-                                    backgroundColor: Colors.white24,
-                                    child: Text(
-                                      notification.senderName[0].toUpperCase(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: _getDotColor(notification.type),
+                                          shape: BoxShape.circle,
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          notification.senderName,
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          notification.title,
                                           style: const TextStyle(
                                             color: Colors.white,
-                                            fontSize: 14,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
                                           ),
                                         ),
-                                        Text(
-                                          notification.senderRole,
-                                          style: TextStyle(
-                                            color: Colors.white.withOpacity(0.5),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        notification.timeAgo,
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.5),
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    notification.description,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.7),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: Colors.white24,
+                                        child: Text(
+                                          notification.senderName[0].toUpperCase(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
                                             fontSize: 12,
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => _handleSnooze(notification.id),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: Colors.white.withOpacity(0.7),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                                      minimumSize: const Size(0, 32),
-                                    ),
-                                    child: const Text('Snooze'),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  TextButton(
-                                    onPressed: () => _handleMarkComplete(notification.id),
-                                    style: TextButton.styleFrom(
-                                      backgroundColor: const Color(0xFF00E5FF).withOpacity(0.1),
-                                      foregroundColor: const Color(0xFF00E5FF),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                                      minimumSize: const Size(0, 32),
-                                    ),
-                                    child: const Text('Mark as Complete'),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              notification.senderName,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            Text(
+                                              notification.senderRole,
+                                              style: TextStyle(
+                                                color: Colors.white.withOpacity(0.5),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => _handleSnooze(notification.id),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.white.withOpacity(0.7),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                                          minimumSize: const Size(0, 32),
+                                        ),
+                                        child: const Text('Snooze'),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      TextButton(
+                                        onPressed: () => _handleMarkComplete(notification.id),
+                                        style: TextButton.styleFrom(
+                                          backgroundColor: const Color(0xFF00E5FF).withOpacity(0.1),
+                                          foregroundColor: const Color(0xFF00E5FF),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                                          minimumSize: const Size(0, 32),
+                                        ),
+                                        child: const Text('Mark as Complete'),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                            );
+                          },
+                        ),
     );
   }
 } 

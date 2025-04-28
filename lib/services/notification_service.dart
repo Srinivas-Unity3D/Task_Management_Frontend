@@ -48,21 +48,33 @@ class NotificationService {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success'] == true && responseData['notifications'] != null) {
           final List<dynamic> notifications = responseData['notifications'];
+          print('Received ${notifications.length} notifications from server');
+          
           return notifications.map((json) {
-            return NotificationModel(
-              id: json['id'] ?? '',
-              title: json['title'] ?? '',
-              description: json['description'] ?? '',
-              senderName: json['sender_name'] ?? '',
-              senderRole: json['sender_role'] ?? '',
-              timeAgo: _getTimeAgo(json['created_at'] ?? DateTime.now().toIso8601String()),
-              type: _getNotificationType(json['type'] ?? json['priority'] ?? ''),
-              isCompleted: json['is_read'] ?? false,
-            );
+            try {
+              return NotificationModel(
+                id: json['id'] ?? '',
+                title: json['title'] ?? '',
+                description: json['description'] ?? '',
+                senderName: json['sender_name'] ?? '',
+                senderRole: json['sender_role'] ?? '',
+                timeAgo: _getTimeAgo(json['created_at'] ?? DateTime.now().toIso8601String()),
+                type: _getNotificationType(json['type'] ?? json['priority'] ?? ''),
+                isCompleted: json['is_read'] == 1,
+              );
+            } catch (e) {
+              print('Error parsing notification: $e');
+              print('Problematic JSON: $json');
+              rethrow;
+            }
           }).toList();
         } else {
+          print('Invalid response format: $responseData');
           throw Exception('Invalid response format');
         }
+      } else if (response.statusCode == 404) {
+        print('User not found or no notifications available');
+        return [];
       } else {
         print('Failed to load notifications. Status: ${response.statusCode}, Body: ${response.body}');
         throw Exception('Failed to load notifications');
@@ -140,18 +152,12 @@ class NotificationService {
         throw Exception('User not logged in');
       }
 
-      final response = await http.patch(
-        Uri.parse('${ApiService.baseUrl}/tasks/notifications/$notificationId/complete'),
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/notifications/mark_read/$notificationId'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'user_id': userId,
-          'username': username,
         },
-        body: json.encode({
-          'user_id': userId,
-          'username': username,
-        }),
       );
 
       print('Mark complete response status: ${response.statusCode}');
@@ -166,7 +172,7 @@ class NotificationService {
     }
   }
 
-  Future<void> snoozeNotification(String notificationId) async {
+  Future<void> snoozeNotification(String notificationId, DateTime snoozeUntil) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
@@ -176,18 +182,14 @@ class NotificationService {
         throw Exception('User not logged in');
       }
 
-      final response = await http.patch(
-        Uri.parse('${ApiService.baseUrl}/tasks/notifications/$notificationId/snooze'),
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/notifications/snooze/$notificationId'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'user_id': userId,
-          'username': username,
         },
         body: json.encode({
-          'user_id': userId,
-          'username': username,
-          'snooze_duration': 30, // 30 minutes
+          'snooze_until': snoozeUntil.toIso8601String(),
         }),
       );
 
