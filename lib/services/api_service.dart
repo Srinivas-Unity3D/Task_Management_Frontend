@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../models/attachment.dart';
@@ -14,8 +15,8 @@ class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
-    connectTimeout: const Duration(seconds: 5),
-    receiveTimeout: const Duration(seconds: 3),
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 10),
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -87,14 +88,21 @@ class ApiService {
 
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
+      print('Attempting login for user: $username');
       final response = await http.post(
         Uri.parse('$baseUrl/login'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         body: json.encode({
           'username': username,
           'password': password,
         }),
-      );
+      ).timeout(const Duration(seconds: 10));
+
+      print('Login response status: ${response.statusCode}');
+      print('Login response body: ${response.body}');
 
       final data = json.decode(response.body);
       
@@ -115,7 +123,20 @@ class ApiService {
           'message': data['message'] ?? 'Login failed',
         };
       }
+    } on TimeoutException {
+      print('Login request timed out');
+      return {
+        'success': false,
+        'message': 'Connection timed out. Please check your internet connection.',
+      };
+    } on SocketException {
+      print('Network error during login');
+      return {
+        'success': false,
+        'message': 'Network error. Please check your internet connection.',
+      };
     } catch (e) {
+      print('Login error: $e');
       return {
         'success': false,
         'message': 'Connection error. Please try again.',
