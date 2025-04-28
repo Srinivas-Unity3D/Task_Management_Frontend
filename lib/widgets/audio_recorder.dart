@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart' as record_pkg;
 import 'package:path_provider/path_provider.dart';
+import '../theme/colors.dart';
 
 class VoiceRecorder extends StatefulWidget {
   final Function(String?) onRecordingComplete;
@@ -89,19 +90,24 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(12.0),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey),
+        color: AppColors.inputBackground,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             'Audio Note (optional)',
-            style: Theme.of(context).textTheme.titleSmall,
+            style: TextStyle(
+              color: AppColors.textGrey,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -109,36 +115,40 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
                 IconButton(
                   icon: const Icon(Icons.mic),
                   onPressed: _startRecording,
-                  color: Theme.of(context).primaryColor,
+                  color: AppColors.accentCyan,
                   tooltip: 'Start Recording',
                 ),
               if (_isRecording)
                 IconButton(
                   icon: const Icon(Icons.stop),
                   onPressed: _stopRecording,
-                  color: Colors.red,
+                  color: AppColors.pending,
                   tooltip: 'Stop Recording',
                 ),
               if (_hasRecording) ...[
-                const Icon(Icons.check_circle, color: Colors.green),
+                Icon(
+                  Icons.check_circle,
+                  color: AppColors.accentCyan,
+                ),
                 IconButton(
                   icon: const Icon(Icons.delete),
                   onPressed: _deleteRecording,
-                  color: Colors.red,
+                  color: AppColors.pending,
                   tooltip: 'Delete Recording',
                 ),
               ],
             ],
           ),
           if (_isRecording)
-            const Padding(
-              padding: EdgeInsets.only(top: 8.0),
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
               child: Text(
                 'Recording in progress...',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.red,
+                  color: AppColors.accentCyan,
                   fontStyle: FontStyle.italic,
+                  fontSize: 12,
                 ),
               ),
             ),

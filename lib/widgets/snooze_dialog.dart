@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/notification_service.dart';
 import './audio_recorder.dart';
+import '../theme/colors.dart';
 
 class SnoozeDialog extends StatefulWidget {
   final String notificationId;
@@ -23,6 +24,8 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
   String? _audioData;
   DateTime _selectedDate = DateTime.now().add(const Duration(hours: 1));
 
+  bool get _canSnooze => _reasonController.text.trim().isNotEmpty || _audioData != null;
+
   @override
   void dispose() {
     _reasonController.dispose();
@@ -30,6 +33,19 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
   }
 
   Future<void> _handleSnooze() async {
+    if (!_canSnooze) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please provide either a reason or a voice note to snooze',
+            style: TextStyle(color: AppColors.white),
+          ),
+          backgroundColor: AppColors.pending,
+        ),
+      );
+      return;
+    }
+
     try {
       await _notificationService.snoozeNotification(
         widget.notificationId,
@@ -44,7 +60,13 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to snooze notification: $e')),
+          SnackBar(
+            content: Text(
+              'Failed to snooze notification: $e',
+              style: TextStyle(color: AppColors.white),
+            ),
+            backgroundColor: AppColors.pending,
+          ),
         );
       }
     }
@@ -81,6 +103,7 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      backgroundColor: AppColors.cardBackground,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: SingleChildScrollView(
         child: Padding(
@@ -91,25 +114,61 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
             children: [
               Text(
                 'Snooze Notification',
-                style: Theme.of(context).textTheme.titleLarge,
+                style: TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              ListTile(
-                title: Text(
-                  'Snooze until: ${_selectedDate.toString().split('.')[0]}',
-                  style: Theme.of(context).textTheme.bodyLarge,
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.inputBackground,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.borderColor),
                 ),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: _selectDateTime,
+                child: ListTile(
+                  title: Text(
+                    'Snooze until: ${_selectedDate.toString().split('.')[0]}',
+                    style: TextStyle(
+                      color: AppColors.white,
+                      fontSize: 16,
+                    ),
+                  ),
+                  trailing: Icon(
+                    Icons.calendar_today,
+                    color: AppColors.accentCyan,
+                  ),
+                  onTap: _selectDateTime,
+                ),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: _reasonController,
-                decoration: const InputDecoration(
-                  labelText: 'Reason (optional)',
-                  border: OutlineInputBorder(),
+                style: TextStyle(color: AppColors.white),
+                onChanged: (value) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'Reason',
+                  labelStyle: TextStyle(color: AppColors.textGrey),
                   hintText: 'Enter reason for snoozing...',
+                  hintStyle: TextStyle(color: AppColors.textGrey),
+                  border: OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.borderColor),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.borderColor),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.accentCyan),
+                  ),
+                  filled: true,
+                  fillColor: AppColors.inputBackground,
+                  helperText: _audioData == null ? 'Required if no voice note is provided' : null,
+                  helperStyle: TextStyle(
+                    color: AppColors.textGrey,
+                    fontSize: 12,
+                  ),
                 ),
                 maxLines: 3,
               ),
@@ -119,6 +178,14 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
                   setState(() => _audioData = base64Audio);
                 },
               ),
+              const SizedBox(height: 8),
+              Text(
+                _reasonController.text.trim().isEmpty ? 'Required if no reason is provided' : '',
+                style: TextStyle(
+                  color: AppColors.textGrey,
+                  fontSize: 12,
+                ),
+              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -126,16 +193,27 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey,
+                      foregroundColor: AppColors.textGrey,
                     ),
                     child: const Text('Cancel'),
                   ),
                   ElevatedButton(
-                    onPressed: _handleSnooze,
+                    onPressed: _canSnooze ? _handleSnooze : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).primaryColor,
+                      backgroundColor: AppColors.accentCyan,
+                      foregroundColor: AppColors.background,
+                      disabledBackgroundColor: AppColors.textGrey.withOpacity(0.3),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
-                    child: const Text('Snooze'),
+                    child: const Text(
+                      'Snooze',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ],
               ),

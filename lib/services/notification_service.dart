@@ -153,7 +153,7 @@ class NotificationService {
       }
 
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/notifications/mark_read/$notificationId'),
+        Uri.parse('${ApiService.baseUrl}/tasks/notifications/$notificationId/mark_read'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -183,28 +183,26 @@ class NotificationService {
       }
 
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/tasks/notifications/$notificationId/snooze'),
+        Uri.parse('${ApiService.baseUrl}/notifications/snooze'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: json.encode({
+          'notification_id': notificationId,
           'snooze_until': snoozeUntil.toIso8601String(),
           'reason': reason,
-          'audio_note': audioNote,
-          'user_id': userId,
-          'username': username
+          'audio_note': audioNote
         }),
       );
 
       print('Snooze response status: ${response.statusCode}');
       print('Snooze response body: ${response.body}');
 
-      if (response.statusCode == 200) {
-        print('Successfully snoozed notification');
-      } else {
-        print('Failed to snooze notification. Status: ${response.statusCode}, Body: ${response.body}');
-        throw Exception('Failed to snooze notification: Server returned ${response.statusCode}');
+      if (response.statusCode != 200) {
+        final errorBody = json.decode(response.body);
+        final errorMessage = errorBody['message'] ?? 'Failed to snooze notification';
+        throw Exception(errorMessage);
       }
     } catch (e) {
       print('Error snoozing notification: $e');
