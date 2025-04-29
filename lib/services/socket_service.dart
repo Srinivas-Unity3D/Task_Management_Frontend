@@ -4,6 +4,10 @@ import 'notification_service.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
+  
+  /// Get the singleton instance of SocketService
+  static SocketService get instance => _instance;
+  
   IO.Socket? _socket;
   final ValueNotifier<bool> connected = ValueNotifier<bool>(false);
   String? _currentUsername;
@@ -12,12 +16,13 @@ class SocketService {
   final List<Function(dynamic)> _dashboardUpdateListeners = [];
   final _notificationService = NotificationService();
 
-  // Singleton pattern
+  // Private constructor
+  SocketService._internal();
+
+  // Factory constructor that returns singleton instance
   factory SocketService() {
     return _instance;
   }
-
-  SocketService._internal();
 
   void init(String serverUrl) async {
     print('🔌 Initializing socket service with URL: $serverUrl');

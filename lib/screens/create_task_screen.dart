@@ -52,7 +52,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _apiService = ApiService();
   final AudioPlayer _audioPlayer = AudioPlayer();
   late final AudioRecorder _audioRecorder;
-  final _socketService = SocketService();
+  final _socketService = SocketService.instance;
   
   String? _selectedAssignee;
   String _priority = 'Low';
@@ -115,7 +115,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _setupAudioPlayer();
     _requestInitialPermissions();
     _initializeData();
-    _setupSocketListeners();
+    _initializeAudioPlayer();
   }
 
   @override
@@ -126,9 +126,19 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _durationSubscription?.cancel();
     _audioPlayer.dispose();
     _audioRecorder.dispose();
-    _socketService.removeTaskNotificationListener(_handleTaskNotification);
-    _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _disposeAudioPlayer();
     super.dispose();
+  }
+
+  Future<void> _getCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    _currentUsername = prefs.getString('username');
+    if (_currentUsername != null) {
+      _socketService.connect(_currentUsername!);
+      _setupSocketListeners();
+    }
   }
 
   void _setupSocketListeners() {
@@ -284,16 +294,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       }
     } catch (e) {
       print('❌ [Microphone] Error checking status: $e');
-    }
-  }
-
-  Future<void> _getCurrentUser() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _currentUsername = prefs.getString('username');
-      await _fetchUsers();
-    } catch (e) {
-      print('Error getting current user: $e');
     }
   }
 
@@ -483,7 +483,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            _stopPlayback();
+            Navigator.pop(context);
+          },
         ),
       ),
       body: _isLoading
@@ -1005,6 +1008,107 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                       ),
                       // Existing attachments in edit mode
                       if (widget.isEditMode) _buildExistingAttachments(),
+                      const SizedBox(height: 16),
+                      // Audio Notes Section
+                      if (widget.isEditMode && _voiceNotes.isNotEmpty) ...[
+                        const Text(
+                          'Audio Notes',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _voiceNotes.length,
+                          itemBuilder: (context, index) {
+                            final voiceNote = _voiceNotes[index];
+                            final isPlaying = _currentlyPlayingNoteId == voiceNote.id;
+                            
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D1526),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF1E293B)),
+                              ),
+                              child: Row(
+                                children: [
+                                  // Play/Pause Button
+                                  IconButton(
+                                    icon: Icon(
+                                      isPlaying ? Icons.pause : Icons.play_arrow,
+                                      color: const Color(0xFF7DF9FF),
+                                    ),
+                                    onPressed: () async {
+                                      if (isPlaying) {
+                                        await _stopPlayback();
+                                        setState(() {
+                                          _currentlyPlayingNoteId = null;
+                                        });
+                                      } else {
+                                        setState(() {
+                                          _currentlyPlayingNoteId = voiceNote.id;
+                                        });
+                                        await _playVoiceNote(voiceNote);
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Duration and File Name
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Voice Note ${index + 1}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Created by: ${voiceNote.createdBy ?? 'Unknown'}',
+                                          style: const TextStyle(
+                                            color: Color(0xFF94A3B8),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        if (isPlaying && _totalDuration.inSeconds > 0) ...[
+                                          const SizedBox(height: 8),
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(4),
+                                            child: LinearProgressIndicator(
+                                              value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
+                                              backgroundColor: const Color(0xFF0D1526),
+                                              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+                                              minHeight: 2,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  Text(
+                                    '${(voiceNote.duration.inMilliseconds / 1000).toStringAsFixed(1)}s',
+                                    style: const TextStyle(
+                                      color: Color(0xFF94A3B8),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       const SizedBox(height: 32),
                       // Action Buttons
                       Row(
@@ -1056,7 +1160,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                   ),
                 ),
               ),
-            ),
+    ),
     );
   }
 
@@ -1100,6 +1204,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       });
 
       try {
+        // Stop any playing audio
+        await _stopPlayback();
+
         // Handle audio note
         Map<String, dynamic>? audioNote;
         if (_recordedFilePath != null && await File(_recordedFilePath!).exists()) {
@@ -1502,16 +1609,112 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     }
   }
 
+  Future<void> _playVoiceNote(VoiceNote voiceNote) async {
+    try {
+      // Validate voice note data
+      if (voiceNote.id == null) {
+        print('❌ Voice note ID is null');
+        _showErrorSnackBar('Invalid voice note data');
+        return;
+      }
+
+      // Use the widget's taskId if voiceNote.taskId is null
+      final taskId = voiceNote.taskId ?? widget.taskId;
+      if (taskId == null) {
+        print('❌ Task ID is null');
+        _showErrorSnackBar('Cannot play voice note - missing task ID');
+        return;
+      }
+
+      // Stop any currently playing audio
+      final playerState = await _audioPlayer.state;
+      if (playerState == PlayerState.playing) {
+        await _audioPlayer.stop();
+      }
+
+      // Get the API URL for the voice note
+      final apiUrl = '${ApiService.baseUrl}/tasks/$taskId/audio';
+      print('🎵 Playing voice note from URL: $apiUrl');
+
+      // Configure audio player for streaming
+      await _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
+      
+      // Set audio context mode to spatial audio
+      await _audioPlayer.setAudioContext(AudioContext(
+        android: AudioContextAndroid(
+          contentType: AndroidContentType.music,
+          usageType: AndroidUsageType.media,
+          audioFocus: AndroidAudioFocus.gain,
+        ),
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playback,
+          options: [
+            AVAudioSessionOptions.defaultToSpeaker,
+            AVAudioSessionOptions.mixWithOthers,
+          ],
+        ),
+      ));
+
+      // Start playback
+      await _audioPlayer.setSourceUrl(apiUrl);
+      await _audioPlayer.resume();
+      
+      setState(() {
+        _isPlaying = true;
+        _currentlyPlayingNoteId = voiceNote.id;
+      });
+
+      // Update UI when playback completes
+      _audioPlayer.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = false;
+            _currentlyPlayingNoteId = null;
+            _playbackPosition = Duration.zero;
+          });
+        }
+      });
+    } catch (e) {
+      print('❌ Error playing voice note: $e');
+      _showErrorSnackBar('Failed to play voice note');
+      setState(() {
+        _isPlaying = false;
+        _currentlyPlayingNoteId = null;
+      });
+    }
+  }
+
   Future<String?> _getVoiceNoteFilePath(VoiceNote voiceNote) async {
-    if (voiceNote.filePath != null && await File(voiceNote.filePath!).exists()) {
-      return voiceNote.filePath;
+    try {
+      // First try to get from API
+      final filePath = await _apiService.downloadVoiceNote(voiceNote);
+      if (filePath != null) {
+        print('✅ Voice note downloaded successfully: $filePath');
+        return filePath;
+      }
+      
+      // If API fails, try local path
+      if (voiceNote.filePath != null && await File(voiceNote.filePath!).exists()) {
+        print('✅ Using existing local voice note: ${voiceNote.filePath}');
+        return voiceNote.filePath;
+      }
+      
+      // If both fail, try audio data
+      if (voiceNote.audioData != null) {
+        final tempDir = await getTemporaryDirectory();
+        final tempPath = '${tempDir.path}/voice_note_${voiceNote.id}.wav';
+        final file = File(tempPath);
+        await file.writeAsBytes(base64Decode(voiceNote.audioData!));
+        print('✅ Created voice note from audio data: $tempPath');
+        return tempPath;
+      }
+      
+      print('❌ No valid source found for voice note');
+      return null;
+    } catch (e) {
+      print('❌ Error getting voice note file path: $e');
+      return null;
     }
-    
-    if (voiceNote.audioData != null) {
-      return await _apiService.downloadVoiceNote(voiceNote);
-    }
-    
-    return null;
   }
 
   Future<String?> _getAttachmentFilePath(Attachment attachment) async {
@@ -1525,31 +1728,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     } catch (e) {
       _showErrorSnackBar('Failed to download attachment');
       return null;
-    }
-  }
-
-  Future<void> _playVoiceNote(VoiceNote voiceNote) async {
-    try {
-      final filePath = await _getVoiceNoteFilePath(voiceNote);
-      if (filePath == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to play voice note - no audio data available')),
-        );
-        return;
-      }
-
-      final playerState = await _audioPlayer.state;
-      if (playerState == PlayerState.playing) {
-        await _audioPlayer.stop();
-      }
-
-      await _audioPlayer.setSource(DeviceFileSource(filePath));
-      await _audioPlayer.resume();
-    } catch (e) {
-      print('❌ [Playback] Error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to play voice note')),
-      );
     }
   }
 
@@ -1589,24 +1767,80 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             itemCount: _voiceNotes.length,
             itemBuilder: (context, index) {
               final voiceNote = _voiceNotes[index];
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  leading: StreamBuilder<PlayerState>(
-                    stream: _audioPlayer.onPlayerStateChanged,
-                    builder: (context, snapshot) {
-                      final isPlaying = snapshot.data == PlayerState.playing;
-                      return IconButton(
-                        icon: Icon(isPlaying ? Icons.stop : Icons.play_arrow),
-                        onPressed: () => _playVoiceNote(voiceNote),
-                      );
-                    }
-                  ),
-                  title: Text('Voice Note ${index + 1}'),
-                  subtitle: Text('Created by: ${voiceNote.createdBy ?? 'Unknown'}'),
-                  trailing: Text(
-                    '${(voiceNote.duration.inMilliseconds / 1000).toStringAsFixed(1)}s',
-                  ),
+              final isPlaying = _currentlyPlayingNoteId == voiceNote.id;
+              
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: const Color(0xFF7DF9FF),
+                      ),
+                      onPressed: () async {
+                        if (isPlaying) {
+                          await _stopPlayback();
+                          setState(() {
+                            _currentlyPlayingNoteId = null;
+                          });
+                        } else {
+                          setState(() {
+                            _currentlyPlayingNoteId = voiceNote.id;
+                          });
+                          await _playVoiceNote(voiceNote);
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Voice Note ${index + 1}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Created by: ${voiceNote.createdBy ?? 'Unknown'}',
+                            style: const TextStyle(
+                              color: Color(0xFF94A3B8),
+                              fontSize: 12,
+                            ),
+                          ),
+                          if (isPlaying && _totalDuration.inSeconds > 0) ...[
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
+                                backgroundColor: const Color(0xFF0D1526),
+                                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+                                minHeight: 2,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${(voiceNote.duration.inMilliseconds / 1000).toStringAsFixed(1)}s',
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -1726,5 +1960,98 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _initializeAudioPlayer() async {
+    try {
+      print('🎵 [Audio] Initializing audio player...');
+      
+      // Configure audio player for streaming
+      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
+      await _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
+      
+      // Configure audio context
+      await _audioPlayer.setAudioContext(AudioContext(
+        android: AudioContextAndroid(
+          contentType: AndroidContentType.music,
+          usageType: AndroidUsageType.media,
+          audioFocus: AndroidAudioFocus.gain,
+        ),
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playback,
+          options: [
+            AVAudioSessionOptions.defaultToSpeaker,
+            AVAudioSessionOptions.mixWithOthers,
+          ],
+        ),
+      ));
+      
+      // Set up position listener
+      _positionSubscription?.cancel();
+      _positionSubscription = _audioPlayer.onPositionChanged.listen(
+        (position) {
+          if (mounted) {
+            setState(() {
+              _playbackPosition = position;
+            });
+          }
+        },
+        onError: (error) {
+          print('❌ [Audio] Position listener error: $error');
+        },
+      );
+      
+      // Set up duration listener
+      _durationSubscription?.cancel();
+      _durationSubscription = _audioPlayer.onDurationChanged.listen(
+        (duration) {
+          if (mounted) {
+            setState(() {
+              _totalDuration = duration;
+            });
+          }
+        },
+        onError: (error) {
+          print('❌ [Audio] Duration listener error: $error');
+        },
+      );
+      
+      // Set up completion listener
+      _audioPlayer.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = false;
+            _playbackPosition = Duration.zero;
+            _currentlyPlayingNoteId = null;
+          });
+        }
+      });
+
+      // Set up state change listener
+      _audioPlayer.onPlayerStateChanged.listen(
+        (state) {
+          if (mounted) {
+            setState(() {
+              _isPlaying = state == PlayerState.playing;
+            });
+          }
+          print('🎵 [Audio] Player state changed: $state');
+        },
+        onError: (error) {
+          print('❌ [Audio] State listener error: $error');
+        },
+      );
+
+      print('✅ [Audio] Audio player initialized successfully');
+    } catch (e) {
+      print('❌ [Audio] Error initializing audio player: $e');
+      _showErrorSnackBar('Failed to initialize audio player');
+    }
+  }
+
+  void _disposeAudioPlayer() {
+    _positionSubscription?.cancel();
+    _durationSubscription?.cancel();
+    _audioPlayer.dispose();
   }
 } 

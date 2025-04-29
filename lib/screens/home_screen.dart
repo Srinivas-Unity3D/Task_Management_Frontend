@@ -11,7 +11,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _socketService = SocketService();
+  final _socketService = SocketService.instance;
   String? _username;
   int _notificationCount = 0;
 

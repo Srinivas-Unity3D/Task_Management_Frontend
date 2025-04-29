@@ -17,14 +17,14 @@ void main() async {  // Made async to properly handle initialization
   ]);
 
   // Initialize socket service
-  final socketService = SocketService();
+  final socketService = SocketService.instance;
   socketService.init('http://134.209.149.12:5000');  // Updated to match your server IP
   
   // Get current user and register with socket
   final prefs = await SharedPreferences.getInstance();
   final username = prefs.getString('username');
   if (username != null) {
-    socketService.registerUser(username);
+    socketService.connect(username);
   }
 
   // Check if user is logged in

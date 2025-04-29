@@ -30,7 +30,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ApiService _apiService = ApiService();
-  final _socketService = SocketService();
+  final _socketService = SocketService.instance;
   final _audioService = AudioService();
   late User _user;
   TaskStats? _taskStats;

@@ -18,7 +18,7 @@ class AssignTasksScreen extends StatefulWidget {
 
 class _AssignTasksScreenState extends State<AssignTasksScreen> {
   final _apiService = ApiService();
-  final _socketService = SocketService();
+  final _socketService = SocketService.instance;
   final _notificationService = NotificationService();
   List<TaskAssignment> _assignments = [];
   bool _isLoading = true;
