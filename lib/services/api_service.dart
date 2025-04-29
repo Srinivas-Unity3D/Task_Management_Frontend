@@ -89,6 +89,11 @@ class ApiService {
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
       print('Attempting login for user: $username');
+      
+      // Get FCM token from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final fcmToken = prefs.getString('fcm_token') ?? '';
+      
       final response = await http.post(
         Uri.parse('$baseUrl/login'),
         headers: {
@@ -98,6 +103,7 @@ class ApiService {
         body: json.encode({
           'username': username,
           'password': password,
+          'fcm_token': fcmToken,
         }),
       ).timeout(const Duration(seconds: 10));
 
@@ -108,7 +114,6 @@ class ApiService {
       
       if (response.statusCode == 200) {
         // Store user data in SharedPreferences
-        final prefs = await SharedPreferences.getInstance();
         await prefs.setString('user_id', data['user_id']);
         await prefs.setString('username', data['username']);
         await prefs.setString('role', data['role']);
