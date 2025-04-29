@@ -9,6 +9,7 @@ class RoleDropdown extends StatelessWidget {
   final void Function(String?)? onChanged;
   final String? Function(String?)? validator;
   final bool showError;
+  final bool isLoading;
 
   const RoleDropdown({
     Key? key,
@@ -19,6 +20,7 @@ class RoleDropdown extends StatelessWidget {
     this.onChanged,
     this.validator,
     this.showError = false,
+    this.isLoading = false,
   }) : super(key: key);
 
   void _showRoleSelector(BuildContext context) {

@@ -116,6 +116,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _requestInitialPermissions();
     _initializeData();
     _initializeAudioPlayer();
+    _fetchUsers();
   }
 
   @override
@@ -304,16 +305,26 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       });
       
       final users = await _apiService.getUsers();
-      setState(() {
-        // Filter out the current user from the list
-        _users = users.where((user) => user != _currentUsername).toList();
-        _isLoadingUsers = false;
-      });
+      if (mounted) {  // Check if widget is still mounted
+        setState(() {
+          // Filter out the current user from the list
+          _users = users.where((user) => user != _currentUsername).toList();
+          _isLoadingUsers = false;
+        });
+      }
     } catch (e) {
-      print('Error fetching users: $e');
-      setState(() {
-        _isLoadingUsers = false;
-      });
+      print('❌ [Users] Error fetching users: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingUsers = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load users: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -539,7 +550,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           opacity: widget.isEditMode ? 0.7 : 1.0,
                           child: RoleDropdown(
                             label: 'Assignee',
-                            hint: 'Select assignee',
+                            hint: _isLoadingUsers ? 'Loading users...' : 'Select assignee',
                             items: _users,
                             value: _selectedAssignee,
                             onChanged: widget.isEditMode ? null : (String? value) {
@@ -547,6 +558,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                 _selectedAssignee = value;
                               });
                             },
+                            isLoading: _isLoadingUsers,
                           ),
                         ),
                       ),
@@ -897,8 +909,98 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           ],
                         ),
                       ),
-                      // Existing voice notes in edit mode
-                      if (widget.isEditMode) _buildExistingVoiceNotes(),
+                      // Move Audio Notes section here (from bottom)
+                      if (widget.isEditMode && _voiceNotes.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Audio Notes',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _voiceNotes.length,
+                          itemBuilder: (context, index) {
+                            final voiceNote = _voiceNotes[index];
+                            final isPlaying = _currentlyPlayingNoteId == voiceNote.id;
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D1526),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF1E293B)),
+                              ),
+                              child: Row(
+                                children: [
+                                  // Play/Pause Button
+                                  IconButton(
+                                    icon: Icon(
+                                      isPlaying ? Icons.pause : Icons.play_arrow,
+                                      color: const Color(0xFF7DF9FF),
+                                    ),
+                                    onPressed: () async {
+                                      if (isPlaying) {
+                                        await _stopPlayback();
+                                        setState(() {
+                                          _currentlyPlayingNoteId = null;
+                                        });
+                                      } else {
+                                        setState(() {
+                                          _currentlyPlayingNoteId = voiceNote.id;
+                                        });
+                                        await _playVoiceNote(voiceNote);
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Duration and File Name
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Voice Note ${index + 1}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'By: ${voiceNote.createdBy}',
+                                          style: const TextStyle(
+                                            color: Color(0xFF94A3B8),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        if (isPlaying && _totalDuration.inSeconds > 0) ...[
+                                          const SizedBox(height: 8),
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(4),
+                                            child: LinearProgressIndicator(
+                                              value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
+                                              backgroundColor: const Color(0xFF0D1526),
+                                              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+                                              minHeight: 2,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       // Attachments
                       const Text(
@@ -1009,107 +1111,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                       // Existing attachments in edit mode
                       if (widget.isEditMode) _buildExistingAttachments(),
                       const SizedBox(height: 16),
-                      // Audio Notes Section
-                      if (widget.isEditMode && _voiceNotes.isNotEmpty) ...[
-                        const Text(
-                          'Audio Notes',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _voiceNotes.length,
-                          itemBuilder: (context, index) {
-                            final voiceNote = _voiceNotes[index];
-                            final isPlaying = _currentlyPlayingNoteId == voiceNote.id;
-                            
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0D1526),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFF1E293B)),
-                              ),
-                              child: Row(
-                                children: [
-                                  // Play/Pause Button
-                                  IconButton(
-                                    icon: Icon(
-                                      isPlaying ? Icons.pause : Icons.play_arrow,
-                                      color: const Color(0xFF7DF9FF),
-                                    ),
-                                    onPressed: () async {
-                                      if (isPlaying) {
-                                        await _stopPlayback();
-                                        setState(() {
-                                          _currentlyPlayingNoteId = null;
-                                        });
-                                      } else {
-                                        setState(() {
-                                          _currentlyPlayingNoteId = voiceNote.id;
-                                        });
-                                        await _playVoiceNote(voiceNote);
-                                      }
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  // Duration and File Name
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Voice Note ${index + 1}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Created by: ${voiceNote.createdBy ?? 'Unknown'}',
-                                          style: const TextStyle(
-                                            color: Color(0xFF94A3B8),
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        if (isPlaying && _totalDuration.inSeconds > 0) ...[
-                                          const SizedBox(height: 8),
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(4),
-                                            child: LinearProgressIndicator(
-                                              value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
-                                              backgroundColor: const Color(0xFF0D1526),
-                                              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
-                                              minHeight: 2,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  Text(
-                                    '${(voiceNote.duration.inMilliseconds / 1000).toStringAsFixed(1)}s',
-                                    style: const TextStyle(
-                                      color: Color(0xFF94A3B8),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                      const SizedBox(height: 32),
                       // Action Buttons
                       Row(
                         children: [
@@ -1743,111 +1744,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     } catch (e) {
       _showErrorSnackBar('Failed to open attachment');
     }
-  }
-
-  // Update the existing voice notes list builder
-  Widget _buildExistingVoiceNotes() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (_voiceNotes.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          const Text(
-            'Existing Voice Notes',
-            style: TextStyle(
-              color: Color(0xFF94A3B8),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _voiceNotes.length,
-            itemBuilder: (context, index) {
-              final voiceNote = _voiceNotes[index];
-              final isPlaying = _currentlyPlayingNoteId == voiceNote.id;
-              
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        isPlaying ? Icons.pause : Icons.play_arrow,
-                        color: const Color(0xFF7DF9FF),
-                      ),
-                      onPressed: () async {
-                        if (isPlaying) {
-                          await _stopPlayback();
-                          setState(() {
-                            _currentlyPlayingNoteId = null;
-                          });
-                        } else {
-                          setState(() {
-                            _currentlyPlayingNoteId = voiceNote.id;
-                          });
-                          await _playVoiceNote(voiceNote);
-                        }
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Voice Note ${index + 1}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Created by: ${voiceNote.createdBy ?? 'Unknown'}',
-                            style: const TextStyle(
-                              color: Color(0xFF94A3B8),
-                              fontSize: 12,
-                            ),
-                          ),
-                          if (isPlaying && _totalDuration.inSeconds > 0) ...[
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
-                                backgroundColor: const Color(0xFF0D1526),
-                                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
-                                minHeight: 2,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '${(voiceNote.duration.inMilliseconds / 1000).toStringAsFixed(1)}s',
-                      style: const TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ],
-    );
   }
 
   // Update the existing attachments list builder
