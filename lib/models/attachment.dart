@@ -2,9 +2,9 @@ class Attachment {
   final String id;
   final String taskId;
   final String fileName;
-  final String? filePath;
   final String fileType;
   final int fileSize;
+  final String? filePath;
   final String? createdBy;
   final DateTime createdAt;
 
@@ -12,9 +12,9 @@ class Attachment {
     required this.id,
     required this.taskId,
     required this.fileName,
-    this.filePath,
     required this.fileType,
     required this.fileSize,
+    this.filePath,
     this.createdBy,
     required this.createdAt,
   });
@@ -24,9 +24,9 @@ class Attachment {
       id: json['id'],
       taskId: json['task_id'],
       fileName: json['file_name'],
-      filePath: json['file_path'],
       fileType: json['file_type'] ?? '',
       fileSize: json['file_size'] ?? 0,
+      filePath: json['file_path'],
       createdBy: json['created_by'],
       createdAt: DateTime.parse(json['created_at']),
     );
@@ -37,9 +37,9 @@ class Attachment {
       'id': id,
       'task_id': taskId,
       'file_name': fileName,
-      'file_path': filePath,
       'file_type': fileType,
       'file_size': fileSize,
+      'file_path': filePath,
       'created_by': createdBy,
       'created_at': createdAt.toIso8601String(),
     };

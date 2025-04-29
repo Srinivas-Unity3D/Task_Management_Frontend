@@ -1094,274 +1094,110 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<void> _handleCreateTask() async {
-    // Validate form first
-    if (!_formKey.currentState!.validate()) return;
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+      });
 
-    // Validate required fields
-    if (_titleController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a title')),
-      );
-      return;
-    }
-
-    if (_descriptionController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a description')),
-      );
-      return;
-    }
-
-    if (_selectedAssignee == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select an assignee')),
-      );
-      return;
-    }
-
-    if (_dueDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a due date')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      Map<String, dynamic>? audioNote;
-      List<Map<String, dynamic>> attachments = [];
-
-      // Handle audio recording
-      if (_recordedFilePath != null) {
-        print('📝 [Upload] Processing audio file: $_recordedFilePath');
-        final File audioFile = File(_recordedFilePath!);
-        if (await audioFile.exists()) {
-          final bytes = await audioFile.readAsBytes();
-          if (bytes.isEmpty) {
-            print('❌ [Upload] Audio file is empty');
-            throw Exception('Audio file is empty');
-          }
+      try {
+        // Handle audio note
+        Map<String, dynamic>? audioNote;
+        if (_recordedFilePath != null && await File(_recordedFilePath!).exists()) {
+          final audioBytes = await File(_recordedFilePath!).readAsBytes();
+          final base64Audio = base64Encode(audioBytes);
+          final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
           
-          print('📝 [Upload] Audio file size: ${bytes.length} bytes');
-          final String base64Audio = base64Encode(bytes);
-          
-          // Get audio duration if available
-          int duration = 0;
-          try {
-            final audioPlayer = AudioPlayer();
-            await audioPlayer.setSourceDeviceFile(_recordedFilePath!);
-            final audioDuration = await audioPlayer.getDuration();
-            duration = audioDuration?.inMilliseconds ?? 0;
-            await audioPlayer.dispose();
-          } catch (e) {
-            print('⚠️ [Upload] Could not get audio duration: $e');
-          }
-
-          // Create audio note object with filename
-          final fileName = 'voice_note_${DateTime.now().millisecondsSinceEpoch}.wav';
           audioNote = {
+            'filename': filename,
+            'duration': _recordingDuration.inSeconds,
             'audio_data': base64Audio,
-            'file_name': fileName,
-            'duration': duration
           };
-          print('✅ [Upload] Audio processed successfully');
-          print('  - Duration: ${duration}ms');
-          print('  - Filename: $fileName');
-        } else {
-          print('❌ [Upload] Audio file not found: $_recordedFilePath');
         }
-      }
 
-      // Handle file attachments
-      if (_selectedFiles.isNotEmpty) {
-        print('📝 [Upload] Processing ${_selectedFiles.length} attachments');
-        for (PlatformFile file in _selectedFiles) {
-          try {
-            if (file.bytes == null || file.bytes!.isEmpty) {
-              print('⚠️ [Upload] Skipping empty file: ${file.name}');
-              continue;
+        // Handle attachments
+        List<File>? attachments;
+        if (_selectedFiles.isNotEmpty) {
+          attachments = _selectedFiles.map((file) {
+            if (file.path == null) {
+              throw Exception('File path is null');
             }
-
-            print('📝 [Upload] Processing file: ${file.name}');
-            print('  - Size: ${file.size} bytes');
-            print('  - Type: ${file.extension}');
-
-            final String base64File = base64Encode(file.bytes!);
-            
-            // Create a structured attachment object
-            final Map<String, dynamic> attachmentData = {
-              'file_name': file.name,
-              'file_type': file.extension?.toLowerCase() ?? 'unknown',
-              'file_size': file.size,
-              'file_data': base64File
-            };
-            
-            // Add to attachments list
-            attachments.add(attachmentData);
-            print('✅ [Upload] File processed successfully: ${file.name}');
-          } catch (e) {
-            print('❌ [Upload] Error processing file ${file.name}: $e');
-            // Continue with other files if one fails
-            continue;
-          }
+            return File(file.path!);
+          }).toList();
         }
-      }
 
-      // Create alarm settings map only if all required alarm fields are present
-      Map<String, dynamic>? alarmSettings;
-      if (_alarmStartDate != null && _alarmStartTime != null) {
-        alarmSettings = {
-          'start_date': _alarmStartDate!.toIso8601String().split('T')[0],
-          'start_time': '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}:00',
-          'frequency': _alarmFrequency,
-        };
-      }
-
-      // Print request data for debugging
-      print('📤 [Upload] Sending request with data:');
-      final requestData = {
-        'title': _titleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'assigned_to': _selectedAssignee,
-        'assigned_by': _currentUsername,
-        'deadline': _dueDate!.toIso8601String(),
-        'priority': _priority.toLowerCase(),
-        'status': _getStatusString(_status),
-        if (audioNote != null) 'audio_note': audioNote,
-        if (attachments.isNotEmpty) 'attachments': attachments,
-        if (alarmSettings != null) 'alarm_settings': alarmSettings,
-      };
-      
-      // Print request summary (without the actual file data)
-      print('📤 [Upload] Request summary:');
-      print('  - Title: ${requestData['title']}');
-      print('  - Has audio: ${audioNote != null}');
-      print('  - Attachments count: ${attachments.length}');
-      print('  - Has alarm: ${alarmSettings != null}');
-
-      final response = widget.isEditMode
-          ? await _apiService.updateTask(
-              taskId: widget.taskId!,
-              priority: _priority.toLowerCase(),
-              status: _getStatusString(_status),
-              deadline: _dueDate!.toIso8601String(),
-              audioNote: audioNote,
-              attachments: attachments.isNotEmpty ? attachments : null,
-              alarmSettings: alarmSettings,
-              updatedBy: _currentUsername ?? '',
-            )
-          : await _apiService.createTask(
-              title: _titleController.text.trim(),
-              description: _descriptionController.text.trim(),
-              assignedTo: _selectedAssignee!,
-              assignedBy: _currentUsername ?? '',
-              deadline: _dueDate!.toIso8601String(),
-              priority: _priority.toLowerCase(),
-              status: _getStatusString(_status),
-              audioNote: audioNote,
-              attachments: attachments.isNotEmpty ? attachments : null,
-              alarmSettings: alarmSettings,
-            );
-
-      if (response['success'] == true) {
-        if (mounted) {
-          // Show success dialog
-          await showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (BuildContext context) {
-              return Dialog(
-                backgroundColor: const Color(0xFF0F172A),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF7DF9FF),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check,
-                          color: Color(0xFF0F172A),
-                          size: 32,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        widget.isEditMode ? 'Task Updated Successfully!' : 'Task Created Successfully!',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        widget.isEditMode
-                            ? 'Task has been updated successfully.'
-                            : 'Task "${_titleController.text}" has been created and assigned to $_selectedAssignee.',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF94A3B8),
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop(); // Close dialog
-                          Navigator.pop(context, true); // Return to previous screen
-                        },
-                        style: TextButton.styleFrom(
-                          backgroundColor: const Color(0xFF7DF9FF),
-                          minimumSize: const Size(double.infinity, 48),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text(
-                          'OK',
-                          style: TextStyle(
-                            color: Color(0xFF0F172A),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
+        // Create alarm settings if needed
+        Map<String, dynamic>? alarmSettings;
+        if (_alarmStartDate != null && _alarmStartTime != null) {
+          final alarmDateTime = DateTime(
+            _alarmStartDate!.year,
+            _alarmStartDate!.month,
+            _alarmStartDate!.day,
+            _alarmStartTime!.hour,
+            _alarmStartTime!.minute,
           );
+          
+          alarmSettings = {
+            'alarm_time': alarmDateTime.toIso8601String(),
+            'is_enabled': true,
+          };
         }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(response['message'] ?? 'Failed to save task')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+
+        final response = await _apiService.createTask(
+          title: _titleController.text,
+          description: _descriptionController.text,
+          assignedTo: _selectedAssignee ?? '',
+          assignedBy: _currentUsername ?? '',
+          deadline: _dueDate ?? DateTime.now(),
+          priority: _priority.toLowerCase(),
+          status: _getStatusString(_status),
+          audioNote: audioNote,
+          attachments: attachments,
+          alarmSettings: alarmSettings,
         );
-      }
-    } finally {
-      if (mounted) {
+
         setState(() {
           _isLoading = false;
         });
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(response)),
+        );
+
+        // Clear the form
+        _clearForm();
+
+        // Navigate back
+        Navigator.pop(context);
+      } catch (e) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error creating task: $e')),
+        );
       }
     }
+  }
+
+  void _clearForm() {
+    _titleController.clear();
+    _descriptionController.clear();
+    _selectedAssignee = null;
+    _dueDate = null;
+    _priority = 'Low';
+    _status = TaskStatus.pending;
+    _isRecording = false;
+    _isPlaying = false;
+    _recordedFilePath = null;
+    _recordingDuration = Duration.zero;
+    _selectedFiles.clear();
+    _alarmStartDate = null;
+    _alarmStartTime = null;
+    _alarmFrequency = '30 minutes';
+    setState(() {});
   }
 
   String _getStatusString(TaskStatus status) {

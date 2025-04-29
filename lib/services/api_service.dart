@@ -204,34 +204,51 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> createTask({
+  Future<String> createTask({
     required String title,
     required String description,
     required String assignedTo,
     required String assignedBy,
-    required String deadline,
+    required DateTime deadline,
     required String priority,
     required String status,
     Map<String, dynamic>? audioNote,
-    List<Map<String, dynamic>>? attachments,
+    List<File>? attachments,
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
-      print('Creating task with data:');
-      final requestBody = {
+      // Convert attachments to base64
+      List<Map<String, dynamic>> attachmentData = [];
+      if (attachments != null) {
+        for (var file in attachments) {
+          if (await file.exists()) {
+            List<int> fileBytes = await file.readAsBytes();
+            String base64File = base64Encode(fileBytes);
+            String fileName = file.path.split('/').last;
+            String fileType = fileName.split('.').last;
+            
+            attachmentData.add({
+              'file_name': fileName,
+              'file_type': fileType,
+              'file_data': base64File,
+            });
+          }
+        }
+      }
+
+      // Prepare the request body
+      final taskData = {
         'title': title,
         'description': description,
         'assigned_to': assignedTo,
         'assigned_by': assignedBy,
-        'deadline': deadline,
+        'deadline': deadline.toIso8601String(),
         'priority': priority,
         'status': status,
-        if (audioNote != null) 'audio_note': audioNote,
-        if (attachments != null && attachments.isNotEmpty)
-          'attachments': attachments,
-        if (alarmSettings != null) 'alarm_settings': alarmSettings,
+        'audio_note': audioNote,
+        'alarm_settings': alarmSettings,
+        'attachments': attachmentData,
       };
-      print(requestBody);
 
       final response = await http.post(
         Uri.parse('$baseUrl/api/tasks'),
@@ -239,33 +256,29 @@ class ApiService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: json.encode(requestBody),
+        body: json.encode(taskData),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw TimeoutException('Request timed out');
+        },
       );
 
-      print('Response status code: ${response.statusCode}');
+      print('Response status: ${response.statusCode}');
       print('Response body: ${response.body}');
 
-      final responseData = json.decode(response.body);
       if (response.statusCode == 201) {
-        return {
-          'success': true,
-          'message': responseData['message'] ?? 'Task created successfully',
-          'statusCode': response.statusCode,
-        };
+        final responseData = json.decode(response.body);
+        return responseData['message'] ?? 'Task created successfully';
       } else {
-        return {
-          'success': false,
-          'message': responseData['message'] ?? 'Failed to create task',
-          'statusCode': response.statusCode,
-        };
+        throw Exception('Failed to create task: ${response.statusCode} - ${response.body}');
       }
+    } on TimeoutException {
+      throw Exception('Connection timed out. Please check your internet connection and try again.');
+    } on SocketException catch (e) {
+      throw Exception('Network error: ${e.message}. Please check your internet connection.');
     } catch (e) {
-      print('Error creating task: $e');
-      return {
-        'success': false,
-        'message': 'Error creating task: $e',
-        'statusCode': 500,
-      };
+      throw Exception('Failed to create task: $e');
     }
   }
 
@@ -448,67 +461,66 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> updateTask({
+  Future<String> updateTask({
     required String taskId,
+    required String title,
+    required String description,
+    required String assignedTo,
+    required String assignedBy,
+    required DateTime deadline,
     required String priority,
     required String status,
-    required String deadline,
     Map<String, dynamic>? audioNote,
-    List<Map<String, dynamic>>? attachments,
+    List<File>? attachments,
     Map<String, dynamic>? alarmSettings,
-    required String updatedBy,
   }) async {
     try {
-      print('Updating task with data:');
-      final requestBody = {
-        'priority': priority,
-        'status': status,
-        'deadline': deadline,
-        'updated_by': updatedBy,
-        if (audioNote != null) 'audio_note': audioNote,
-        if (attachments != null) 'attachments': attachments,
-        if (alarmSettings != null) 'alarm_settings': alarmSettings,
-      };
-      print('Request body (excluding file data): ${json.encode({
-        ...requestBody,
-        if (audioNote != null) 'audio_note': {'file_name': 'audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a'},
-        if (attachments != null) 'attachments': attachments!.map((a) => a['file_name']).toList(),
-      })}');
+      var request = http.MultipartRequest('PUT', Uri.parse('$baseUrl/api/tasks/$taskId'));
+      
+      // Add task data as fields
+      request.fields['title'] = title;
+      request.fields['description'] = description;
+      request.fields['assigned_to'] = assignedTo;
+      request.fields['assigned_by'] = assignedBy;
+      request.fields['deadline'] = deadline.toIso8601String();
+      request.fields['priority'] = priority;
+      request.fields['status'] = status;
+      
+      if (audioNote != null) {
+        request.fields['audio_note'] = jsonEncode(audioNote);
+      }
+      
+      if (alarmSettings != null) {
+        request.fields['alarm_settings'] = jsonEncode(alarmSettings);
+      }
 
-      final response = await http.put(
-        Uri.parse('$baseUrl/tasks/$taskId'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(requestBody),
-      );
+      // Add file attachments
+      if (attachments != null) {
+        for (var file in attachments) {
+          var stream = http.ByteStream(file.openRead());
+          var length = await file.length();
+          var filename = file.path.split('/').last;
 
-      print('Response status code: ${response.statusCode}');
-      print('Response body: ${response.body}');
+          var multipartFile = http.MultipartFile(
+            'attachments',
+            stream,
+            length,
+            filename: filename,
+          );
+          request.files.add(multipartFile);
+        }
+      }
+
+      var response = await request.send();
+      var responseBody = await response.stream.bytesToString();
 
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        return {
-          'success': true,
-          'message': responseData['message'] ?? 'Task updated successfully',
-          'task_id': taskId,
-        };
+        return 'Task updated successfully';
       } else {
-        final responseData = json.decode(response.body);
-        return {
-          'success': false,
-          'message': responseData['message'] ?? 'Failed to update task',
-          'task_id': taskId,
-        };
+        throw Exception('Failed to update task: ${response.statusCode} - $responseBody');
       }
     } catch (e) {
-      print('Error updating task: $e');
-      return {
-        'success': false,
-        'message': 'Error updating task: $e',
-        'task_id': taskId,
-      };
+      throw Exception('Failed to update task: $e');
     }
   }
 } 
