@@ -212,7 +212,7 @@ class ApiService {
     required String deadline,
     required String priority,
     required String status,
-    String? audioNote,
+    Map<String, dynamic>? audioNote,
     List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
   }) async {
@@ -226,10 +226,7 @@ class ApiService {
         'deadline': deadline,
         'priority': priority,
         'status': status,
-        if (audioNote != null) 'audio_note': {
-          'audio_data': audioNote,
-          'duration': 0, // Add duration if available
-        },
+        if (audioNote != null) 'audio_note': audioNote,
         if (attachments != null && attachments.isNotEmpty)
           'attachments': attachments,
         if (alarmSettings != null) 'alarm_settings': alarmSettings,
@@ -456,7 +453,7 @@ class ApiService {
     required String priority,
     required String status,
     required String deadline,
-    String? audioNote,
+    Map<String, dynamic>? audioNote,
     List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
     required String updatedBy,
@@ -464,23 +461,12 @@ class ApiService {
     try {
       print('Updating task with data:');
       final requestBody = {
-        'task_id': taskId,
         'priority': priority,
         'status': status,
         'deadline': deadline,
         'updated_by': updatedBy,
-        if (audioNote != null) 'audio_note': {
-          'audio_data': audioNote,
-          'file_name': 'audio_note_${DateTime.now().millisecondsSinceEpoch}.m4a',
-          'duration': 0
-        },
-        if (attachments != null && attachments.isNotEmpty)
-          'attachments': attachments.map((attachment) => {
-            'file_name': attachment['file_name'],
-            'file_type': attachment['file_type'],
-            'file_size': attachment['file_size'],
-            'file_data': attachment['file_data'],
-          }).toList(),
+        if (audioNote != null) 'audio_note': audioNote,
+        if (attachments != null) 'attachments': attachments,
         if (alarmSettings != null) 'alarm_settings': alarmSettings,
       };
       print('Request body (excluding file data): ${json.encode({

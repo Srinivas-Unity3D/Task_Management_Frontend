@@ -1129,7 +1129,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     setState(() => _isLoading = true);
 
     try {
-      String? audioNote;
+      Map<String, dynamic>? audioNote;
       List<Map<String, dynamic>> attachments = [];
 
       // Handle audio recording
@@ -1158,10 +1158,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             print('⚠️ [Upload] Could not get audio duration: $e');
           }
 
-          audioNote = base64Audio;
+          // Create audio note object with filename
+          final fileName = 'voice_note_${DateTime.now().millisecondsSinceEpoch}.wav';
+          audioNote = {
+            'audio_data': base64Audio,
+            'file_name': fileName,
+            'duration': duration
+          };
           print('✅ [Upload] Audio processed successfully');
           print('  - Duration: ${duration}ms');
-          print('  - Base64 length: ${base64Audio.length}');
+          print('  - Filename: $fileName');
         } else {
           print('❌ [Upload] Audio file not found: $_recordedFilePath');
         }
@@ -1222,11 +1228,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         'deadline': _dueDate!.toIso8601String(),
         'priority': _priority.toLowerCase(),
         'status': _getStatusString(_status),
-        if (audioNote != null) 'audio_note': {
-          'audio_data': audioNote,
-          'file_name': 'voice_note_${DateTime.now().millisecondsSinceEpoch}.wav',
-          'duration': _recordingDuration.inMilliseconds
-        },
+        if (audioNote != null) 'audio_note': audioNote,
         if (attachments.isNotEmpty) 'attachments': attachments,
         if (alarmSettings != null) 'alarm_settings': alarmSettings,
       };
