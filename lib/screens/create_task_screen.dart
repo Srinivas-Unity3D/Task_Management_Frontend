@@ -652,26 +652,28 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      // Status
-                      const Text(
-                        'Status',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+                      // Status - Only show in edit mode
+                      if (widget.isEditMode) ...[
+                        const Text(
+                          'Status',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _buildStatusButton(TaskStatus.pending, 'Pending'),
-                          const SizedBox(width: 12),
-                          _buildStatusButton(TaskStatus.inProgress, 'In Progress'),
-                          const SizedBox(width: 12),
-                          _buildStatusButton(TaskStatus.completed, 'Completed'),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            _buildStatusButton(TaskStatus.pending, 'Pending'),
+                            const SizedBox(width: 12),
+                            _buildStatusButton(TaskStatus.inProgress, 'In Progress'),
+                            const SizedBox(width: 12),
+                            _buildStatusButton(TaskStatus.completed, 'Completed'),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       // Alarm Section
                       const Text(
                         'Alarm Settings',
@@ -1252,6 +1254,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           };
         }
 
+        // Always set status to 'pending' when creating a new task
         final response = await _apiService.createTask(
           title: _titleController.text,
           description: _descriptionController.text,
@@ -1259,7 +1262,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           assignedBy: _currentUsername ?? '',
           deadline: _dueDate ?? DateTime.now(),
           priority: _priority.toLowerCase(),
-          status: _getStatusString(_status),
+          status: widget.isEditMode ? _getStatusString(_status) : 'pending',
           audioNote: audioNote,
           attachments: attachments,
           alarmSettings: alarmSettings,
