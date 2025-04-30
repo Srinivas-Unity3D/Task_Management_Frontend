@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/colors.dart';
+import 'package:flutter/services.dart';
 
 class RoleDropdown extends StatelessWidget {
   final String label;
@@ -78,7 +79,11 @@ class RoleDropdown extends StatelessWidget {
         return Stack(
           children: [
             GestureDetector(
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                // Hide keyboard before closing dialog
+                SystemChannels.textInput.invokeMethod('TextInput.hide');
+                Navigator.pop(context);
+              },
               behavior: HitTestBehavior.translucent,
               child: Container(
                 color: Colors.transparent,
@@ -140,6 +145,8 @@ class RoleDropdown extends StatelessWidget {
                               color: Colors.transparent,
                               child: InkWell(
                                 onTap: () {
+                                  // Hide keyboard before making selection
+                                  SystemChannels.textInput.invokeMethod('TextInput.hide');
                                   onChanged?.call(item);
                                   Navigator.pop(context);
                                 },
@@ -202,7 +209,11 @@ class RoleDropdown extends StatelessWidget {
           const SizedBox(height: 8),
         ],
         InkWell(
-          onTap: () => _showRoleSelector(context),
+          onTap: () {
+            // Hide keyboard before showing dropdown
+            SystemChannels.textInput.invokeMethod('TextInput.hide');
+            _showRoleSelector(context);
+          },
           child: Container(
             height: 52,
             padding: const EdgeInsets.symmetric(horizontal: 16),

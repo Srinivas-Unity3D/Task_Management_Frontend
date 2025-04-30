@@ -15,6 +15,7 @@ class CustomTextField extends StatefulWidget {
   final Function(String)? onChanged;
   final int? maxLines;
   final bool enabled;
+  final bool autofocus;
 
   const CustomTextField({
     Key? key,
@@ -30,6 +31,7 @@ class CustomTextField extends StatefulWidget {
     this.onChanged,
     this.maxLines = 1,
     this.enabled = true,
+    this.autofocus = false,
   }) : super(key: key);
 
   @override
@@ -38,6 +40,27 @@ class CustomTextField extends StatefulWidget {
 
 class _CustomTextFieldState extends State<CustomTextField> {
   bool _obscureText = true;
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_handleFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (!_focusNode.hasFocus) {
+      // Hide keyboard when focus is lost
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,10 +82,13 @@ class _CustomTextFieldState extends State<CustomTextField> {
         ],
         TextFormField(
           controller: widget.controller,
+          focusNode: _focusNode,
           obscureText: widget.isPassword ? _obscureText : false,
           keyboardType: widget.keyboardType,
           inputFormatters: widget.inputFormatters,
           maxLines: widget.maxLines,
+          enabled: widget.enabled,
+          autofocus: widget.autofocus,
           style: const TextStyle(
             color: AppColors.white,
             fontSize: 16,
@@ -121,6 +147,14 @@ class _CustomTextFieldState extends State<CustomTextField> {
             if (widget.showError && widget.onChanged != null) {
               widget.onChanged?.call(value);
             }
+          },
+          onTap: () {
+            if (!widget.enabled) {
+              _focusNode.unfocus();
+            }
+          },
+          onTapOutside: (_) {
+            _focusNode.unfocus();
           },
         ),
         if (errorText != null)
