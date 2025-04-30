@@ -15,6 +15,7 @@ class SocketService {
   final List<Function(dynamic)> _taskNotificationListeners = [];
   final List<Function(dynamic)> _dashboardUpdateListeners = [];
   final _notificationService = NotificationService();
+  bool _isRegistered = false;
 
   // Private constructor
   SocketService._internal();
@@ -36,6 +37,7 @@ class SocketService {
     disconnect();
 
     _currentUsername = username;
+    _isRegistered = false;
     
     if (_serverUrl == null) {
       print('🔌 Error: Server URL not initialized');
@@ -64,13 +66,16 @@ class SocketService {
     _socket!.onConnect((_) {
       print('🔌 Socket connected successfully');
       connected.value = true;
-      // Register user immediately after connection
-      registerUser(_currentUsername!);
+      // Register user immediately after connection if not already registered
+      if (!_isRegistered && _currentUsername != null) {
+        registerUser(_currentUsername!);
+      }
     });
 
     _socket!.onDisconnect((_) {
       print('🔌 Socket disconnected');
       connected.value = false;
+      _isRegistered = false;
       // Only attempt to reconnect if we still have a username
       if (_currentUsername != null) {
         Future.delayed(Duration(seconds: 3), () {
@@ -79,6 +84,14 @@ class SocketService {
             _socket!.connect();
           }
         });
+      }
+    });
+
+    _socket!.on('register_response', (data) {
+      print('🔌 Received register response: $data');
+      if (data['status'] == 'registered') {
+        _isRegistered = true;
+        print('🔌 Successfully registered user: ${data['username']}');
       }
     });
 
@@ -110,6 +123,11 @@ class SocketService {
     _socket!.on('dashboard_update', (data) {
       print('📨 Received dashboard update: $data');
       print('📨 Number of dashboard update listeners: ${_dashboardUpdateListeners.length}');
+      
+      // Check if the current user is the sender
+      final String? sender = data['updated_by'] ?? data['assigned_by'];
+      
+      // Process update even if current user is the sender to maintain consistency
       for (var listener in _dashboardUpdateListeners) {
         try {
           listener(data);
@@ -127,6 +145,7 @@ class SocketService {
     _socket!.onConnectError((error) {
       print('❌ Socket connect error: $error');
       connected.value = false;
+      _isRegistered = false;
       // Only attempt to reconnect if we still have a username
       if (_currentUsername != null) {
         Future.delayed(Duration(seconds: 3), () {
@@ -147,6 +166,7 @@ class SocketService {
       _socket = null;
     }
     _currentUsername = null;
+    _isRegistered = false;
     connected.value = false;
     _taskNotificationListeners.clear();
     _dashboardUpdateListeners.clear();
