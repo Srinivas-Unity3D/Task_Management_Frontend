@@ -42,6 +42,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    print('🔄 Dashboard - Initializing...');
     _initializeServices();
   }
 
@@ -59,26 +60,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
       print('🔄 Dashboard - Initializing services...');
       await _audioService.initialize();
       print('🔄 Dashboard - Audio service initialized');
+      
+      // Load initial data
       await _loadUserAndSetupSocket();
-      print('🔄 Dashboard - Socket service initialized');
+      print('🔄 Dashboard - Initial data loaded');
+      
+      // Initial tasks load
+      await _loadTasks();
+      print('🔄 Dashboard - Initial tasks loaded');
     } catch (e) {
-      print('🔄 Dashboard - Error initializing services: $e');
+      print('❌ Dashboard - Error initializing services: $e');
     }
   }
 
   Future<void> _loadUserAndSetupSocket() async {
     try {
+      print('🔄 Dashboard - Loading user data...');
       final prefs = await SharedPreferences.getInstance();
       final username = prefs.getString('username');
+      
       if (username != null) {
+        // Set up user data
+        _user = User(
+          userId: '1',
+          username: username,
+          email: '$username@example.com',
+          phone: '+1234567890',
+          role: prefs.getString('role') ?? '',
+          fcmToken: null,
+        );
+        
+        print('🔄 Dashboard - Connecting socket for user: $username');
         // Connect socket with username
         _socketService.connect(username);
+        
+        // Remove any existing listeners before adding new ones
+        _socketService.removeTaskNotificationListener(_handleTaskNotification);
+        _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
+        
         // Setup socket listeners
+        print('🔄 Dashboard - Setting up socket listeners');
         _setupSocketListeners();
       }
-      _loadTasks();
     } catch (e) {
-      print('Error loading user data: $e');
+      print('❌ Dashboard - Error loading user data: $e');
     }
   }
 
@@ -102,6 +127,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _handleTaskNotification(dynamic data) {
     if (mounted) {
+      print('🔔 Dashboard - Received task notification: $data');
+      
       // Check if the current user is the creator/updater
       final bool isCreator = data['task']?['assigned_by'] == _user.username;
       final bool isUpdater = data['task']?['updated_by'] == _user.username;
@@ -122,26 +149,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
       
       // Always refresh tasks list to keep it up to date
+      print('🔄 Dashboard - Refreshing tasks after notification...');
       _loadTasks();
     }
   }
 
-  void _handleDashboardUpdate(dynamic data) {
+  void _handleDashboardUpdate(dynamic data) async {
     if (mounted) {
-      // Only show notification if user is not the creator/updater
+      print('📨 Dashboard - Received update: $data');
+      
+      // Check if the current user is the creator/updater
       final bool isCreator = data['assigned_by'] == _user.username;
       final bool isUpdater = data['updated_by'] == _user.username;
       
+      // Play notification sound if user is not the creator/updater
       if (!isCreator && !isUpdater) {
         setState(() {
           _hasUnreadNotifications = true;
         });
-        
-        // Play notification sound and vibrate
         _playNotificationSound();
       }
-      // Always refresh the task list
-      _loadTasks();
+
+      // Always refresh tasks list regardless of who created/updated
+      print('🔄 Dashboard - Refreshing tasks after update...');
+      await _loadTasks();
+      
+      // Show a snackbar with the update message
+      if (mounted) {
+        final String actionType = data['type'] == 'task_created' ? 'created' : 'updated';
+        final String message = isCreator || isUpdater 
+          ? 'Task $actionType successfully!'
+          : 'A task has been $actionType';
+          
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 

@@ -180,9 +180,20 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       final bool isCreator = data['assigned_by'] == _currentUsername;
       final bool isUpdater = data['updated_by'] == _currentUsername;
       
-      // Only process updates if user is not the creator/updater
-      if (!isCreator && !isUpdater) {
-        // Handle any necessary UI updates
+      if (isCreator || isUpdater) {
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isCreator
+                ? 'Task created successfully!'
+                : 'Task updated successfully!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        
+        // Return to previous screen with refresh signal
+        Navigator.pop(context, true);
       }
     }
   }
