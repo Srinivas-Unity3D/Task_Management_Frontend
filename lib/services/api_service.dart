@@ -475,49 +475,57 @@ class ApiService {
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
-      var request = http.MultipartRequest('PUT', Uri.parse('$baseUrl/api/tasks/$taskId'));
-      
-      // Add task data as fields
-      request.fields['title'] = title;
-      request.fields['description'] = description;
-      request.fields['assigned_to'] = assignedTo;
-      request.fields['assigned_by'] = assignedBy;
-      request.fields['deadline'] = deadline.toIso8601String();
-      request.fields['priority'] = priority;
-      request.fields['status'] = status;
-      
-      if (audioNote != null) {
-        request.fields['audio_note'] = jsonEncode(audioNote);
-      }
-      
-      if (alarmSettings != null) {
-        request.fields['alarm_settings'] = jsonEncode(alarmSettings);
-      }
+      // Prepare the request body
+      final taskData = {
+        'title': title,
+        'description': description,
+        'assigned_to': assignedTo,
+        'assigned_by': assignedBy,
+        'deadline': deadline.toIso8601String(),
+        'priority': priority,
+        'status': status,
+        'updated_by': assignedBy,
+        'audio_note': audioNote,
+        'alarm_settings': alarmSettings,
+      };
 
-      // Add file attachments
-      if (attachments != null) {
+      // Convert attachments to base64 if present
+      if (attachments != null && attachments.isNotEmpty) {
+        List<Map<String, dynamic>> attachmentData = [];
         for (var file in attachments) {
-          var stream = http.ByteStream(file.openRead());
-          var length = await file.length();
-          var filename = file.path.split('/').last;
-
-          var multipartFile = http.MultipartFile(
-            'attachments',
-            stream,
-            length,
-            filename: filename,
-          );
-          request.files.add(multipartFile);
+          if (await file.exists()) {
+            List<int> fileBytes = await file.readAsBytes();
+            String base64File = base64Encode(fileBytes);
+            String fileName = file.path.split('/').last;
+            String fileType = fileName.split('.').last;
+            
+            attachmentData.add({
+              'file_name': fileName,
+              'file_type': fileType,
+              'file_data': base64File,
+            });
+          }
         }
+        taskData['attachments'] = attachmentData;
       }
 
-      var response = await request.send();
-      var responseBody = await response.stream.bytesToString();
+      final response = await http.put(
+        Uri.parse('$baseUrl/tasks/$taskId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode(taskData),
+      );
+
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
 
       if (response.statusCode == 200) {
-        return 'Task updated successfully';
+        final responseData = json.decode(response.body);
+        return responseData['message'] ?? 'Task updated successfully';
       } else {
-        throw Exception('Failed to update task: ${response.statusCode} - $responseBody');
+        throw Exception('Failed to update task: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       throw Exception('Failed to update task: $e');

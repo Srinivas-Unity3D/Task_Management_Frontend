@@ -1254,19 +1254,37 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           };
         }
 
-        // Always set status to 'pending' when creating a new task
-        final response = await _apiService.createTask(
-          title: _titleController.text,
-          description: _descriptionController.text,
-          assignedTo: _selectedAssignee ?? '',
-          assignedBy: _currentUsername ?? '',
-          deadline: _dueDate ?? DateTime.now(),
-          priority: _priority.toLowerCase(),
-          status: widget.isEditMode ? _getStatusString(_status) : 'pending',
-          audioNote: audioNote,
-          attachments: attachments,
-          alarmSettings: alarmSettings,
-        );
+        String response;
+        if (widget.isEditMode) {
+          // Update existing task
+          response = await _apiService.updateTask(
+            taskId: widget.taskId!,
+            title: _titleController.text,
+            description: _descriptionController.text,
+            assignedTo: _selectedAssignee ?? '',
+            assignedBy: _currentUsername ?? '',
+            deadline: _dueDate ?? DateTime.now(),
+            priority: _priority.toLowerCase(),
+            status: _getStatusString(_status),
+            audioNote: audioNote,
+            attachments: attachments,
+            alarmSettings: alarmSettings,
+          );
+        } else {
+          // Create new task
+          response = await _apiService.createTask(
+            title: _titleController.text,
+            description: _descriptionController.text,
+            assignedTo: _selectedAssignee ?? '',
+            assignedBy: _currentUsername ?? '',
+            deadline: _dueDate ?? DateTime.now(),
+            priority: _priority.toLowerCase(),
+            status: 'pending',
+            audioNote: audioNote,
+            attachments: attachments,
+            alarmSettings: alarmSettings,
+          );
+        }
 
         setState(() {
           _isLoading = false;
@@ -1298,11 +1316,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ),
         );
 
-        // Clear the form
-        _clearForm();
-
-        // Navigate back
-        Navigator.pop(context);
+        // Return true to trigger refresh in parent screen
+        Navigator.pop(context, true);
       } catch (e) {
         setState(() {
           _isLoading = false;
@@ -1310,7 +1325,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
         // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error creating task: $e')),
+          SnackBar(content: Text('Error ${widget.isEditMode ? "updating" : "creating"} task: $e')),
         );
       }
     }
