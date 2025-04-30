@@ -1274,7 +1274,28 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(response)),
+          SnackBar(
+            content: Text(
+              widget.isEditMode ? 'Task updated successfully' : 'Task created successfully',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            backgroundColor: const Color(0xFF1E293B),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: const BorderSide(
+                color: Color(0xFF7DF9FF),
+                width: 1,
+              ),
+            ),
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            duration: const Duration(seconds: 3),
+          ),
         );
 
         // Clear the form
