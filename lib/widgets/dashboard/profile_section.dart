@@ -8,7 +8,6 @@ class ProfileSection extends StatelessWidget {
   final User user;
   final VoidCallback onProfileTap;
   final VoidCallback onMyTasksPressed;
-  final VoidCallback onHistoryPressed;
   final VoidCallback onAssignTasksPressed;
   final VoidCallback onDashboardPressed;
   final ViewState currentView;
@@ -18,7 +17,6 @@ class ProfileSection extends StatelessWidget {
     required this.user,
     required this.onProfileTap,
     required this.onMyTasksPressed,
-    required this.onHistoryPressed,
     required this.onAssignTasksPressed,
     required this.onDashboardPressed,
     required this.currentView,
@@ -76,7 +74,6 @@ class ProfileSection extends StatelessWidget {
         ),
         NavigationMenu(
           onMyTasksPressed: onMyTasksPressed,
-          onHistoryPressed: onHistoryPressed,
           onAssignTasksPressed: onAssignTasksPressed,
           onDashboardPressed: onDashboardPressed,
           currentView: currentView,

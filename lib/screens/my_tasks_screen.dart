@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import '../theme/colors.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../widgets/common_app_bar.dart';
+import '../widgets/dashboard/side_panel.dart';
+import '../models/user.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MyTasksScreen extends StatefulWidget {
   const MyTasksScreen({Key? key}) : super(key: key);
@@ -12,19 +16,36 @@ class MyTasksScreen extends StatefulWidget {
 
 class _MyTasksScreenState extends State<MyTasksScreen> {
   final ApiService _apiService = ApiService();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Task> _tasks = [];
   bool _isLoading = true;
+  bool _hasUnreadNotifications = false;
+  String? _currentUserId;
+  String? _currentRole;
+  String? _currentUsername;
 
   @override
   void initState() {
     super.initState();
-    _loadTasks();
+    _loadUserAndTasks();
+  }
+
+  Future<void> _loadUserAndTasks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _currentUserId = prefs.getString('user_id');
+      _currentRole = prefs.getString('role');
+      _currentUsername = prefs.getString('username');
+      await _loadTasks();
+    } catch (e) {
+      print('Error loading user and tasks: $e');
+    }
   }
 
   Future<void> _loadTasks() async {
     try {
       setState(() => _isLoading = true);
-      final response = await _apiService.getTasks(username: '', role: ''); // TODO: Get from shared prefs
+      final response = await _apiService.getTasks(username: '', role: '');
       if (response['success']) {
         final tasksJson = response['data'] as List;
         setState(() {
@@ -46,103 +67,101 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.cardBackground,
-        title: const Text(
-          'My Tasks',
-          style: TextStyle(
-            color: AppColors.accentCyan,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
+      drawer: SidePanel(
+        onLogout: () async {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.clear();
+          if (mounted) {
+            Navigator.of(context).pushReplacementNamed('/');
+          }
+        },
+        onClose: () => Navigator.pop(context),
+        user: User(
+          userId: _currentUserId ?? '',
+          username: _currentUsername ?? '',
+          email: '${_currentUsername ?? 'user'}@example.com',
+          phone: '',
+          role: _currentRole ?? '',
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.accentCyan),
-          onPressed: () => Navigator.pop(context),
-        ),
+        currentRoute: '/my-tasks',
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.accentCyan),
-            )
-          : _tasks.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No tasks available',
-                    style: TextStyle(
-                      color: AppColors.textGrey,
-                      fontSize: 16,
-                    ),
+      body: Column(
+        children: [
+          CommonAppBar(
+            onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            hasUnreadNotifications: _hasUnreadNotifications,
+            onNotificationCleared: () {
+              setState(() {
+                _hasUnreadNotifications = false;
+              });
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+            child: Row(
+              children: [
+                const Text(
+                  'My Tasks',
+                  style: TextStyle(
+                    color: AppColors.accentCyan,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _tasks.length,
-                  itemBuilder: (context, index) {
-                    final task = _tasks[index];
-                    return Card(
-                      color: AppColors.cardBackground,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: AppColors.borderColor.withOpacity(0.1),
-                        ),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.all(16),
-                        title: Text(
-                          task.title,
-                          style: const TextStyle(
-                            color: AppColors.accentCyan,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.accentCyan),
+                  )
+                : _tasks.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No tasks available',
+                          style: TextStyle(
+                            color: AppColors.textGrey,
                             fontSize: 16,
-                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 8),
-                            Text(
-                              task.description,
-                              style: TextStyle(
-                                color: AppColors.white.withOpacity(0.7),
-                                fontSize: 14,
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _tasks.length,
+                        itemBuilder: (context, index) {
+                          final task = _tasks[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            color: AppColors.cardBackground,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: ListTile(
+                              title: Text(
+                                task.title,
+                                style: const TextStyle(
+                                  color: AppColors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                task.description,
+                                style: const TextStyle(
+                                  color: AppColors.textGrey,
+                                  fontSize: 14,
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.calendar_today,
-                                  size: 16,
-                                  color: AppColors.textGrey,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Due ${_formatDate(task.deadline)}',
-                                  style: const TextStyle(
-                                    color: AppColors.textGrey,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+          ),
+        ],
+      ),
     );
-  }
-
-  String _formatDate(DateTime date) {
-    final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day.toString().padLeft(2, '0')}';
   }
 } 

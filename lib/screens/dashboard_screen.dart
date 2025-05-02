@@ -10,7 +10,6 @@ import '../models/task_stats.dart';
 import '../models/view_state.dart';
 import '../theme/colors.dart';
 import 'sign_in_screen.dart';
-import '../widgets/dashboard/side_menu.dart';
 import '../widgets/dashboard/side_panel.dart';
 import '../widgets/custom_text_field.dart';
 import '../services/api_service.dart';
@@ -19,6 +18,7 @@ import '../screens/assign_tasks_screen.dart';
 import '../services/socket_service.dart';
 import '../widgets/common_notification_icon.dart';
 import '../services/audio_service.dart';
+import '../widgets/common_app_bar.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -78,11 +78,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       print('🔄 Dashboard - Loading user data...');
       final prefs = await SharedPreferences.getInstance();
       final username = prefs.getString('username');
+      final userId = prefs.getString('user_id') ?? '';
       
       if (username != null) {
         // Set up user data
         _user = User(
-          userId: '1',
+          userId: userId,
           username: username,
           email: '$username@example.com',
           phone: '+1234567890',
@@ -274,11 +275,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Get the stored user data from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       final username = prefs.getString('username') ?? '';
+      final userId = prefs.getString('user_id') ?? '';
       final role = prefs.getString('role') ?? '';
 
       // Load user data
       _user = User(
-        userId: prefs.getString('user_id') ?? '',
+        userId: userId,
         username: username,
         email: '$username@example.com',
         phone: '+1234567890',
@@ -399,52 +401,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       backgroundColor: AppColors.background,
       body: Column(
         children: [
-          // Menu bar at the top - outside SafeArea
-          Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top, // Add padding for status bar
-              left: 16,
-              right: 16,
-              bottom: 8,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.cardBackground,
-              border: Border(
-                bottom: BorderSide(
-                  color: AppColors.borderColor.withOpacity(0.1),
-                  width: 1,
-                ),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  onPressed: _showSidePanel,
-                  icon: const Icon(
-                    Icons.menu,
-                    color: AppColors.accentCyan,
-                    size: 24,
-                  ),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-                CommonNotificationIcon(
-                  hasUnreadNotifications: _hasUnreadNotifications,
-                  onNotificationCleared: _clearNotifications,
-                ),
-              ],
-            ),
+          CommonAppBar(
+            onMenuPressed: _showSidePanel,
+            hasUnreadNotifications: _hasUnreadNotifications,
+            onNotificationCleared: _clearNotifications,
           ),
-          // Rest of the content in SafeArea
           Expanded(
             child: SafeArea(
-              top: false, // Since we're handling the top padding manually
+              top: false,
               child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: AppColors.accentCyan),
-                    )
-                  : _buildDashboardView(),
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.accentCyan),
+                  )
+                : _buildDashboardView(),
             ),
           ),
         ],

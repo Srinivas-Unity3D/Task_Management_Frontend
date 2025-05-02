@@ -166,123 +166,126 @@ class SidePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.75,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: const BorderRadius.only(
-            topRight: Radius.circular(16),
-            bottomRight: Radius.circular(16),
+      child: SafeArea(
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.75,
+          height: double.infinity,
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(16),
+              bottomRight: Radius.circular(16),
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Profile Section
-            Container(
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 16,
-                left: 24,
-                right: 24,
-                bottom: 24,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 24,
-                        backgroundColor: AppColors.inputBackground,
-                        child: Text(
-                          user.username[0].toUpperCase(),
-                          style: const TextStyle(
-                            color: AppColors.accentCyan,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            user.username,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Profile Section
+              Container(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 24,
+                          backgroundColor: AppColors.inputBackground,
+                          child: Text(
+                            user.username[0].toUpperCase(),
                             style: const TextStyle(
                               color: AppColors.accentCyan,
-                              fontSize: 18,
+                              fontSize: 20,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          Text(
-                            user.role,
-                            style: const TextStyle(
-                              color: AppColors.textGrey,
-                              fontSize: 14,
+                        ),
+                        const SizedBox(width: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              user.username,
+                              style: const TextStyle(
+                                color: AppColors.accentCyan,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  IconButton(
-                    onPressed: onClose,
-                    icon: const Icon(
-                      Icons.close,
-                      color: AppColors.textGrey,
-                      size: 24,
+                            Text(
+                              user.role == 'admin' ? 'Software Developer' : user.role,
+                              style: const TextStyle(
+                                color: AppColors.textGrey,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
+                    IconButton(
+                      onPressed: onClose,
+                      icon: const Icon(
+                        Icons.close,
+                        color: AppColors.textGrey,
+                        size: 24,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            // Menu Items
-            _buildMenuItem(
-              icon: Icons.home_outlined,
-              label: 'Dashboard',
-              route: '/',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushReplacementNamed(context, '/');
-              },
-            ),
-            _buildMenuItem(
-              icon: Icons.task_outlined,
-              label: 'My Tasks',
-              route: '/my-tasks',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/my-tasks');
-              },
-            ),
-            _buildMenuItem(
-              icon: Icons.assignment_ind_outlined,
-              label: 'Assign Tasks',
-              route: '/assign-tasks',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/assign-tasks');
-              },
-            ),
-            const Spacer(),
-            _buildMenuItem(
-              icon: Icons.logout,
-              label: 'Logout',
-              onTap: () => _showLogoutConfirmation(context),
-            ),
-            _buildMenuItem(
-              icon: Icons.exit_to_app,
-              label: 'Exit',
-              onTap: () => _showExitConfirmation(context),
-            ),
-            const SizedBox(height: 24),
-          ],
+              const SizedBox(height: 8),
+              // Menu Items
+              _buildMenuItem(
+                icon: Icons.home_outlined,
+                label: 'Dashboard',
+                route: '/',
+                onTap: () {
+                  Navigator.pop(context);
+                  if (currentRoute != '/') {
+                    Navigator.pushReplacementNamed(context, '/');
+                  }
+                },
+              ),
+              _buildMenuItem(
+                icon: Icons.task_outlined,
+                label: 'My Tasks',
+                route: '/my-tasks',
+                onTap: () {
+                  Navigator.pop(context);
+                  if (currentRoute != '/my-tasks') {
+                    Navigator.pushNamed(context, '/my-tasks');
+                  }
+                },
+              ),
+              _buildMenuItem(
+                icon: Icons.assignment_ind_outlined,
+                label: 'Assign Tasks',
+                route: '/assign-tasks',
+                onTap: () {
+                  Navigator.pop(context);
+                  if (currentRoute != '/assign-tasks') {
+                    Navigator.pushNamed(context, '/assign-tasks');
+                  }
+                },
+              ),
+              const Spacer(),
+              _buildMenuItem(
+                icon: Icons.logout,
+                label: 'Logout',
+                onTap: () => _showLogoutConfirmation(context),
+              ),
+              _buildMenuItem(
+                icon: Icons.exit_to_app,
+                label: 'Exit',
+                onTap: () => _showExitConfirmation(context),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
     );

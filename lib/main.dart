@@ -6,7 +6,6 @@ import 'services/socket_service.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/my_tasks_screen.dart';
-import 'screens/history_screen.dart';
 import 'screens/assign_tasks_screen.dart';
 import 'theme/colors.dart';
 
@@ -103,7 +102,6 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => isLoggedIn ? const DashboardScreen() : const SignInScreen(),
         '/my-tasks': (context) => const MyTasksScreen(),
-        '/history': (context) => const HistoryScreen(),
         '/assign-tasks': (context) => const AssignTasksScreen(),
       },
       

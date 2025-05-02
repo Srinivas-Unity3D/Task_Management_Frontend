@@ -4,7 +4,6 @@ import '../../models/view_state.dart';
 
 class NavigationMenu extends StatelessWidget {
   final VoidCallback onMyTasksPressed;
-  final VoidCallback onHistoryPressed;
   final VoidCallback onAssignTasksPressed;
   final VoidCallback onDashboardPressed;
   final ViewState currentView;
@@ -12,7 +11,6 @@ class NavigationMenu extends StatelessWidget {
   const NavigationMenu({
     Key? key,
     required this.onMyTasksPressed,
-    required this.onHistoryPressed,
     required this.onAssignTasksPressed,
     required this.onDashboardPressed,
     required this.currentView,
@@ -35,13 +33,6 @@ class NavigationMenu extends StatelessWidget {
           label: 'My Tasks',
           onTap: onMyTasksPressed,
           isSelected: currentView == ViewState.myTasks,
-        ),
-        const SizedBox(height: 16),
-        _buildMenuItem(
-          icon: Icons.history_outlined,
-          label: 'History',
-          onTap: onHistoryPressed,
-          isSelected: currentView == ViewState.history,
         ),
         const SizedBox(height: 16),
         _buildMenuItem(
