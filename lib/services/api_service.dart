@@ -11,6 +11,63 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+class CacheManager {
+  // Static singleton instance
+  static final CacheManager _instance = CacheManager._internal();
+  factory CacheManager() => _instance;
+  CacheManager._internal();
+
+  // Lightweight cache storage
+  final Map<String, dynamic> _cache = {};
+  final Map<String, DateTime> _cacheTimestamp = {};
+  
+  // Cache duration (adjust based on your needs)
+  static const cacheDuration = Duration(minutes: 5);
+
+  bool isDataValid(String key) {
+    if (!_cache.containsKey(key) || !_cacheTimestamp.containsKey(key)) {
+      return false;
+    }
+    
+    final timestamp = _cacheTimestamp[key]!;
+    return DateTime.now().difference(timestamp) < cacheDuration;
+  }
+
+  void setData(String key, dynamic data) {
+    _cache[key] = data;
+    _cacheTimestamp[key] = DateTime.now();
+    
+    // Cleanup old cache entries
+    _cleanupCache();
+  }
+
+  dynamic getData(String key) {
+    if (!isDataValid(key)) {
+      _cache.remove(key);
+      _cacheTimestamp.remove(key);
+      return null;
+    }
+    return _cache[key];
+  }
+
+  void _cleanupCache() {
+    final now = DateTime.now();
+    final keysToRemove = _cacheTimestamp.keys
+        .where((key) => now.difference(_cacheTimestamp[key]!) > cacheDuration)
+        .toList();
+    
+    for (var key in keysToRemove) {
+      _cache.remove(key);
+      _cacheTimestamp.remove(key);
+    }
+  }
+
+  void clearCache() {
+    _cache.clear();
+    _cacheTimestamp.clear();
+  }
+}
+
 class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
   final Dio _dio = Dio(BaseOptions(
@@ -23,6 +80,9 @@ class ApiService {
     },
     validateStatus: (status) => true,
   ));
+
+  // Initialize the CacheManager
+  final CacheManager _cacheManager = CacheManager();
 
   Future<Map<String, dynamic>> register({
     required String username,
@@ -154,56 +214,69 @@ class ApiService {
     required String role,
   }) async {
     try {
-      // Add retry logic
-      int retryCount = 0;
-      const maxRetries = 3;
-      const retryDelay = Duration(seconds: 1);
-
-      while (retryCount < maxRetries) {
-        try {
-          print('🔍 [API] Fetching tasks for user: $username with role: $role');
-          final response = await http.get(
-            Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-          ).timeout(const Duration(seconds: 10));
-
-          print('📥 [API] Tasks response status: ${response.statusCode}');
-          print('📥 [API] Tasks response body: ${response.body}');
-
-          if (response.statusCode == 200) {
-            final data = json.decode(response.body);
-            return {
-              'success': true,
-              'data': data,
-            };
-          }
-          return {
-            'success': false,
-            'message': 'Failed to load tasks',
-          };
-        } catch (e) {
-          retryCount++;
-          if (retryCount < maxRetries) {
-            print('Retry attempt $retryCount after error: $e');
-            await Future.delayed(retryDelay);
-            continue;
-          }
-          rethrow;
-        }
+      // Generate cache key
+      final cacheKey = 'tasks_${username}_${role}';
+      print('🔍 [CACHE] Checking cache for key: $cacheKey');
+      
+      // Check cache first
+      final cachedData = _cacheManager.getData(cacheKey);
+      if (cachedData != null) {
+        print('✅ [CACHE] Found cached data');
+        return {
+          'success': true,
+          'data': cachedData,
+        };
       }
+      print('ℹ️ [CACHE] No cached data found, fetching from API');
 
-      return {
-        'success': false,
-        'message': 'Failed after $maxRetries retry attempts',
-      };
+      // Single attempt with shorter timeout
+      try {
+        print('🔍 [API] Fetching tasks for user: $username with role: $role');
+        final response = await http.get(
+          Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        ).timeout(const Duration(seconds: 5)); // Reduced timeout
+
+        print('📥 [API] Tasks response status: ${response.statusCode}');
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          print('💾 [CACHE] Caching new data');
+          _cacheManager.setData(cacheKey, data);
+          return {
+            'success': true,
+            'data': data,
+          };
+        }
+        
+        // Return empty data instead of error for better UX
+        return {
+          'success': true,
+          'data': [],
+        };
+      } on TimeoutException {
+        print('⚠️ [API] Request timed out');
+        // Return empty data on timeout for better UX
+        return {
+          'success': true,
+          'data': [],
+        };
+      } catch (e) {
+        print('❌ [API] Error during fetch: $e');
+        // Return empty data on error for better UX
+        return {
+          'success': true,
+          'data': [],
+        };
+      }
     } catch (e) {
-      print('Error loading tasks: $e');
+      print('❌ [API] Fatal error loading tasks: $e');
       return {
-        'success': false,
-        'message': 'Connection error. Please try again.',
+        'success': true,
+        'data': [],
       };
     }
   }
@@ -467,28 +540,110 @@ class ApiService {
   }
 
   Future<List<TaskAssignment>> getTaskAssignments(String userId) async {
+    final cacheKey = 'task_assignments_$userId';
+    
     try {
+      // Try to get cached data first
+      final cachedData = _cacheManager.getData(cacheKey);
+      if (cachedData != null) {
+        print('✅ [CACHE] Found cached task assignments');
+        return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
+      }
+
+      // Try to get data from SharedPreferences if no cache
+      final prefs = await SharedPreferences.getInstance();
+      final storedData = prefs.getString(cacheKey);
+      if (storedData != null) {
+        print('✅ [STORAGE] Found stored task assignments');
+        final data = json.decode(storedData) as List;
+        // Cache the data in memory
+        _cacheManager.setData(cacheKey, data);
+        return data.map((json) => TaskAssignment.fromJson(json)).toList();
+      }
+
       print('🔍 [API] Fetching task assignments for user: $userId');
+      
+      // Try to fetch from API
+      try {
+        final response = await http.get(
+          Uri.parse('$baseUrl/tasks/assignments/$userId'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        ).timeout(const Duration(seconds: 5));
+
+        print('📥 [API] Task assignments response status: ${response.statusCode}');
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body)['assignments'] as List;
+          
+          // Cache in memory
+          _cacheManager.setData(cacheKey, data);
+          
+          // Store in SharedPreferences for offline access
+          await prefs.setString(cacheKey, json.encode(data));
+          
+          print('💾 [CACHE] Saved task assignments to cache and storage');
+          return data.map((json) => TaskAssignment.fromJson(json)).toList();
+        }
+        
+        // If API fails, return empty list instead of throwing
+        return [];
+      } catch (e) {
+        print('❌ [API] Error fetching task assignments: $e');
+        // Return empty list on error instead of throwing
+        return [];
+      }
+    } catch (e) {
+      print('❌ [CACHE] Error accessing cache: $e');
+      return [];
+    }
+  }
+
+  // Add method to force refresh assignments
+  Future<List<TaskAssignment>> refreshTaskAssignments(String userId) async {
+    final cacheKey = 'task_assignments_$userId';
+    
+    try {
+      print('🔄 [API] Force refreshing task assignments for user: $userId');
       final response = await http.get(
         Uri.parse('$baseUrl/tasks/assignments/$userId'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-      );
-
-      print('📥 [API] Task assignments response status: ${response.statusCode}');
-      print('📥 [API] Task assignments response body: ${response.body}');
+      ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body)['assignments'];
+        final data = json.decode(response.body)['assignments'] as List;
+        
+        // Update cache
+        _cacheManager.setData(cacheKey, data);
+        
+        // Update SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(cacheKey, json.encode(data));
+        
+        print('💾 [CACHE] Updated task assignments in cache and storage');
         return data.map((json) => TaskAssignment.fromJson(json)).toList();
-      } else {
-        throw Exception('Failed to fetch task assignments');
       }
+      
+      // If refresh fails, return cached data
+      final cachedData = _cacheManager.getData(cacheKey);
+      if (cachedData != null) {
+        return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
+      }
+      
+      return [];
     } catch (e) {
-      print('❌ [API] Error fetching task assignments: $e');
-      throw Exception('Error fetching task assignments: $e');
+      print('❌ [API] Error refreshing task assignments: $e');
+      // Return cached data on error
+      final cachedData = _cacheManager.getData(cacheKey);
+      if (cachedData != null) {
+        return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
+      }
+      return [];
     }
   }
 
