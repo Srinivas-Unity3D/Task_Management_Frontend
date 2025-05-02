@@ -301,49 +301,76 @@ class ApiService {
       }
       print('ℹ️ [CACHE] No cached data found, fetching from API');
 
-      // Single attempt with shorter timeout
-      try {
-        print('🔍 [API] Fetching tasks for user: $username with role: $role');
-        final response = await http.get(
-          Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-        ).timeout(const Duration(seconds: 5)); // Reduced timeout
+      // Add retry logic
+      int maxRetries = 3;
+      int currentTry = 0;
+      Duration retryDelay = const Duration(seconds: 1);
 
-        print('📥 [API] Tasks response status: ${response.statusCode}');
+      while (currentTry < maxRetries) {
+        try {
+          print('🔍 [API] Fetching tasks for user: $username with role: $role (Attempt ${currentTry + 1})');
+          
+          final response = await _dio.get(
+            '/tasks',
+            queryParameters: {
+              'username': username,
+              'role': role,
+            },
+            options: Options(
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              receiveTimeout: const Duration(seconds: 10),
+              sendTimeout: const Duration(seconds: 10),
+            ),
+          );
 
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          print('💾 [CACHE] Caching new data');
-          _cacheManager.setData(cacheKey, data);
-          return {
-            'success': true,
-            'data': data,
-          };
+          print('📥 [API] Tasks response status: ${response.statusCode}');
+
+          if (response.statusCode == 200) {
+            final data = response.data;
+            print('💾 [CACHE] Caching new data');
+            _cacheManager.setData(cacheKey, data);
+            return {
+              'success': true,
+              'data': data,
+            };
+          }
+          
+          // If we get here, it means we got a response but it wasn't 200
+          print('⚠️ [API] Received non-200 status code: ${response.statusCode}');
+          currentTry++;
+          
+        } catch (e) {
+          print('❌ [API] Error during fetch attempt ${currentTry + 1}: $e');
+          currentTry++;
+          
+          if (currentTry < maxRetries) {
+            print('🔄 [API] Retrying in ${retryDelay.inSeconds} seconds...');
+            await Future.delayed(retryDelay);
+            // Increase delay for next retry
+            retryDelay *= 2;
+          }
         }
-        
-        // Return empty data instead of error for better UX
+      }
+      
+      // If we have cached data but failed to refresh, use cached data
+      if (cachedData != null) {
+        print('⚠️ [API] Failed to fetch fresh data, using cached data');
         return {
           'success': true,
-          'data': [],
-        };
-      } on TimeoutException {
-        print('⚠️ [API] Request timed out');
-        // Return empty data on timeout for better UX
-        return {
-          'success': true,
-          'data': [],
-        };
-      } catch (e) {
-        print('❌ [API] Error during fetch: $e');
-        // Return empty data on error for better UX
-        return {
-          'success': true,
-          'data': [],
+          'data': cachedData,
         };
       }
+      
+      // If all retries failed and no cache, return empty list
+      print('⚠️ [API] All retry attempts failed, returning empty list');
+      return {
+        'success': true,
+        'data': [],
+      };
+
     } catch (e) {
       print('❌ [API] Fatal error loading tasks: $e');
       return {
@@ -653,6 +680,67 @@ class ApiService {
         return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
       }
 
+      // Add retry logic
+      int maxRetries = 3;
+      int currentTry = 0;
+      Duration retryDelay = const Duration(seconds: 1);
+
+      while (currentTry < maxRetries) {
+        try {
+          print('🔍 [API] Fetching task assignments for user: $userId (Attempt ${currentTry + 1})');
+          
+          final response = await _dio.get(
+            '/tasks/assignments/$userId',
+            options: Options(
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              receiveTimeout: const Duration(seconds: 10),
+              sendTimeout: const Duration(seconds: 10),
+            ),
+          );
+
+          print('📥 [API] Task assignments response status: ${response.statusCode}');
+
+          if (response.statusCode == 200) {
+            final data = response.data['assignments'] as List;
+            
+            // Cache the successful response
+            _cacheManager.setData(cacheKey, data);
+            
+            return data.map((json) => TaskAssignment.fromJson(json)).toList();
+          }
+          
+          // If we get here, it means we got a response but it wasn't 200
+          print('⚠️ [API] Received non-200 status code: ${response.statusCode}');
+          currentTry++;
+          
+        } catch (e) {
+          print('❌ [API] Error during fetch attempt ${currentTry + 1}: $e');
+          currentTry++;
+          
+          if (currentTry < maxRetries) {
+            print('🔄 [API] Retrying in ${retryDelay.inSeconds} seconds...');
+            await Future.delayed(retryDelay);
+            // Increase delay for next retry
+            retryDelay *= 2;
+          }
+        }
+      }
+      
+      // If we have cached data but failed to refresh, use cached data
+      if (cachedData != null) {
+        print('⚠️ [API] Failed to fetch fresh data, using cached data');
+        return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
+      }
+      
+      // If all retries failed and no cache, return empty list
+      print('⚠️ [API] All retry attempts failed, returning empty list');
+      return [];
+
+    } catch (e) {
+      print('❌ [API] Fatal error fetching task assignments: $e');
       print('🔍 [API] Fetching task assignments for user: $userId');
       final response = await http.get(
         Uri.parse('$baseUrl/tasks/assignments/$userId'),

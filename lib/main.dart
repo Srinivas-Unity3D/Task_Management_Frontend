@@ -8,6 +8,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/my_tasks_screen.dart';
 import 'screens/assign_tasks_screen.dart';
 import 'theme/colors.dart';
+import 'widgets/error_boundary.dart';
 
 void main() async {  // Made async to properly handle initialization
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +33,9 @@ void main() async {  // Made async to properly handle initialization
   // Check if user is logged in
   final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
 
-  runApp(MyApp(isLoggedIn: isLoggedIn));
+  runApp(ErrorBoundary(
+    child: MyApp(isLoggedIn: isLoggedIn),
+  ));
 }
 
 class MyApp extends StatefulWidget {
@@ -62,82 +65,84 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Task Management',
-      debugShowCheckedModeBanner: false,
-      navigatorKey: _navigatorKey,
-      theme: ThemeData(
-        primaryColor: AppColors.accentCyan,
-        scaffoldBackgroundColor: AppColors.background,
-        fontFamily: 'Inter',
-        useMaterial3: true,
+    return ErrorBoundary(
+      child: MaterialApp(
+        title: 'Task Management',
+        debugShowCheckedModeBanner: false,
+        navigatorKey: _navigatorKey,
+        theme: ThemeData(
+          primaryColor: AppColors.accentCyan,
+          scaffoldBackgroundColor: AppColors.background,
+          fontFamily: 'Inter',
+          useMaterial3: true,
 
-        // Configure global text theme
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(
-            color: AppColors.white,
-            fontSize: 16,
-            fontFamily: 'Inter',
-          ),
-          bodyMedium: TextStyle(
-            color: AppColors.white,
-            fontSize: 14,
-            fontFamily: 'Inter',
-          ),
-        ),
-
-        // Configure input decoration theme
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: AppColors.inputBackground,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppColors.borderColor),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppColors.borderColor),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppColors.accentCyan),
-          ),
-          labelStyle: const TextStyle(color: AppColors.textGrey),
-          hintStyle: const TextStyle(color: AppColors.textGrey),
-        ),
-
-        // Configure elevated button theme
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.accentCyan,
-            foregroundColor: AppColors.background,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+          // Configure global text theme
+          textTheme: const TextTheme(
+            bodyLarge: TextStyle(
+              color: AppColors.white,
+              fontSize: 16,
+              fontFamily: 'Inter',
             ),
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            bodyMedium: TextStyle(
+              color: AppColors.white,
+              fontSize: 14,
+              fontFamily: 'Inter',
+            ),
+          ),
+
+          // Configure input decoration theme
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: AppColors.inputBackground,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: AppColors.borderColor),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: AppColors.borderColor),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: AppColors.accentCyan),
+            ),
+            labelStyle: const TextStyle(color: AppColors.textGrey),
+            hintStyle: const TextStyle(color: AppColors.textGrey),
+          ),
+
+          // Configure elevated button theme
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accentCyan,
+              foregroundColor: AppColors.background,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
           ),
         ),
-      ),
-      
-      home: _isLoggedIn ? const DashboardScreen() : SignInScreen(onLogin: () => _updateLoginState(true)),
-      onGenerateRoute: (settings) {
-        if (!_isLoggedIn) {
-          return MaterialPageRoute(
-            builder: (context) => SignInScreen(onLogin: () => _updateLoginState(true)),
-          );
-        }
         
-        switch (settings.name) {
-          case '/':
-            return MaterialPageRoute(builder: (context) => const DashboardScreen());
-          case '/my-tasks':
-            return MaterialPageRoute(builder: (context) => const MyTasksScreen());
-          case '/assign-tasks':
-            return MaterialPageRoute(builder: (context) => const AssignTasksScreen());
-          default:
-            return MaterialPageRoute(builder: (context) => const DashboardScreen());
-        }
-      },
+        home: _isLoggedIn ? const DashboardScreen() : SignInScreen(onLogin: () => _updateLoginState(true)),
+        onGenerateRoute: (settings) {
+          if (!_isLoggedIn) {
+            return MaterialPageRoute(
+              builder: (context) => SignInScreen(onLogin: () => _updateLoginState(true)),
+            );
+          }
+          
+          switch (settings.name) {
+            case '/':
+              return MaterialPageRoute(builder: (context) => const DashboardScreen());
+            case '/my-tasks':
+              return MaterialPageRoute(builder: (context) => const MyTasksScreen());
+            case '/assign-tasks':
+              return MaterialPageRoute(builder: (context) => const AssignTasksScreen());
+            default:
+              return MaterialPageRoute(builder: (context) => const DashboardScreen());
+          }
+        },
+      ),
     );
   }
 }

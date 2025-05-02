@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
+import '../services/socket_service.dart';
 import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/custom_button.dart';
-import '../services/api_service.dart';
 import 'registration_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -24,6 +25,7 @@ class _SignInScreenState extends State<SignInScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _apiService = ApiService();
+  final _socketService = SocketService.instance;
   bool _isLoading = false;
   bool _rememberMe = false;
   String? _errorMessage;
@@ -68,58 +70,64 @@ class _SignInScreenState extends State<SignInScreen> {
     super.dispose();
   }
 
-  Future<void> _handleSignIn() async {
-    if (_formKey.currentState?.validate() ?? false) {
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final username = _usernameController.text.trim();
+      final password = _passwordController.text;
+
+      // Start parallel operations
+      final loginFuture = _apiService.login(username, password);
+      final prefsFuture = SharedPreferences.getInstance();
+
+      // Wait for login response
+      final response = await loginFuture;
+
+      if (response['success']) {
+        // Get prefs instance (should be ready by now)
+        final prefs = await prefsFuture;
+        
+        // Start socket connection in parallel with data saving
+        final socketFuture = _socketService.connect(username);
+        
+        // Save user data
+        await Future.wait([
+          prefs.setString('user_id', response['data']['user_id']),
+          prefs.setString('username', response['data']['username']),
+          prefs.setString('role', response['data']['role']),
+          prefs.setBool('isLoggedIn', true),
+        ]);
+
+        // Wait for socket connection
+        await socketFuture;
+
+        if (mounted) {
+          widget.onLogin();
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const DashboardScreen()),
+          );
+        }
+      } else {
+        setState(() {
+          _errorMessage = response['message'] ?? 'Login failed';
+        });
+      }
+    } catch (e) {
       setState(() {
-        _isLoading = true;
-        _errorMessage = null;
+        _errorMessage = 'Connection error. Please try again.';
       });
-
-      try {
-        final response = await _apiService.login(
-          _usernameController.text,
-          _passwordController.text,
-        );
-
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-
-          if (response['success']) {
-            // Store user data
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('username', _usernameController.text);
-            await prefs.setString('role', response['data']['role'] ?? 'Developer');
-            
-            if (_rememberMe) {
-              await prefs.setBool('isLoggedIn', true);
-              await prefs.setString('password', _passwordController.text);
-            }
-
-            widget.onLogin(); // Call the onLogin callback
-            
-            // Navigate to Dashboard
-            if (mounted) {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => const DashboardScreen(),
-                ),
-              );
-            }
-          } else {
-            setState(() {
-              _errorMessage = response['message'];
-            });
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _errorMessage = 'An unexpected error occurred';
-          });
-        }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
@@ -248,7 +256,7 @@ class _SignInScreenState extends State<SignInScreen> {
                             SizedBox(height: isSmallScreen ? 24 : 32),
                             CustomButton(
                               text: 'Sign In',
-                              onPressed: _handleSignIn,
+                              onPressed: _handleLogin,
                               isLoading: _isLoading,
                             ),
                             SizedBox(height: isSmallScreen ? 16 : 20),
