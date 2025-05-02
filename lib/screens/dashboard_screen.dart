@@ -15,6 +15,7 @@ import '../widgets/custom_text_field.dart';
 import '../services/api_service.dart';
 import '../screens/create_task_screen.dart';
 import '../screens/assign_tasks_screen.dart';
+import '../screens/my_tasks_screen.dart';
 import '../services/socket_service.dart';
 import '../widgets/common_notification_icon.dart';
 import '../services/audio_service.dart';
@@ -389,6 +390,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _switchView(ViewState newView) {
+    switch (newView) {
+      case ViewState.myTasks:
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const MyTasksScreen(),
+          ),
+        ).then((_) => _loadTasks()); // Refresh tasks after returning
+        break;
+      case ViewState.assignTasks:
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const AssignTasksScreen(),
+          ),
+        ).then((_) => _loadTasks()); // Refresh tasks after returning
+        break;
+      case ViewState.dashboard:
+        // No navigation needed for dashboard
+        break;
+    }
     setState(() {
       _currentView = newView;
     });
@@ -406,6 +428,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
             hasUnreadNotifications: _hasUnreadNotifications,
             onNotificationCleared: _clearNotifications,
           ),
+          Container(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Dashboard',
+                  style: TextStyle(
+                    color: AppColors.accentCyan,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
           Expanded(
             child: SafeArea(
               top: false,
@@ -422,255 +460,232 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildDashboardView() {
-    return NestedScrollView(
-      headerSliverBuilder: (context, innerBoxIsScrolled) => [
-        SliverAppBar(
-          backgroundColor: AppColors.background,
-          pinned: true,
-          automaticallyImplyLeading: false,
-          expandedHeight: 100,
-          flexibleSpace: FlexibleSpaceBar(
-            expandedTitleScale: 1.0,
-            titlePadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-            title: const Text(
-              'Dashboard',
-              style: TextStyle(
-                color: AppColors.accentCyan,
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Inter',
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Stats Cards
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 1.3,
+              children: [
+                StatsCard(
+                  title: 'Snoozed',
+                  count: _taskStats?.snoozedTasks.toString() ?? '0',
+                ),
+                StatsCard(
+                  title: 'Active Tasks',
+                  count: _taskStats?.activeTasks.toString() ?? '0',
+                ),
+                StatsCard(
+                  title: 'Pending Tasks',
+                  count: _taskStats?.pendingTasks.toString() ?? '0',
+                ),
+                StatsCard(
+                  title: 'Completed',
+                  count: _taskStats?.completedTasks.toString() ?? '0',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+          // My Tasks Section
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppColors.borderColor.withOpacity(0.1),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'My Tasks',
+                          style: TextStyle(
+                            color: AppColors.accentCyan,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => _switchView(ViewState.myTasks),
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            'View All',
+                            style: TextStyle(
+                              color: AppColors.textGrey,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ..._userTasks
+                      .where((task) => task.assignedTo == _user.username)
+                      .take(2)
+                      .map((task) => Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.inputBackground,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppColors.borderColor.withOpacity(0.1),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          task.title,
+                                          style: const TextStyle(
+                                            color: AppColors.accentCyan,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        'Due ${_formatDate(task.deadline)}',
+                                        style: const TextStyle(
+                                          color: AppColors.textGrey,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    task.description,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppColors.textGrey,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ))
+                      .toList(),
+                  if (_userTasks.where((task) => task.assignedTo == _user.username).isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Text(
+                        'No tasks available',
+                        style: TextStyle(
+                          color: AppColors.textGrey,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
-        ),
-      ],
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 2,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                childAspectRatio: 1.3,
-                children: [
-                  StatsCard(
-                    title: 'Active Tasks',
-                    count: _taskStats?.activeTasks.toString() ?? '0',
-                  ),
-                  StatsCard(
-                    title: 'Pending Tasks',
-                    count: _taskStats?.pendingTasks.toString() ?? '0',
-                  ),
-                  StatsCard(
-                    title: 'Completed',
-                    count: _taskStats?.completedTasks.toString() ?? '0',
-                  ),
-                  StatsCard(
-                    title: 'Snoozed',
-                    count: _taskStats?.snoozedTasks.toString() ?? '0',
-                  ),
-                ],
+          const SizedBox(height: 24),
+          // Assigned Tasks Section
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppColors.borderColor.withOpacity(0.1),
+                  width: 1,
+                ),
               ),
-            ),
-            const SizedBox(height: 32),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // My Tasks Section
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.cardBackground,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppColors.borderColor.withOpacity(0.1),
-                          width: 1,
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Assigned Tasks',
+                          style: TextStyle(
+                            color: AppColors.accentCyan,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'My Tasks',
-                                  style: TextStyle(
-                                    color: AppColors.accentCyan,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () => _switchView(ViewState.myTasks),
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: const Text(
-                                    'View All',
-                                    style: TextStyle(
-                                      color: AppColors.textGrey,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                        TextButton(
+                          onPressed: () => _switchView(ViewState.assignTasks),
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            'View All',
+                            style: TextStyle(
+                              color: AppColors.textGrey,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                          ..._userTasks
-                              .where((task) => task.assignedTo == _user.username)
-                              .take(2)
-                              .map((task) => Padding(
-                                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                task.title,
-                                                style: const TextStyle(
-                                                  color: AppColors.accentCyan,
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                            ),
-                                            Text(
-                                              'Due ${_formatDate(task.deadline)}',
-                                              style: const TextStyle(
-                                                color: AppColors.textGrey,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ],
-                                    ),
-                                  ))
-                              .toList(),
-                          if (_userTasks.where((task) => task.assignedTo == _user.username).isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                              child: Text(
-                                'No tasks available',
-                                style: TextStyle(
-                                  color: AppColors.textGrey,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  // Assigned Tasks Section
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.cardBackground,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppColors.borderColor.withOpacity(0.1),
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Assigned Tasks',
-                                    style: TextStyle(
-                                      color: AppColors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () => _switchView(ViewState.assignTasks),
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: const Text(
-                                    'View All',
-                                    style: TextStyle(
-                                      color: AppColors.textGrey,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            child: Column(
-                              children: [
-                                ..._buildAssignedTaskGroups(),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      children: [
+                        ..._buildAssignedTaskGroups(),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-          ],
-        ),
+          ),
+          const SizedBox(height: 24),
+        ],
       ),
     );
   }
 
   List<Widget> _buildAssignedTaskGroups() {
-    // Group tasks by assignee
-    final assignedTasks = _userTasks.where((task) => task.assignedBy == _user.username);
-    final assigneeGroups = <String, Map<String, dynamic>>{};
+    // Get tasks assigned by the current user
+    final assignedTasks = _userTasks
+        .where((task) => task.assignedBy == _user.username)
+        .take(2) // Take only 2 tasks for preview
+        .toList();
 
-    for (var task in assignedTasks) {
-      if (!assigneeGroups.containsKey(task.assignedTo)) {
-        assigneeGroups[task.assignedTo] = {
-          'activeTasks': 0,
-          'completedTasks': 0,
-        };
-      }
-
-      if (task.status == TaskStatus.completed) {
-        assigneeGroups[task.assignedTo]!['completedTasks']++;
-      } else {
-        assigneeGroups[task.assignedTo]!['activeTasks']++;
-      }
-    }
-
-    if (assigneeGroups.isEmpty) {
+    if (assignedTasks.isEmpty) {
       return [
         const Text(
           'No assigned tasks',
@@ -682,69 +697,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ];
     }
 
-    return assigneeGroups.entries.take(2).map((entry) {
+    return assignedTasks.map((task) {
       return Column(
         children: [
-          _buildAssignedTaskMember(
-            name: entry.key,
-            role: 'Team Member',
-            activeTasks: entry.value['activeTasks'].toString(),
-            completedTasks: entry.value['completedTasks'].toString(),
-          ),
-          const SizedBox(height: 16),
-        ],
-      );
-    }).toList();
-  }
-
-  Widget _buildAssignedTaskMember({
-    required String name,
-    required String role,
-    required String activeTasks,
-    required String completedTasks,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.inputBackground,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.borderColor.withOpacity(0.1),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: AppColors.cardBackground,
-                child: Text(
-                  name[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: AppColors.accentCyan,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.inputBackground,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.borderColor.withOpacity(0.1),
+                width: 1,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        color: AppColors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: Text(
+                        task.title,
+                        style: const TextStyle(
+                          color: AppColors.accentCyan,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                     Text(
-                      role,
+                      'Due ${_formatDate(task.deadline)}',
                       style: const TextStyle(
                         color: AppColors.textGrey,
                         fontSize: 12,
@@ -752,75 +735,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Text(
+                  'Assigned to: ${task.assignedTo}',
+                  style: const TextStyle(
+                    color: AppColors.textGrey,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  task.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textGrey,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            activeTasks,
-                            style: const TextStyle(
-                              color: AppColors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const Text(
-                            'Active',
-                            style: TextStyle(
-                              color: AppColors.textGrey,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 24),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            completedTasks,
-                            style: const TextStyle(
-                              color: AppColors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const Text(
-                            'Completed',
-                            style: TextStyle(
-                              color: AppColors.textGrey,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Tasks',
-                    style: TextStyle(
-                      color: AppColors.textGrey,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
         ],
-      ),
-    );
+      );
+    }).toList();
   }
 
   String _formatDate(DateTime date) {
