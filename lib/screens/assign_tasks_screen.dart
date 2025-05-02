@@ -243,37 +243,60 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                GestureDetector(
-                  onTap: () async {
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const CreateTaskScreen(),
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.cardBackground,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.borderColor.withOpacity(0.1),
+                          width: 1,
+                        ),
                       ),
-                    );
-                    if (result == true) {
-                      _fetchAssignments();
-                    }
-                  },
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.cardBackground,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.borderColor.withOpacity(0.1),
-                        width: 1,
+                      child: IconButton(
+                        icon: const Icon(Icons.filter_list, color: AppColors.accentCyan),
+                        onPressed: () {
+                          // TODO: Implement filter functionality
+                        },
                       ),
                     ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.add,
-                        color: AppColors.accentCyan,
-                        size: 24,
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CreateTaskScreen(),
+                          ),
+                        );
+                        if (result == true) {
+                          _fetchAssignments();
+                        }
+                      },
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppColors.cardBackground,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.borderColor.withOpacity(0.1),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.add,
+                            color: AppColors.accentCyan,
+                            size: 24,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
