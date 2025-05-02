@@ -52,6 +52,12 @@ class NotificationService {
           
           return notifications.map((json) {
             try {
+              // Skip notifications where the current user is the updater
+              if ((json['updated_by'] != null && json['updated_by'] == username) ||
+                  (json['assigned_by'] != null && json['assigned_by'] == username)) {
+                return null;
+              }
+              
               return NotificationModel(
                 id: json['id'] ?? '',
                 title: json['title'] ?? '',
@@ -65,9 +71,12 @@ class NotificationService {
             } catch (e) {
               print('Error parsing notification: $e');
               print('Problematic JSON: $json');
-              rethrow;
+              return null;
             }
-          }).toList();
+          })
+          .where((notification) => notification != null)
+          .cast<NotificationModel>()
+          .toList();
         } else {
           print('Invalid response format: $responseData');
           throw Exception('Invalid response format');

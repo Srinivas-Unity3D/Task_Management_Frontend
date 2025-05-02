@@ -98,12 +98,18 @@ class SocketService {
     _socket!.on('task_notification', (data) async {
       print('🔔 SocketService - Received task notification: $data');
       
-      // Check if the current user is the sender
-      final String? sender = data['sender'] ?? data['assigned_by'];
+      // Check if the current user is the sender/updater
+      final String? sender = data['sender'] ?? data['assigned_by'] ?? data['updated_by'];
       final String? targetUser = data['target_user'] ?? data['assigned_to'];
       
-      // Only play sound and vibrate if the current user is the target and not the sender
-      if (targetUser == _currentUsername && sender != _currentUsername) {
+      // Skip notification if current user is the sender/updater
+      if (sender == _currentUsername) {
+        print('🔔 SocketService - Skipping notification as current user is the sender');
+        return;
+      }
+      
+      // Only play sound and vibrate if the current user is the target
+      if (targetUser == _currentUsername) {
         print('🔔 SocketService - Playing notification for target user: $targetUser');
         await _notificationService.handleNewNotification();
       }
@@ -122,12 +128,17 @@ class SocketService {
 
     _socket!.on('dashboard_update', (data) {
       print('📨 Received dashboard update: $data');
-      print('📨 Number of dashboard update listeners: ${_dashboardUpdateListeners.length}');
       
-      // Check if the current user is the sender
+      // Check if the current user is the sender/updater
       final String? sender = data['updated_by'] ?? data['assigned_by'];
       
-      // Process update even if current user is the sender to maintain consistency
+      // Skip notification if current user is the sender/updater
+      if (sender == _currentUsername) {
+        print('📨 SocketService - Skipping dashboard update as current user is the sender');
+        return;
+      }
+      
+      print('📨 Number of dashboard update listeners: ${_dashboardUpdateListeners.length}');
       for (var listener in _dashboardUpdateListeners) {
         try {
           listener(data);

@@ -33,7 +33,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final ApiService _apiService = ApiService();
   final _socketService = SocketService.instance;
   final _audioService = AudioService();
-  late User _user;
+  User? _user;
   TaskStats? _taskStats;
   bool _isLoading = true;
   bool _hasUnreadNotifications = false;
@@ -128,12 +128,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _handleTaskNotification(dynamic data) {
-    if (mounted) {
+    if (mounted && _user != null) {
       print('🔔 Dashboard - Received task notification: $data');
       
       // Check if the current user is the creator/updater
-      final bool isCreator = data['task']?['assigned_by'] == _user.username;
-      final bool isUpdater = data['task']?['updated_by'] == _user.username;
+      final bool isCreator = data['task']?['assigned_by'] == _user!.username;
+      final bool isUpdater = data['task']?['updated_by'] == _user!.username;
       
       // Only show notification if user is not the creator/updater
       if (!isCreator && !isUpdater) {
@@ -157,12 +157,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _handleDashboardUpdate(dynamic data) async {
-    if (mounted) {
+    if (mounted && _user != null) {
       print('📨 Dashboard - Received update: $data');
       
       // Check if the current user is the creator/updater
-      final bool isCreator = data['assigned_by'] == _user.username;
-      final bool isUpdater = data['updated_by'] == _user.username;
+      final bool isCreator = data['assigned_by'] == _user!.username;
+      final bool isUpdater = data['updated_by'] == _user!.username;
       
       // Play notification sound if user is not the creator/updater
       if (!isCreator && !isUpdater) {
@@ -270,8 +270,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadTasks() async {
-    setState(() => _isLoading = true);
-
+    if (_user == null) return; // Don't load tasks if user is not initialized
+    
     try {
       // Get the stored user data from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
@@ -279,24 +279,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final userId = prefs.getString('user_id') ?? '';
       final role = prefs.getString('role') ?? '';
 
-      // Load user data
-      _user = User(
-        userId: userId,
-        username: username,
-        email: '$username@example.com',
-        phone: '+1234567890',
-        role: role,
-        fcmToken: null,
-      );
-
       // Fetch tasks from API
-      final response = await _apiService.getTasks(username: username, role: role);
+      final response = await _apiService.getTasks(username: _user!.username, role: _user!.role);
       if (response['success']) {
         final tasksJson = response['data'] as List;
-        setState(() {
-          _userTasks = tasksJson.map((task) => Task.fromJson(task)).toList();
-          _taskStats = TaskStats.fromTasks(_userTasks);
-        });
+        if (mounted) {
+          setState(() {
+            _userTasks = tasksJson.map((task) => Task.fromJson(task)).toList();
+            _taskStats = TaskStats.fromTasks(_userTasks);
+          });
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -347,12 +339,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _showSidePanel() {
+    if (_user == null) return; // Don't show panel if user is not initialized
+    
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
-      barrierLabel: '',
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 300),
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black.withOpacity(0.5),
+      transitionDuration: const Duration(milliseconds: 200),
       pageBuilder: (context, animation1, animation2) => Container(),
       transitionBuilder: (context, animation1, animation2, child) {
         final curvedAnimation = CurvedAnimation(
@@ -364,7 +358,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             // Backdrop for tap to dismiss
             GestureDetector(
               onTap: () => Navigator.pop(context),
-            child: Container(
+              child: Container(
                 color: Colors.transparent,
                 width: double.infinity,
                 height: double.infinity,
@@ -383,7 +377,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: SidePanel(
                   onLogout: _handleLogout,
                   onClose: () => Navigator.pop(context),
-                  user: _user,
+                  user: _user!,
                   currentRoute: '/',
                 ),
               ),
@@ -423,6 +417,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_user == null || _isLoading) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.accentCyan),
+        ),
+      );
+    }
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.background,
@@ -452,11 +455,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Expanded(
             child: SafeArea(
               top: false,
-              child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.accentCyan),
-                  )
-                : _buildDashboardView(),
+              child: _buildDashboardView(),
             ),
           ),
         ],
@@ -548,7 +547,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   ..._userTasks
-                      .where((task) => task.assignedTo == _user.username)
+                      .where((task) => task.assignedTo == _user!.username)
                       .take(2)
                       .map((task) => Padding(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -602,7 +601,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ))
                       .toList(),
-                  if (_userTasks.where((task) => task.assignedTo == _user.username).isEmpty)
+                  if (_userTasks.where((task) => task.assignedTo == _user!.username).isEmpty)
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
                       child: Text(
@@ -686,7 +685,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Widget> _buildAssignedTaskGroups() {
     // Get tasks assigned by the current user
     final assignedTasks = _userTasks
-        .where((task) => task.assignedBy == _user.username)
+        .where((task) => task.assignedBy == _user!.username)
         .take(2) // Take only 2 tasks for preview
         .toList();
 
