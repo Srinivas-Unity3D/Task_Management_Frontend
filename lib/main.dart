@@ -1,3 +1,5 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,9 +9,18 @@ import 'screens/sign_in_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'theme/colors.dart';
 
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  print('Handling a background message: ${message.messageId}');
+}
+
 void main() async {  // Made async to properly handle initialization
   WidgetsFlutterBinding.ensureInitialized();
 
+  await Firebase.initializeApp();
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  // Force portrait orientation
   // Force portrait orientation
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -18,7 +29,7 @@ void main() async {  // Made async to properly handle initialization
 
   // Initialize socket service
   final socketService = SocketService.instance;
-  socketService.init('http://134.209.149.12:5000');  // Updated to match your server IP
+  socketService.init('http://10.20.0.248:5000');  // Updated to match your server IP
   
   // Get current user and register with socket
   final prefs = await SharedPreferences.getInstance();

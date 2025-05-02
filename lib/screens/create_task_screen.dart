@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import '../services/send_notification_service.dart';
 import '../theme/colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../models/task.dart';
@@ -53,7 +55,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   late final AudioRecorder _audioRecorder;
   final _socketService = SocketService.instance;
-  
+  String? _fcmToken; // Store fetched FCM token for the selected user
+
   String? _selectedAssignee;
   String _priority = 'Low';
   DateTime? _dueDate;
@@ -87,7 +90,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     'Urgent'
   ];
 
-  final bool _isEmulatorTestMode = false;  // Set to false for real device testing
+  final bool _isEmulatorTestMode =
+      false; // Set to false for real device testing
 
   bool _canScroll = true;
   Duration _recordingDuration = Duration.zero;
@@ -153,18 +157,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       // Check if the current user is the creator/updater
       final bool isCreator = data['task']?['assigned_by'] == _currentUsername;
       final bool isUpdater = data['task']?['updated_by'] == _currentUsername;
-      
+
       // Only show notification if user is not the creator/updater
       if (!isCreator && !isUpdater) {
         if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
           // Show a temporary success message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                data['type'] == 'task_created' 
-                    ? 'New task has been created'
-                    : 'Task has been updated'
-              ),
+              content: Text(data['type'] == 'task_created'
+                  ? 'New task has been created'
+                  : 'Task has been updated'),
               backgroundColor: Colors.green,
             ),
           );
@@ -179,7 +181,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       // Check if the current user is the creator/updater
       final bool isCreator = data['assigned_by'] == _currentUsername;
       final bool isUpdater = data['updated_by'] == _currentUsername;
-      
+
       if (isCreator || isUpdater) {
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
@@ -191,10 +193,64 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        
+
         // Return to previous screen with refresh signal
         Navigator.pop(context, true);
       }
+    }
+  }
+
+  Future<String?> _fetchFcmToken(String username) async {
+    try {
+      final url = Uri.parse('${ApiService.baseUrl}/get_fcm_token');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'username': username}),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final token = data['fcm_token']?.toString();
+        if (token != null && token.isNotEmpty) {
+          setState(() => _fcmToken = token);
+          print("FCM-token: $token");
+          return token;
+        }
+      }
+
+      _showSnackbar('Failed to fetch FCM token');
+      setState(() => _fcmToken = null);
+      return null;
+    } catch (e) {
+      _showSnackbar('Error fetching FCM token: $e');
+      setState(() => _fcmToken = null);
+      return null;
+    }
+  }
+
+  void _showSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _sendNotificationToUser(String token) async {
+    if (token == null || token.isEmpty) {
+      _showSnackbar('No FCM token available');
+      return;
+    }
+
+    try {
+      await SendNotificationService.sendNotificationUsingApi(
+        token: token, // Use the fetched token for the selected user
+        title: 'New Task Assigned',
+        body:
+            '${_currentUsername ?? 'Someone'} assigned you a new task: ${_titleController.text}',
+        data: {"screen": "Main"},
+      );
+      //_showSnackbar('Notification sent successfully');
+    } catch (e) {
+      //_showSnackbar('Failed to send notification: $e');
     }
   }
 
@@ -206,7 +262,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       _priority = widget.initialPriority ?? 'Low';
       _dueDate = widget.initialDueDate;
       _status = _parseStatus(widget.initialStatus ?? 'pending');
-      
+
       // Fetch existing voice notes and attachments
       await _loadTaskVoiceNotes();
       await _loadTaskAttachments();
@@ -285,19 +341,19 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Future<void> _checkMicrophoneStatus() async {
     try {
       print('\n🎤 [Microphone] Checking microphone status...');
-      
+
       // Check if microphone permission is granted
       final micPermission = await Permission.microphone.status;
       print('🎤 [Microphone] Permission status: $micPermission');
-      
+
       // Check if microphone is available
       final hasRecordingPermission = await _audioRecorder.hasPermission();
       print('🎤 [Microphone] Recording permission: $hasRecordingPermission');
-      
+
       // Check if microphone is currently in use
       final isRecording = await _audioRecorder.isRecording();
       print('🎤 [Microphone] Is currently recording: $isRecording');
-      
+
       if (!hasRecordingPermission) {
         print('❌ [Microphone] No recording permission available');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -314,9 +370,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       setState(() {
         _isLoadingUsers = true;
       });
-      
+
       final users = await _apiService.getUsers();
-      if (mounted) {  // Check if widget is still mounted
+      if (mounted) {
+        // Check if widget is still mounted
         setState(() {
           // Filter out the current user from the list
           _users = users.where((user) => user != _currentUsername).toList();
@@ -341,7 +398,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<bool> _requestStoragePermission() async {
     print('📱 [Permissions] Checking storage permissions...');
-    
+
     try {
       // For Android 13 and above
       if (await Permission.photos.request().isGranted &&
@@ -350,7 +407,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('✅ [Permissions] Media permissions granted');
         return true;
       }
-      
+
       // For Android 12 and below
       final status = await Permission.storage.request();
       if (status.isGranted) {
@@ -376,14 +433,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel', style: TextStyle(color: Colors.white)),
+                  child: const Text('Cancel',
+                      style: TextStyle(color: Colors.white)),
                 ),
                 TextButton(
                   onPressed: () {
                     openAppSettings();
                     Navigator.pop(context);
                   },
-                  child: const Text('Open Settings', style: TextStyle(color: Color(0xFF7DF9FF))),
+                  child: const Text('Open Settings',
+                      style: TextStyle(color: Color(0xFF7DF9FF))),
                 ),
               ],
             ),
@@ -422,10 +481,21 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       print('📁 [Files] Opening file picker...');
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'jpg', 'jpeg', 'png'],
+        allowedExtensions: [
+          'pdf',
+          'doc',
+          'docx',
+          'xls',
+          'xlsx',
+          'txt',
+          'jpg',
+          'jpeg',
+          'png'
+        ],
         allowMultiple: true,
         withData: true,
-        onFileLoading: (FilePickerStatus status) => print('📁 [Files] Picker status: $status'),
+        onFileLoading: (FilePickerStatus status) =>
+            print('📁 [Files] Picker status: $status'),
       );
 
       if (result != null) {
@@ -433,7 +503,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         setState(() {
           _selectedFiles = result.files;
         });
-        
+
         // Print file details for debugging
         for (PlatformFile file in result.files) {
           print('📎 [Files] Selected file:');
@@ -563,14 +633,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           opacity: widget.isEditMode ? 0.7 : 1.0,
                           child: RoleDropdown(
                             label: 'Assignee',
-                            hint: _isLoadingUsers ? 'Loading users...' : 'Select assignee',
+                            hint: _isLoadingUsers
+                                ? 'Loading users...'
+                                : 'Select assignee',
                             items: _users,
                             value: _selectedAssignee,
-                            onChanged: widget.isEditMode ? null : (String? value) {
-                              setState(() {
-                                _selectedAssignee = value;
-                              });
-                            },
+                            onChanged: widget.isEditMode
+                                ? null
+                                : (String? value) {
+                                    setState(() {
+                                      _selectedAssignee = value;
+                                    });
+                                  },
                             isLoading: _isLoadingUsers,
                           ),
                         ),
@@ -614,7 +688,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                       context: context,
                                       initialDate: _dueDate ?? DateTime.now(),
                                       firstDate: DateTime.now(),
-                                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                                      lastDate: DateTime.now()
+                                          .add(const Duration(days: 365)),
                                       builder: (context, child) {
                                         return Theme(
                                           data: Theme.of(context).copyWith(
@@ -634,25 +709,31 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                     }
                                   },
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFF0D1526),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: const Color(0xFF1E293B)),
+                                      border: Border.all(
+                                          color: const Color(0xFF1E293B)),
                                     ),
                                     child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         Text(
                                           _dueDate != null
                                               ? '${_dueDate!.day}/${_dueDate!.month}/${_dueDate!.year}'
                                               : 'dd/mm/yyyy',
                                           style: TextStyle(
-                                            color: _dueDate != null ? Colors.white : const Color(0xFF94A3B8),
+                                            color: _dueDate != null
+                                                ? Colors.white
+                                                : const Color(0xFF94A3B8),
                                             fontSize: 14,
                                           ),
                                         ),
-                                        const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
+                                        const Icon(Icons.calendar_today,
+                                            color: Color(0xFF94A3B8), size: 16),
                                       ],
                                     ),
                                   ),
@@ -678,9 +759,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           children: [
                             _buildStatusButton(TaskStatus.pending, 'Pending'),
                             const SizedBox(width: 12),
-                            _buildStatusButton(TaskStatus.inProgress, 'In Progress'),
+                            _buildStatusButton(
+                                TaskStatus.inProgress, 'In Progress'),
                             const SizedBox(width: 12),
-                            _buildStatusButton(TaskStatus.completed, 'Completed'),
+                            _buildStatusButton(
+                                TaskStatus.completed, 'Completed'),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -702,7 +785,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                             context: context,
                             initialDate: _alarmStartDate ?? DateTime.now(),
                             firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                            lastDate:
+                                DateTime.now().add(const Duration(days: 365)),
                             builder: (context, child) {
                               return Theme(
                                 data: Theme.of(context).copyWith(
@@ -722,7 +806,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           }
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
                           decoration: BoxDecoration(
                             color: const Color(0xFF0D1526),
                             borderRadius: BorderRadius.circular(8),
@@ -736,11 +821,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                     ? '${_alarmStartDate!.day}/${_alarmStartDate!.month}/${_alarmStartDate!.year}'
                                     : 'Select Start Date',
                                 style: TextStyle(
-                                  color: _alarmStartDate != null ? Colors.white : const Color(0xFF94A3B8),
+                                  color: _alarmStartDate != null
+                                      ? Colors.white
+                                      : const Color(0xFF94A3B8),
                                   fontSize: 14,
                                 ),
                               ),
-                              const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
+                              const Icon(Icons.calendar_today,
+                                  color: Color(0xFF94A3B8), size: 16),
                             ],
                           ),
                         ),
@@ -771,7 +859,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           }
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
                           decoration: BoxDecoration(
                             color: const Color(0xFF0D1526),
                             borderRadius: BorderRadius.circular(8),
@@ -785,11 +874,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                     ? '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}'
                                     : 'Select Start Time',
                                 style: TextStyle(
-                                  color: _alarmStartTime != null ? Colors.white : const Color(0xFF94A3B8),
+                                  color: _alarmStartTime != null
+                                      ? Colors.white
+                                      : const Color(0xFF94A3B8),
                                   fontSize: 14,
                                 ),
                               ),
-                              const Icon(Icons.access_time, color: Color(0xFF94A3B8), size: 16),
+                              const Icon(Icons.access_time,
+                                  color: Color(0xFF94A3B8), size: 16),
                             ],
                           ),
                         ),
@@ -829,9 +921,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           children: [
                             // Record Button
                             ElevatedButton.icon(
-                              onPressed: _isPlaying ? null : (_isRecording ? _stopRecording : _startRecording),
+                              onPressed: _isPlaying
+                                  ? null
+                                  : (_isRecording
+                                      ? _stopRecording
+                                      : _startRecording),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: _isRecording ? Colors.red : AppColors.accentCyan,
+                                backgroundColor: _isRecording
+                                    ? Colors.red
+                                    : AppColors.accentCyan,
                                 foregroundColor: AppColors.background,
                                 minimumSize: const Size(double.infinity, 48),
                                 shape: RoundedRectangleBorder(
@@ -840,7 +938,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                               ),
                               icon: Icon(_isRecording ? Icons.stop : Icons.mic),
                               label: Text(
-                                _isRecording ? 'Stop Recording' : 'Start Recording',
+                                _isRecording
+                                    ? 'Stop Recording'
+                                    : 'Start Recording',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w500,
@@ -860,23 +960,29 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                 child: Column(
                                   children: [
                                     Text(
-                                      _isRecording 
-                                        ? 'Recording: ${_formatDuration(_recordingDuration)}'
-                                        : 'Playing: ${_formatDuration(_playbackPosition)} / ${_formatDuration(_totalDuration)}',
+                                      _isRecording
+                                          ? 'Recording: ${_formatDuration(_recordingDuration)}'
+                                          : 'Playing: ${_formatDuration(_playbackPosition)} / ${_formatDuration(_totalDuration)}',
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 14,
                                       ),
                                       textAlign: TextAlign.center,
                                     ),
-                                    if (_isPlaying && _totalDuration.inSeconds > 0) ...[
+                                    if (_isPlaying &&
+                                        _totalDuration.inSeconds > 0) ...[
                                       const SizedBox(height: 8),
                                       ClipRRect(
                                         borderRadius: BorderRadius.circular(4),
                                         child: LinearProgressIndicator(
-                                          value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
-                                          backgroundColor: AppColors.borderColor,
-                                          valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accentCyan),
+                                          value:
+                                              _playbackPosition.inMilliseconds /
+                                                  _totalDuration.inMilliseconds,
+                                          backgroundColor:
+                                              AppColors.borderColor,
+                                          valueColor:
+                                              const AlwaysStoppedAnimation<
+                                                  Color>(AppColors.accentCyan),
                                           minHeight: 4,
                                         ),
                                       ),
@@ -891,18 +997,25 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                 children: [
                                   Expanded(
                                     child: ElevatedButton.icon(
-                                      onPressed: _isRecording ? null : _playRecording,
+                                      onPressed:
+                                          _isRecording ? null : _playRecording,
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: AppColors.accentCyan,
                                         foregroundColor: AppColors.background,
-                                        minimumSize: const Size(double.infinity, 48),
+                                        minimumSize:
+                                            const Size(double.infinity, 48),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
                                       ),
-                                      icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
+                                      icon: Icon(_isPlaying
+                                          ? Icons.pause
+                                          : Icons.play_arrow),
                                       label: Text(
-                                        _isPlaying ? 'Stop Playing' : 'Play Recording',
+                                        _isPlaying
+                                            ? 'Stop Playing'
+                                            : 'Play Recording',
                                         style: const TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w500,
@@ -914,7 +1027,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                     const SizedBox(width: 8),
                                     IconButton(
                                       onPressed: _deleteRecording,
-                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      icon: const Icon(Icons.delete,
+                                          color: Colors.red),
                                       tooltip: 'Delete Recording',
                                     ),
                                   ],
@@ -942,21 +1056,25 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                           itemCount: _voiceNotes.length,
                           itemBuilder: (context, index) {
                             final voiceNote = _voiceNotes[index];
-                            final isPlaying = _currentlyPlayingNoteId == voiceNote.id;
+                            final isPlaying =
+                                _currentlyPlayingNoteId == voiceNote.id;
                             return Container(
                               margin: const EdgeInsets.only(bottom: 8),
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF0D1526),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFF1E293B)),
+                                border:
+                                    Border.all(color: const Color(0xFF1E293B)),
                               ),
                               child: Row(
                                 children: [
                                   // Play/Pause Button
                                   IconButton(
                                     icon: Icon(
-                                      isPlaying ? Icons.pause : Icons.play_arrow,
+                                      isPlaying
+                                          ? Icons.pause
+                                          : Icons.play_arrow,
                                       color: const Color(0xFF7DF9FF),
                                     ),
                                     onPressed: () async {
@@ -967,7 +1085,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                         });
                                       } else {
                                         setState(() {
-                                          _currentlyPlayingNoteId = voiceNote.id;
+                                          _currentlyPlayingNoteId =
+                                              voiceNote.id;
                                         });
                                         await _playVoiceNote(voiceNote);
                                       }
@@ -977,7 +1096,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                   // Duration and File Name
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           'Voice Note ${index + 1}',
@@ -995,14 +1115,21 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                             fontSize: 12,
                                           ),
                                         ),
-                                        if (isPlaying && _totalDuration.inSeconds > 0) ...[
+                                        if (isPlaying &&
+                                            _totalDuration.inSeconds > 0) ...[
                                           const SizedBox(height: 8),
                                           ClipRRect(
-                                            borderRadius: BorderRadius.circular(4),
+                                            borderRadius:
+                                                BorderRadius.circular(4),
                                             child: LinearProgressIndicator(
-                                              value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
-                                              backgroundColor: const Color(0xFF0D1526),
-                                              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+                                              value: _playbackPosition
+                                                      .inMilliseconds /
+                                                  _totalDuration.inMilliseconds,
+                                              backgroundColor:
+                                                  const Color(0xFF0D1526),
+                                              valueColor:
+                                                  const AlwaysStoppedAnimation<
+                                                      Color>(Color(0xFF7DF9FF)),
                                               minHeight: 2,
                                             ),
                                           ),
@@ -1040,24 +1167,34 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                             GestureDetector(
                               onTap: _isUploadingFiles ? null : _pickFiles,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
                                 decoration: BoxDecoration(
-                                  color: _isUploadingFiles ? AppColors.borderColor : AppColors.background,
+                                  color: _isUploadingFiles
+                                      ? AppColors.borderColor
+                                      : AppColors.background,
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: AppColors.borderColor),
+                                  border:
+                                      Border.all(color: AppColors.borderColor),
                                 ),
                                 child: Row(
                                   children: [
                                     Icon(
                                       Icons.add,
-                                      color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
+                                      color: _isUploadingFiles
+                                          ? Colors.grey
+                                          : const Color(0xFF94A3B8),
                                       size: 20,
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      _isUploadingFiles ? 'Uploading...' : 'Choose files...',
+                                      _isUploadingFiles
+                                          ? 'Uploading...'
+                                          : 'Choose files...',
                                       style: TextStyle(
-                                        color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
+                                        color: _isUploadingFiles
+                                            ? Colors.grey
+                                            : const Color(0xFF94A3B8),
                                         fontSize: 14,
                                       ),
                                     ),
@@ -1068,7 +1205,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                             if (_selectedFiles.isNotEmpty) ...[
                               const SizedBox(height: 16),
                               Column(
-                                children: List.generate(_selectedFiles.length, (index) {
+                                children: List.generate(_selectedFiles.length,
+                                    (index) {
                                   final file = _selectedFiles[index];
                                   return Container(
                                     margin: const EdgeInsets.only(bottom: 8),
@@ -1076,7 +1214,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                     decoration: BoxDecoration(
                                       color: AppColors.background,
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppColors.borderColor),
+                                      border: Border.all(
+                                          color: AppColors.borderColor),
                                     ),
                                     child: Row(
                                       children: [
@@ -1087,7 +1226,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Text(
                                                 file.name,
@@ -1109,7 +1249,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                           ),
                                         ),
                                         IconButton(
-                                          icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                                          icon: const Icon(Icons.close,
+                                              color: Colors.red, size: 20),
                                           onPressed: () => _removeFile(index),
                                           padding: EdgeInsets.zero,
                                           constraints: const BoxConstraints(),
@@ -1133,7 +1274,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                             child: TextButton(
                               onPressed: () => Navigator.pop(context),
                               style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
                                 backgroundColor: Colors.transparent,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
@@ -1154,7 +1296,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                             child: TextButton(
                               onPressed: _handleCreateTask,
                               style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
                                 backgroundColor: const Color(0xFF7DF9FF),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
@@ -1176,7 +1319,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                   ),
                 ),
               ),
-    ),
+            ),
     );
   }
 
@@ -1192,17 +1335,22 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF7DF9FF) : const Color(0xFF0D1526),
+            color:
+                isSelected ? const Color(0xFF7DF9FF) : const Color(0xFF0D1526),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: isSelected ? const Color(0xFF7DF9FF) : const Color(0xFF1E293B),
+              color: isSelected
+                  ? const Color(0xFF7DF9FF)
+                  : const Color(0xFF1E293B),
             ),
           ),
           child: Center(
             child: Text(
               label,
               style: TextStyle(
-                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                color: isSelected
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFF94A3B8),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -1225,11 +1373,12 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
         // Handle audio note
         Map<String, dynamic>? audioNote;
-        if (_recordedFilePath != null && await File(_recordedFilePath!).exists()) {
+        if (_recordedFilePath != null &&
+            await File(_recordedFilePath!).exists()) {
           final audioBytes = await File(_recordedFilePath!).readAsBytes();
           final base64Audio = base64Encode(audioBytes);
           final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
-          
+
           audioNote = {
             'filename': filename,
             'duration': _recordingDuration.inSeconds,
@@ -1258,7 +1407,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             _alarmStartTime!.hour,
             _alarmStartTime!.minute,
           );
-          
+
           alarmSettings = {
             'alarm_time': alarmDateTime.toIso8601String(),
             'is_enabled': true,
@@ -1281,6 +1430,33 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             attachments: attachments,
             alarmSettings: alarmSettings,
           );
+          //Send Notification after update
+
+          try {
+            String? notificationReceiver;
+            if(_currentUsername == _selectedAssignee)
+            {
+             // notificationReceiver =
+            }
+            else
+            {
+              notificationReceiver = _selectedAssignee;
+            }
+
+            final token = await _fetchFcmToken(notificationReceiver!);
+            if (token != null && token.isNotEmpty) {
+              await _sendNotificationToUser(token);
+              //print('Notification sent to assigner: ${widget.}');
+            } else {
+              //print('No valid FCM token found for assigner: ${widget}');
+              _showSnackbar(
+                  'Could not send notification to assigner: No valid FCM token available');
+            }
+          } catch (e) {
+            print(
+                'Error sending notification to ${widget.initialAssignee}: $e');
+            _showSnackbar('Failed to send notification: $e');
+          }
         } else {
           // Create new task
           response = await _apiService.createTask(
@@ -1301,11 +1477,30 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           _isLoading = false;
         });
 
+        // Send notification to the assignee only in create mode
+        if (!widget.isEditMode) {
+          try {
+            final token = await _fetchFcmToken(_selectedAssignee!);
+            if (token != null) {
+              await _sendNotificationToUser(token);
+            } else {
+              print('No FCM token found for user: $_selectedAssignee');
+              _showSnackbar(
+                  'Could not send notification: No FCM token available');
+            }
+          } catch (e) {
+            print('Error sending notification: $e');
+            _showSnackbar('Failed to send notification: $e');
+          }
+        }
+
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              widget.isEditMode ? 'Task updated successfully' : 'Task created successfully',
+              widget.isEditMode
+                  ? 'Task updated successfully'
+                  : 'Task created successfully',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 14,
@@ -1336,11 +1531,192 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
         // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error ${widget.isEditMode ? "updating" : "creating"} task: $e')),
+          SnackBar(
+              content: Text(
+                  'Error ${widget.isEditMode ? "updating" : "creating"} task: $e')),
         );
       }
     }
   }
+
+  // Future<void> _handleCreateTask() async {
+  //   if (_formKey.currentState!.validate()) {
+  //     setState(() {
+  //       _isLoading = true;
+  //     });
+  //
+  //     try {
+  //       // Stop any playing audio
+  //       await _stopPlayback();
+  //
+  //       // Handle audio note
+  //       Map<String, dynamic>? audioNote;
+  //       if (_recordedFilePath != null && await File(_recordedFilePath!).exists()) {
+  //         final audioBytes = await File(_recordedFilePath!).readAsBytes();
+  //         final base64Audio = base64Encode(audioBytes);
+  //         final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
+  //
+  //         audioNote = {
+  //           'filename': filename,
+  //           'duration': _recordingDuration.inSeconds,
+  //           'audio_data': base64Audio,
+  //         };
+  //       }
+  //
+  //       // Handle attachments
+  //       List<File>? attachments;
+  //       if (_selectedFiles.isNotEmpty) {
+  //         attachments = _selectedFiles.map((file) {
+  //           if (file.path == null) {
+  //             throw Exception('File path is null');
+  //           }
+  //           return File(file.path!);
+  //         }).toList();
+  //       }
+  //
+  //       // Create alarm settings if needed
+  //       Map<String, dynamic>? alarmSettings;
+  //       if (_alarmStartDate != null && _alarmStartTime != null) {
+  //         final alarmDateTime = DateTime(
+  //           _alarmStartDate!.year,
+  //           _alarmStartDate!.month,
+  //           _alarmStartDate!.day,
+  //           _alarmStartTime!.hour,
+  //           _alarmStartTime!.minute,
+  //         );
+  //
+  //         alarmSettings = {
+  //           'alarm_time': alarmDateTime.toIso8601String(),
+  //           'is_enabled': true,
+  //         };
+  //       }
+  //
+  //       String response;
+  //       if (widget.isEditMode) {
+  //         // Update existing task
+  //         response = await _apiService.updateTask(
+  //           taskId: widget.taskId!,
+  //           title: _titleController.text,
+  //           description: _descriptionController.text,
+  //           assignedTo: _selectedAssignee ?? '',
+  //           assignedBy: _currentUsername ?? '',
+  //           deadline: _dueDate ?? DateTime.now(),
+  //           priority: _priority.toLowerCase(),
+  //           status: _getStatusString(_status),
+  //           audioNote: audioNote,
+  //           attachments: attachments,
+  //           alarmSettings: alarmSettings,
+  //         );
+  //       } else {
+  //         // Create new task
+  //         response = await _apiService.createTask(
+  //           title: _titleController.text,
+  //           description: _descriptionController.text,
+  //           assignedTo: _selectedAssignee ?? '',
+  //           assignedBy: _currentUsername ?? '',
+  //           deadline: _dueDate ?? DateTime.now(),
+  //           priority: _priority.toLowerCase(),
+  //           status: 'pending',
+  //           audioNote: audioNote,
+  //           attachments: attachments,
+  //           alarmSettings: alarmSettings,
+  //         );
+  //       }
+  //
+  //       setState(() {
+  //         _isLoading = false;
+  //       });
+  //
+  //       // Send notification to the assignee only in create mode
+  //       // if (!widget.isEditMode && _selectedAssignee != null) {
+  //       //   try {
+  //       //     final token = await _fetchFcmToken(_selectedAssignee!);
+  //       //     if (token != null && token.isNotEmpty) {
+  //       //       await _sendNotificationToUser(token);
+  //       //       print("Token:-----> $token");
+  //       //     } else {
+  //       //       print('No valid FCM token found for user: $_selectedAssignee');
+  //       //       _showSnackbar('Could not send notification: No valid FCM token available');
+  //       //     }
+  //       //   } catch (e) {
+  //       //     print('Error sending notification to $_selectedAssignee: $e');
+  //       //     _showSnackbar('Failed to send notification: $e');
+  //       //   }
+  //       // }
+  //
+  //
+  //       if (!widget.isEditMode && _selectedAssignee != null) {
+  //         // Notification for task creation (to assignee)
+  //         try {
+  //           final token = await _fetchFcmToken(_selectedAssignee!);
+  //           if (token != null && token.isNotEmpty) {
+  //             await _sendNotificationToUser(token);
+  //           } else {
+  //             print('No valid FCM token found for user: $_selectedAssignee');
+  //             _showSnackbar('Could not send notification: No valid FCM token available');
+  //           }
+  //         } catch (e) {
+  //           print('Error sending notification to $_selectedAssignee: $e');
+  //           _showSnackbar('Failed to send notification: $e');
+  //         }
+  //       } else if (widget.isEditMode) {
+  //         // Notification for task update (to assigner) only if updated by assignee
+  //         try {
+  //           final token = await _fetchFcmToken(_selectedAssignee!);
+  //           if (token != null && token.isNotEmpty) {
+  //             await _sendNotificationToUser(token);
+  //             //print('Notification sent to assigner: ${widget.}');
+  //           } else {
+  //             //print('No valid FCM token found for assigner: ${widget}');
+  //             _showSnackbar('Could not send notification to assigner: No valid FCM token available');
+  //           }
+  //         } catch (e) {
+  //           print('Error sending notification to ${widget.initialAssignee}: $e');
+  //           _showSnackbar('Failed to send notification: $e');
+  //         }
+  //       }
+  //
+  //
+  //       // Show success message
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(
+  //           content: Text(
+  //             widget.isEditMode ? 'Task updated successfully' : 'Task created successfully',
+  //             style: const TextStyle(
+  //               color: Colors.white,
+  //               fontSize: 14,
+  //               fontWeight: FontWeight.w500,
+  //             ),
+  //           ),
+  //           backgroundColor: const Color(0xFF1E293B),
+  //           behavior: SnackBarBehavior.floating,
+  //           shape: RoundedRectangleBorder(
+  //             borderRadius: BorderRadius.circular(8),
+  //             side: const BorderSide(
+  //               color: Color(0xFF7DF9FF),
+  //               width: 1,
+  //             ),
+  //           ),
+  //           margin: const EdgeInsets.all(16),
+  //           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+  //           duration: const Duration(seconds: 3),
+  //         ),
+  //       );
+  //
+  //       // Return true to trigger refresh in parent screen
+  //       Navigator.pop(context, true);
+  //     } catch (e) {
+  //       setState(() {
+  //         _isLoading = false;
+  //       });
+  //
+  //       // Show error message
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text('Error ${widget.isEditMode ? "updating" : "creating"} task: $e')),
+  //       );
+  //     }
+  //   }
+  // }
 
   void _clearForm() {
     _titleController.clear();
@@ -1378,7 +1754,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Future<void> _requestInitialPermissions() async {
     try {
       print('🔐 [Permissions] Requesting initial permissions...');
-      
+
       // Request all necessary permissions at start
       Map<Permission, PermissionStatus> statuses = await [
         Permission.microphone,
@@ -1387,7 +1763,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         Permission.videos,
         Permission.audio,
       ].request();
-      
+
       print('📱 [Permissions] Initial status:');
       statuses.forEach((permission, status) {
         print('  - ${permission.toString()}: $status');
@@ -1407,7 +1783,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Future<void> _startRecording() async {
     try {
       print('\n🎤 [Recording] Starting recording process...');
-      
+
       setState(() {
         _canScroll = false;
       });
@@ -1415,7 +1791,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       final micPermission = await Permission.microphone.status;
       print('📱 [Recording] Permission check:');
       print('  - Microphone: $micPermission');
-      
+
       if (!micPermission.isGranted) {
         print('❌ [Recording] Microphone permission not granted, requesting...');
         final status = await Permission.microphone.request();
@@ -1433,17 +1809,19 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
       final appDir = await getApplicationDocumentsDirectory();
       print('📁 [Recording] App documents directory: ${appDir.path}');
-      
+
       final dirPath = '${appDir.path}/recordings';
       print('📁 [Recording] Creating recordings directory at: $dirPath');
-      
+
       try {
         await Directory(dirPath).create(recursive: true);
       } catch (e) {
-        print('⚠️ [Recording] Directory creation warning (may already exist): $e');
+        print(
+            '⚠️ [Recording] Directory creation warning (may already exist): $e');
       }
-      
-      final filePath = '$dirPath/audio_note_${DateTime.now().millisecondsSinceEpoch}.wav';
+
+      final filePath =
+          '$dirPath/audio_note_${DateTime.now().millisecondsSinceEpoch}.wav';
       print('📝 [Recording] Will save recording to: $filePath');
 
       if (_isEmulatorTestMode) {
@@ -1459,12 +1837,13 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
       final isRecorderReady = await _audioRecorder.hasPermission();
       print('🎤 [Recording] Recorder ready status: $isRecorderReady');
-      
+
       if (!isRecorderReady) {
         print('❌ [Recording] Recorder not ready');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Unable to access microphone. Please check your permissions.'),
+            content: Text(
+                'Unable to access microphone. Please check your permissions.'),
             duration: Duration(seconds: 5),
           ),
         );
@@ -1474,7 +1853,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       print('⚙️ [Recording] Configuring recorder...');
       await _audioRecorder.start(
         const RecordConfig(
-          encoder: AudioEncoder.wav,  // Changed to WAV format
+          encoder: AudioEncoder.wav, // Changed to WAV format
           bitRate: 128000,
           sampleRate: 44100,
         ),
@@ -1486,14 +1865,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         _isRecording = true;
         _recordedFilePath = filePath;
       });
-      print('🔄 [Recording] State updated: isRecording=$_isRecording, filePath=$_recordedFilePath');
+      print(
+          '🔄 [Recording] State updated: isRecording=$_isRecording, filePath=$_recordedFilePath');
 
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         setState(() {
           _recordingDuration += const Duration(seconds: 1);
         });
       });
-
     } catch (e) {
       print('❌ [Recording] Error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1518,16 +1897,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         0x57, 0x41, 0x56, 0x45, // "WAVE"
         0x66, 0x6D, 0x74, 0x20, // "fmt "
         0x10, 0x00, 0x00, 0x00, // Format chunk size
-        0x01, 0x00,             // Format tag (PCM)
-        0x01, 0x00,             // Channels (mono)
+        0x01, 0x00, // Format tag (PCM)
+        0x01, 0x00, // Channels (mono)
         0x44, 0xAC, 0x00, 0x00, // Sample rate (44100 Hz)
         0x88, 0x58, 0x01, 0x00, // Bytes per second
-        0x02, 0x00,             // Block align
-        0x10, 0x00,             // Bits per sample
+        0x02, 0x00, // Block align
+        0x10, 0x00, // Bits per sample
         0x64, 0x61, 0x74, 0x61, // "data"
-        0x00, 0x00, 0x00, 0x00  // Data chunk size
+        0x00, 0x00, 0x00, 0x00 // Data chunk size
       ];
-      
+
       await file.writeAsBytes(headerBytes);
       print('✅ [Recording] Created test audio file with silence');
     } catch (e) {
@@ -1549,7 +1928,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
       setState(() {
         _isRecording = false;
-        _canScroll = true;  // Re-enable scrolling
+        _canScroll = true; // Re-enable scrolling
         _recordingDuration = Duration.zero;
       });
       print('🔄 [Recording] State updated: isRecording=$_isRecording');
@@ -1562,7 +1941,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('  - Path: ${file.path}');
         print('  - Size: $size bytes');
         print('  - Exists: true');
-        
+
         // Read first few bytes to verify it's not empty
         if (size > 0) {
           final bytes = await file.openRead(0, min(size, 16)).toList();
@@ -1570,7 +1949,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           print('✅ [Recording] File verification complete - file is valid');
         }
       } else {
-        print('❌ [Recording] Warning: Recording file not found at: ${file.path}');
+        print(
+            '❌ [Recording] Warning: Recording file not found at: ${file.path}');
       }
     } catch (e) {
       print('❌ [Recording] Error in _stopRecording: $e');
@@ -1578,14 +1958,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         SnackBar(content: Text('Failed to stop recording: $e')),
       );
       setState(() {
-        _canScroll = true;  // Re-enable scrolling on error
+        _canScroll = true; // Re-enable scrolling on error
       });
     }
   }
 
   Future<void> _playRecording() async {
     if (_recordedFilePath == null || _isRecording) return;
-    
+
     try {
       if (_isPlaying) {
         await _audioPlayer.stop();
@@ -1628,9 +2008,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       print('⚠️ [Delete] No recording to delete');
       return;
     }
-    
+
     try {
-      print('\n🗑️ [Delete] Attempting to delete recording at: $_recordedFilePath');
+      print(
+          '\n🗑️ [Delete] Attempting to delete recording at: $_recordedFilePath');
       final file = File(_recordedFilePath!);
       if (await file.exists()) {
         await file.delete();
@@ -1691,7 +2072,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
       // Configure audio player for streaming
       await _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
-      
+
       // Set audio context mode to spatial audio
       await _audioPlayer.setAudioContext(AudioContext(
         android: AudioContextAndroid(
@@ -1711,7 +2092,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       // Start playback
       await _audioPlayer.setSourceUrl(apiUrl);
       await _audioPlayer.resume();
-      
+
       setState(() {
         _isPlaying = true;
         _currentlyPlayingNoteId = voiceNote.id;
@@ -1745,13 +2126,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('✅ Voice note downloaded successfully: $filePath');
         return filePath;
       }
-      
+
       // If API fails, try local path
-      if (voiceNote.filePath != null && await File(voiceNote.filePath!).exists()) {
+      if (voiceNote.filePath != null &&
+          await File(voiceNote.filePath!).exists()) {
         print('✅ Using existing local voice note: ${voiceNote.filePath}');
         return voiceNote.filePath;
       }
-      
+
       // If both fail, try audio data
       if (voiceNote.audioData != null) {
         final tempDir = await getTemporaryDirectory();
@@ -1761,7 +2143,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('✅ Created voice note from audio data: $tempPath');
         return tempPath;
       }
-      
+
       print('❌ No valid source found for voice note');
       return null;
     } catch (e) {
@@ -1771,10 +2153,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<String?> _getAttachmentFilePath(Attachment attachment) async {
-    if (attachment.filePath != null && File(attachment.filePath!).existsSync()) {
+    if (attachment.filePath != null &&
+        File(attachment.filePath!).existsSync()) {
       return attachment.filePath;
     }
-    
+
     try {
       final filePath = await _apiService.downloadAttachment(attachment.id);
       return filePath;
@@ -1879,7 +2262,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                     ),
                     // Download button
                     IconButton(
-                      icon: const Icon(Icons.download, color: Color(0xFF7DF9FF)),
+                      icon:
+                          const Icon(Icons.download, color: Color(0xFF7DF9FF)),
                       onPressed: () => _openAttachment(attachment),
                       tooltip: 'Download',
                     ),
@@ -1913,11 +2297,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Future<void> _initializeAudioPlayer() async {
     try {
       print('🎵 [Audio] Initializing audio player...');
-      
+
       // Configure audio player for streaming
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
       await _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
-      
+
       // Configure audio context
       await _audioPlayer.setAudioContext(AudioContext(
         android: AudioContextAndroid(
@@ -1933,7 +2317,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ],
         ),
       ));
-      
+
       // Set up position listener
       _positionSubscription?.cancel();
       _positionSubscription = _audioPlayer.onPositionChanged.listen(
@@ -1948,7 +2332,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           print('❌ [Audio] Position listener error: $error');
         },
       );
-      
+
       // Set up duration listener
       _durationSubscription?.cancel();
       _durationSubscription = _audioPlayer.onDurationChanged.listen(
@@ -1963,7 +2347,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           print('❌ [Audio] Duration listener error: $error');
         },
       );
-      
+
       // Set up completion listener
       _audioPlayer.onPlayerComplete.listen((_) {
         if (mounted) {
@@ -2002,4 +2386,4 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _durationSubscription?.cancel();
     _audioPlayer.dispose();
   }
-} 
+}

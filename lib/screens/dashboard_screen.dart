@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:taskmanagement/services/notification_firebase_service.dart';
 import '../widgets/dashboard/profile_section.dart';
 import '../widgets/dashboard/navigation_menu.dart';
 import '../widgets/dashboard/stats_card.dart';
@@ -39,11 +40,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ViewState _currentView = ViewState.dashboard;
   List<Task> _userTasks = [];
 
+  NotificationFirebaseService notificationFirebaseService = NotificationFirebaseService();
+
   @override
   void initState() {
     super.initState();
     print('🔄 Dashboard - Initializing...');
     _initializeServices();
+    notificationFirebaseService.getDeviceToken();
+    notificationFirebaseService.firebaseInit(context);
+    notificationFirebaseService.setupInteractMessage(context);
   }
 
   @override

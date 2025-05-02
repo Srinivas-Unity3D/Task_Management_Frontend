@@ -12,7 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://134.209.149.12:5000';
+  static const String baseUrl = 'http://10.20.0.248:5000';
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
     connectTimeout: const Duration(seconds: 10),
@@ -30,6 +30,7 @@ class ApiService {
     required String phone,
     required String password,
     required String role,
+    required String fcm_token
   }) async {
     try {
       print('Sending signup request with data:');
@@ -39,6 +40,7 @@ class ApiService {
         'phone': phone,
         'password': password,
         'role': role,
+        'fcm_token' : fcm_token
       };
       print(requestBody);
 
