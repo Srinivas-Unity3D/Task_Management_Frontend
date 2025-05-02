@@ -279,6 +279,32 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                const Spacer(),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.filter_list, color: AppColors.accentCyan),
+                    onPressed: () {
+                      // TODO: Implement filter functionality
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.download, color: AppColors.accentCyan),
+                    onPressed: () {
+                      // TODO: Implement download functionality
+                    },
+                  ),
+                ),
               ],
             ),
           ),
