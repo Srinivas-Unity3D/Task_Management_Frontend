@@ -161,6 +161,7 @@ class ApiService {
 
       while (retryCount < maxRetries) {
         try {
+          print('🔍 [API] Fetching tasks for user: $username with role: $role');
           final response = await http.get(
             Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
             headers: {
@@ -168,6 +169,9 @@ class ApiService {
               'Accept': 'application/json',
             },
           ).timeout(const Duration(seconds: 10));
+
+          print('📥 [API] Tasks response status: ${response.statusCode}');
+          print('📥 [API] Tasks response body: ${response.body}');
 
           if (response.statusCode == 200) {
             final data = json.decode(response.body);
@@ -464,6 +468,7 @@ class ApiService {
 
   Future<List<TaskAssignment>> getTaskAssignments(String userId) async {
     try {
+      print('🔍 [API] Fetching task assignments for user: $userId');
       final response = await http.get(
         Uri.parse('$baseUrl/tasks/assignments/$userId'),
         headers: {
@@ -472,6 +477,9 @@ class ApiService {
         },
       );
 
+      print('📥 [API] Task assignments response status: ${response.statusCode}');
+      print('📥 [API] Task assignments response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body)['assignments'];
         return data.map((json) => TaskAssignment.fromJson(json)).toList();
@@ -479,6 +487,7 @@ class ApiService {
         throw Exception('Failed to fetch task assignments');
       }
     } catch (e) {
+      print('❌ [API] Error fetching task assignments: $e');
       throw Exception('Error fetching task assignments: $e');
     }
   }
