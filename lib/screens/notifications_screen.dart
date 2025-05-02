@@ -254,7 +254,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                           padding: const EdgeInsets.symmetric(horizontal: 12),
                                           minimumSize: const Size(0, 32),
                                         ),
-                                        child: const Text('Mark as Complete'),
+                                        child: const Text('Mark as Read'),
                                       ),
                                     ],
                                   ),

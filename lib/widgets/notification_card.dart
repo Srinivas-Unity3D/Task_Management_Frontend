@@ -132,7 +132,7 @@ class NotificationCard extends StatelessWidget {
                   backgroundColor: const Color(0xFF00E5FF).withOpacity(0.1),
                 ),
                 child: const Text(
-                  'Mark as Complete',
+                  'Mark as Read',
                   style: TextStyle(
                     color: Color(0xFF00E5FF),
                     fontSize: 14,
