@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/task_assignment.dart';
+import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/socket_service.dart';
 import '../theme/colors.dart';
-import '../widgets/common_notification_icon.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import './create_task_screen.dart';
-import './notifications_screen.dart';
 import '../widgets/common_app_bar.dart';
 import '../widgets/dashboard/side_panel.dart';
-import '../models/user.dart';
+import './create_task_screen.dart';
 
 class AssignTasksScreen extends StatefulWidget {
   const AssignTasksScreen({Key? key}) : super(key: key);
@@ -28,7 +27,9 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   String? _currentUserId;
   String? _currentRole;
   String? _currentUsername;
-  bool get _isAdmin => _currentRole?.toLowerCase() == 'admin' || _currentRole?.toLowerCase() == 'super admin';
+  bool get _isAdmin =>
+      _currentRole?.toLowerCase() == 'admin' ||
+      _currentRole?.toLowerCase() == 'super admin';
   bool _hasUnreadNotifications = false;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -43,11 +44,11 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   Future<void> _initializeServices() async {
     print('🔔 AssignTasksScreen - Initializing services');
     await _notificationService.initialize();
-    
+
     // Remove any existing listeners before adding new ones
     _socketService.removeTaskNotificationListener(_handleNewNotification);
     _socketService.listenToTaskNotifications(_handleNewNotification);
-    
+
     print('🔔 AssignTasksScreen - Services initialized');
   }
 
@@ -63,13 +64,14 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
     if (mounted) {
       // Check if this is a task update notification
       if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
-        print('🔄 AssignTasksScreen - Task update received, refreshing assignments...');
+        print(
+            '🔄 AssignTasksScreen - Task update received, refreshing assignments...');
         // Add slight delay before refreshing to ensure server has processed the update
         Future.delayed(const Duration(milliseconds: 500), () {
           _fetchAssignments();
         });
       }
-      
+
       // Update notification indicator
       setState(() {
         _hasUnreadNotifications = true;
@@ -84,21 +86,21 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
       _currentUserId = prefs.getString('user_id');
       _currentRole = prefs.getString('role');
       _currentUsername = prefs.getString('username');
-      
+
       // Connect to socket service
       final username = _currentUsername;
       if (username != null && username.isNotEmpty) {
         print('🔄 AssignTasksScreen - Connecting socket for user: $username');
         _socketService.connect(username);
-        
+
         // Remove any existing listeners before adding new ones
         _socketService.removeTaskNotificationListener(_handleNewNotification);
-        
+
         // Setup socket listeners
         print('🔄 AssignTasksScreen - Setting up socket listeners');
         _socketService.listenToTaskNotifications(_handleNewNotification);
       }
-      
+
       if (_currentUserId != null) {
         await _fetchAssignments();
       }
@@ -109,22 +111,34 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
 
   Future<void> _fetchAssignments() async {
     if (!mounted) return;
-    
+
     try {
       setState(() {
         _isLoading = true;
       });
-      
+
       print('🔄 AssignTasksScreen - Fetching assignments...');
-      
+
       // Add retry logic
       int retryCount = 0;
       const maxRetries = 3;
       List<TaskAssignment>? assignments;
-      
+
       while (retryCount < maxRetries && assignments == null) {
         try {
+          // Get all assignments
           assignments = await _apiService.getTaskAssignments(_currentUserId!);
+          
+          // Filter assignments to only show tasks assigned by the current user to others
+          if (assignments != null && _currentUsername != null) {
+            assignments = assignments
+                .where((assignment) => 
+                  assignment.assignerName == _currentUsername && 
+                  assignment.assigneeName != _currentUsername
+                )
+                .toList();
+            print('🔄 AssignTasksScreen - Filtered ${assignments.length} tasks assigned by $_currentUsername to others');
+          }
         } catch (e) {
           print('❌ AssignTasksScreen - Attempt ${retryCount + 1} failed: $e');
           retryCount++;
@@ -134,7 +148,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
           }
         }
       }
-      
+
       if (assignments != null) {
         if (mounted) {
           setState(() {
@@ -144,7 +158,8 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
           print('✅ AssignTasksScreen - Assignments updated successfully');
         }
       } else {
-        throw Exception('Failed to fetch assignments after $maxRetries attempts');
+        throw Exception(
+            'Failed to fetch assignments after $maxRetries attempts');
       }
     } catch (e) {
       print('❌ AssignTasksScreen - Error fetching assignments: $e');
@@ -154,7 +169,8 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error fetching assignments. Pull to refresh to try again.'),
+            content: Text(
+                'Error fetching assignments. Pull to refresh to try again.'),
             action: SnackBarAction(
               label: 'RETRY',
               onPressed: _fetchAssignments,
@@ -266,19 +282,20 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
             child: RefreshIndicator(
               onRefresh: _fetchAssignments,
               child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.accentCyan),
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(AppColors.accentCyan),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(24),
+                      itemCount: _assignments.length,
+                      itemBuilder: (context, index) {
+                        final assignment = _assignments[index];
+                        return _buildTaskAssignmentItem(assignment);
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(24),
-                    itemCount: _assignments.length,
-                    itemBuilder: (context, index) {
-                      final assignment = _assignments[index];
-                      return _buildTaskAssignmentItem(assignment);
-                    },
-                  ),
             ),
           ),
         ],
@@ -424,4 +441,4 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
       ),
     );
   }
-} 
+}
