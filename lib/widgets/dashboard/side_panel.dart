@@ -214,7 +214,7 @@ class SidePanel extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              user.role == 'admin' ? 'Software Developer' : user.role,
+                              user.role,
                               style: const TextStyle(
                                 color: AppColors.textGrey,
                                 fontSize: 14,

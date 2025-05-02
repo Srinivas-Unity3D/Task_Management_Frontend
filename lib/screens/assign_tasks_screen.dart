@@ -227,15 +227,18 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
           // Get all assignments
           assignments = await _apiService.getTaskAssignments(_currentUserId!);
 
-          // Filter assignments to only show tasks assigned by the current user to others
+          // For admin users, show all tasks. For others, only show tasks they assigned
           if (assignments != null && _currentUsername != null) {
-            assignments = assignments
-                .where((assignment) =>
-                    assignment.assignerName == _currentUsername &&
-                    assignment.assigneeName != _currentUsername)
-                .toList();
-            print(
-                '🔄 AssignTasksScreen - Filtered ${assignments.length} tasks assigned by $_currentUsername to others');
+            if (!_isAdmin) {
+              assignments = assignments
+                  .where((assignment) =>
+                      assignment.assignerName == _currentUsername &&
+                      assignment.assigneeName != _currentUsername)
+                  .toList();
+              print('🔄 AssignTasksScreen - Filtered ${assignments.length} tasks assigned by $_currentUsername to others');
+            } else {
+              print('🔄 AssignTasksScreen - Showing all ${assignments.length} tasks for admin user');
+            }
           }
         } catch (e) {
           print('❌ AssignTasksScreen - Attempt ${retryCount + 1} failed: $e');
@@ -305,7 +308,10 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
           final prefs = await SharedPreferences.getInstance();
           await prefs.clear();
           if (mounted) {
-            Navigator.of(context).pushReplacementNamed('/');
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/',
+              (route) => false,
+            );
           }
         },
         onClose: () => Navigator.pop(context),

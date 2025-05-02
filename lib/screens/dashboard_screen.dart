@@ -335,7 +335,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Navigate to login screen
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (context) => const SignInScreen(),
+          builder: (context) => SignInScreen(
+            onLogin: () {
+              // This callback won't be used in practice since we're logging out
+              // but we need to provide it to satisfy the type system
+            },
+          ),
         ),
       );
     }

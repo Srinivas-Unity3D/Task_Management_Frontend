@@ -8,7 +8,12 @@ import 'registration_screen.dart';
 import 'dashboard_screen.dart';
 
 class SignInScreen extends StatefulWidget {
-  const SignInScreen({Key? key}) : super(key: key);
+  final VoidCallback onLogin;
+  
+  const SignInScreen({
+    Key? key,
+    required this.onLogin,
+  }) : super(key: key);
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
@@ -85,7 +90,6 @@ class _SignInScreenState extends State<SignInScreen> {
             // Store user data
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('username', _usernameController.text);
-            // You should get the role from your API response
             await prefs.setString('role', response['data']['role'] ?? 'Developer');
             
             if (_rememberMe) {
@@ -93,12 +97,16 @@ class _SignInScreenState extends State<SignInScreen> {
               await prefs.setString('password', _passwordController.text);
             }
 
+            widget.onLogin(); // Call the onLogin callback
+            
             // Navigate to Dashboard
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (context) => const DashboardScreen(),
-              ),
-            );
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => const DashboardScreen(),
+                ),
+              );
+            }
           } else {
             setState(() {
               _errorMessage = response['message'];

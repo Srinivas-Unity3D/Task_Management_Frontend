@@ -35,16 +35,37 @@ void main() async {  // Made async to properly handle initialization
   runApp(MyApp(isLoggedIn: isLoggedIn));
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final bool isLoggedIn;
   
   const MyApp({Key? key, this.isLoggedIn = false}) : super(key: key);
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late bool _isLoggedIn;
+  final _navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _isLoggedIn = widget.isLoggedIn;
+  }
+
+  void _updateLoginState(bool isLoggedIn) {
+    setState(() {
+      _isLoggedIn = isLoggedIn;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Task Management',
       debugShowCheckedModeBanner: false,
+      navigatorKey: _navigatorKey,
       theme: ThemeData(
         primaryColor: AppColors.accentCyan,
         scaffoldBackgroundColor: AppColors.background,
@@ -98,15 +119,25 @@ class MyApp extends StatelessWidget {
         ),
       ),
       
-      // Define routes
-      routes: {
-        '/': (context) => isLoggedIn ? const DashboardScreen() : const SignInScreen(),
-        '/my-tasks': (context) => const MyTasksScreen(),
-        '/assign-tasks': (context) => const AssignTasksScreen(),
+      home: _isLoggedIn ? const DashboardScreen() : SignInScreen(onLogin: () => _updateLoginState(true)),
+      onGenerateRoute: (settings) {
+        if (!_isLoggedIn) {
+          return MaterialPageRoute(
+            builder: (context) => SignInScreen(onLogin: () => _updateLoginState(true)),
+          );
+        }
+        
+        switch (settings.name) {
+          case '/':
+            return MaterialPageRoute(builder: (context) => const DashboardScreen());
+          case '/my-tasks':
+            return MaterialPageRoute(builder: (context) => const MyTasksScreen());
+          case '/assign-tasks':
+            return MaterialPageRoute(builder: (context) => const AssignTasksScreen());
+          default:
+            return MaterialPageRoute(builder: (context) => const DashboardScreen());
+        }
       },
-      
-      // Initial route
-      initialRoute: '/',
     );
   }
 }

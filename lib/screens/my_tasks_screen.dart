@@ -165,14 +165,11 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         setState(() {
           _tasks = tasksJson
               .map((task) => Task.fromJson(task))
-              .where((task) =>
-                  task.assignedTo ==
-                  _currentUsername) // Filter tasks assigned to current user
+              .where((task) => task.assignedTo == _currentUsername) // Only show tasks assigned to the admin
               .toList();
           _filteredTasks = _tasks;
         });
-        print(
-            '📋 MyTasksScreen - Loaded ${_tasks.length} tasks assigned to $_currentUsername');
+        print('📋 MyTasksScreen - Loaded ${_tasks.length} tasks assigned to $_currentUsername');
       }
     } catch (e) {
       print('❌ MyTasksScreen - Error loading tasks: $e');
@@ -354,7 +351,10 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           final prefs = await SharedPreferences.getInstance();
           await prefs.clear();
           if (mounted) {
-            Navigator.of(context).pushReplacementNamed('/');
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/',
+              (route) => false,
+            );
           }
         },
         onClose: () => Navigator.pop(context),
