@@ -342,7 +342,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                       ),
                     ),
                     Text(
-                      assignment.currentTask == 'admin' ? 'Admin' : 'Developer',
+                      assignment.assigneeRole,
                       style: const TextStyle(
                         color: AppColors.textGrey,
                         fontSize: 12,

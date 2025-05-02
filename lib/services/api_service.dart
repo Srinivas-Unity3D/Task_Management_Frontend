@@ -154,27 +154,49 @@ class ApiService {
     required String role,
   }) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      );
+      // Add retry logic
+      int retryCount = 0;
+      const maxRetries = 3;
+      const retryDelay = Duration(seconds: 1);
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return {
-          'success': true,
-          'data': data,
-        };
-      } else {
-        return {
-          'success': false,
-          'message': 'Failed to load tasks',
-        };
+      while (retryCount < maxRetries) {
+        try {
+          final response = await http.get(
+            Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+          ).timeout(const Duration(seconds: 10));
+
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            return {
+              'success': true,
+              'data': data,
+            };
+          }
+          return {
+            'success': false,
+            'message': 'Failed to load tasks',
+          };
+        } catch (e) {
+          retryCount++;
+          if (retryCount < maxRetries) {
+            print('Retry attempt $retryCount after error: $e');
+            await Future.delayed(retryDelay);
+            continue;
+          }
+          rethrow;
+        }
       }
+
+      return {
+        'success': false,
+        'message': 'Failed after $maxRetries retry attempts',
+      };
     } catch (e) {
+      print('Error loading tasks: $e');
       return {
         'success': false,
         'message': 'Connection error. Please try again.',
