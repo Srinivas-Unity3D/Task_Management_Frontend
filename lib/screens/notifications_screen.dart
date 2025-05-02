@@ -133,17 +133,64 @@ class _NotificationScreenState extends State<NotificationScreen> {
                   ),
                 )
               : _notifications.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No notifications',
-                        style: TextStyle(color: Colors.white),
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.notifications_off_outlined,
+                            size: 64,
+                            color: Colors.white.withOpacity(0.5),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No Notifications Yet',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'You\'ll be notified when you receive new tasks,\nmeetings, or system updates.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.7),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
                       ),
                     )
                   : _unreadNotifications.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'No new notifications',
-                            style: TextStyle(color: Colors.white),
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.check_circle_outline,
+                                size: 64,
+                                color: Colors.white.withOpacity(0.5),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'All Caught Up!',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'You\'ve read all your notifications.',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
                           ),
                         )
                       : ListView.builder(
@@ -254,7 +301,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                           padding: const EdgeInsets.symmetric(horizontal: 12),
                                           minimumSize: const Size(0, 32),
                                         ),
-                                        child: const Text('Mark as Complete'),
+                                        child: const Text('Mark as Read'),
                                       ),
                                     ],
                                   ),

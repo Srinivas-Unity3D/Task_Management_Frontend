@@ -52,6 +52,12 @@ class NotificationService {
           
           return notifications.map((json) {
             try {
+              // Skip notifications where the current user is the updater
+              if ((json['updated_by'] != null && json['updated_by'] == username) ||
+                  (json['assigned_by'] != null && json['assigned_by'] == username)) {
+                return null;
+              }
+              
               return NotificationModel(
                 id: json['id'] ?? '',
                 title: json['title'] ?? '',
@@ -65,9 +71,12 @@ class NotificationService {
             } catch (e) {
               print('Error parsing notification: $e');
               print('Problematic JSON: $json');
-              rethrow;
+              return null;
             }
-          }).toList();
+          })
+          .where((notification) => notification != null)
+          .cast<NotificationModel>()
+          .toList();
         } else {
           print('Invalid response format: $responseData');
           throw Exception('Invalid response format');
@@ -81,36 +90,8 @@ class NotificationService {
       }
     } catch (e) {
       print('Error fetching notifications: $e');
-      // For development, return mock data if API fails
-      return [
-        NotificationModel(
-          id: '1',
-          title: 'New Task Assignment',
-          description: 'Project Alpha needs review',
-          senderName: 'Durga',
-          senderRole: 'Project Manager',
-          timeAgo: '10m ago',
-          type: 'task',
-        ),
-        NotificationModel(
-          id: '2',
-          title: 'Meeting Reminder',
-          description: 'Team standup at 2 PM',
-          senderName: 'Azim',
-          senderRole: 'Admin',
-          timeAgo: '1h ago',
-          type: 'meeting',
-        ),
-        NotificationModel(
-          id: '3',
-          title: 'System Update',
-          description: 'New features available',
-          senderName: 'Ayan',
-          senderRole: 'Developer',
-          timeAgo: '2h ago',
-          type: 'system',
-        ),
-      ];
+      // Return empty list instead of mock data
+      return [];
     }
   }
 

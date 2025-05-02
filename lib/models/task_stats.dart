@@ -2,12 +2,14 @@ import 'task.dart';
 
 class TaskStats {
   final int activeTasks;
+  final int pendingTasks;
   final int inProgressTasks;
   final int completedTasks;
   final int snoozedTasks;
 
   TaskStats({
     required this.activeTasks,
+    required this.pendingTasks,
     required this.inProgressTasks,
     required this.completedTasks,
     required this.snoozedTasks,
@@ -15,6 +17,7 @@ class TaskStats {
 
   factory TaskStats.fromTasks(List<Task> tasks) {
     int active = 0;
+    int pending = 0;
     int inProgress = 0;
     int completed = 0;
     int snoozed = 0;
@@ -22,10 +25,12 @@ class TaskStats {
     for (var task in tasks) {
       switch (task.status) {
         case TaskStatus.pending:
+          pending++;
           active++;
           break;
         case TaskStatus.inProgress:
           inProgress++;
+          active++;
           break;
         case TaskStatus.completed:
           completed++;
@@ -38,6 +43,7 @@ class TaskStats {
 
     return TaskStats(
       activeTasks: active,
+      pendingTasks: pending,
       inProgressTasks: inProgress,
       completedTasks: completed,
       snoozedTasks: snoozed,
@@ -50,6 +56,7 @@ class TaskStats {
   Map<String, dynamic> toJson() {
     return {
       'active_tasks': activeTasks,
+      'pending_tasks': pendingTasks,
       'in_progress_tasks': inProgressTasks,
       'completed_tasks': completedTasks,
       'snoozed_tasks': snoozedTasks,

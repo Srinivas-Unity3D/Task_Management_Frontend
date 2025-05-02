@@ -129,7 +129,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
             if (mounted) {
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(
-                  builder: (context) => const SignInScreen(),
+                  builder: (context) => SignInScreen(
+                    onLogin: () {
+                      // This callback won't be used immediately after registration
+                      // but we need to provide it to satisfy the type system
+                    },
+                  ),
                 ),
               );
             }
@@ -366,7 +371,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                   onTap: () {
                                     Navigator.of(context).pushReplacement(
                                       MaterialPageRoute(
-                                        builder: (context) => const SignInScreen(),
+                                        builder: (context) => SignInScreen(
+                                          onLogin: () {
+                                            // This callback won't be used when canceling registration
+                                            // but we need to provide it to satisfy the type system
+                                          },
+                                        ),
                                       ),
                                     );
                                   },

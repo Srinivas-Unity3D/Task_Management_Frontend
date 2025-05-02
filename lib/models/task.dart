@@ -19,7 +19,9 @@ class Task {
   final TaskPriority priority;
   final TaskStatus status;
   final String assignedBy;
+  final String assignedByRole;
   final String assignedTo;
+  final DateTime? completedAt;
 
   Task({
     required this.taskId,
@@ -29,19 +31,23 @@ class Task {
     required this.priority,
     required this.status,
     required this.assignedBy,
+    required this.assignedByRole,
     required this.assignedTo,
+    this.completedAt,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
     return Task(
-      taskId: json['task_id'],
-      title: json['title'],
+      taskId: json['task_id'] ?? '',
+      title: json['title'] ?? '',
       description: json['description'] ?? '',
-      deadline: DateTime.parse(json['deadline']),
-      priority: _parsePriority(json['priority']),
-      status: _parseStatus(json['status']),
-      assignedBy: json['assigned_by'],
-      assignedTo: json['assigned_to'],
+      deadline: DateTime.parse(json['deadline'] ?? DateTime.now().toIso8601String()),
+      priority: _parsePriority(json['priority'] ?? 'medium'),
+      status: _parseStatus(json['status'] ?? 'pending'),
+      assignedBy: json['assigned_by'] ?? '',
+      assignedByRole: json['assigned_by_role'] ?? '',
+      assignedTo: json['assigned_to'] ?? '',
+      completedAt: json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,
     );
   }
 
@@ -54,7 +60,9 @@ class Task {
       'priority': priority.toString().split('.').last,
       'status': status.toString().split('.').last,
       'assigned_by': assignedBy,
+      'assigned_by_role': assignedByRole,
       'assigned_to': assignedTo,
+      'completed_at': completedAt?.toIso8601String(),
     };
   }
 

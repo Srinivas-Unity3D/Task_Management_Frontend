@@ -156,27 +156,53 @@ class ApiService {
     required String role,
   }) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      );
+      // Add retry logic
+      int retryCount = 0;
+      const maxRetries = 3;
+      const retryDelay = Duration(seconds: 1);
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return {
-          'success': true,
-          'data': data,
-        };
-      } else {
-        return {
-          'success': false,
-          'message': 'Failed to load tasks',
-        };
+      while (retryCount < maxRetries) {
+        try {
+          print('🔍 [API] Fetching tasks for user: $username with role: $role');
+          final response = await http.get(
+            Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+          ).timeout(const Duration(seconds: 10));
+
+          print('📥 [API] Tasks response status: ${response.statusCode}');
+          print('📥 [API] Tasks response body: ${response.body}');
+
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            return {
+              'success': true,
+              'data': data,
+            };
+          }
+          return {
+            'success': false,
+            'message': 'Failed to load tasks',
+          };
+        } catch (e) {
+          retryCount++;
+          if (retryCount < maxRetries) {
+            print('Retry attempt $retryCount after error: $e');
+            await Future.delayed(retryDelay);
+            continue;
+          }
+          rethrow;
+        }
       }
+
+      return {
+        'success': false,
+        'message': 'Failed after $maxRetries retry attempts',
+      };
     } catch (e) {
+      print('Error loading tasks: $e');
       return {
         'success': false,
         'message': 'Connection error. Please try again.',
@@ -444,6 +470,7 @@ class ApiService {
 
   Future<List<TaskAssignment>> getTaskAssignments(String userId) async {
     try {
+      print('🔍 [API] Fetching task assignments for user: $userId');
       final response = await http.get(
         Uri.parse('$baseUrl/tasks/assignments/$userId'),
         headers: {
@@ -452,6 +479,9 @@ class ApiService {
         },
       );
 
+      print('📥 [API] Task assignments response status: ${response.statusCode}');
+      print('📥 [API] Task assignments response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body)['assignments'];
         return data.map((json) => TaskAssignment.fromJson(json)).toList();
@@ -459,6 +489,7 @@ class ApiService {
         throw Exception('Failed to fetch task assignments');
       }
     } catch (e) {
+      print('❌ [API] Error fetching task assignments: $e');
       throw Exception('Error fetching task assignments: $e');
     }
   }
@@ -531,6 +562,36 @@ class ApiService {
       }
     } catch (e) {
       throw Exception('Failed to update task: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> getCompletedTasks() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/tasks?status=completed'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to load completed tasks',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Connection error. Please try again.',
+      };
     }
   }
 } 
