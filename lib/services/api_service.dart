@@ -84,6 +84,78 @@ class ApiService {
   // Initialize the CacheManager
   final CacheManager _cacheManager = CacheManager();
 
+  // Add background sync controller
+  final StreamController<void> _syncController = StreamController<void>.broadcast();
+  Timer? _syncTimer;
+  bool _isSyncing = false;
+
+  // Initialize background sync
+  void initBackgroundSync() {
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
+      _syncController.add(null);
+    });
+
+    _syncController.stream.listen((_) {
+      _performBackgroundSync();
+    });
+  }
+
+  // Dispose background sync
+  void disposeBackgroundSync() {
+    _syncTimer?.cancel();
+    _syncController.close();
+  }
+
+  // Perform background sync
+  Future<void> _performBackgroundSync() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+      final role = prefs.getString('role');
+
+      if (userId == null || role == null) {
+        _isSyncing = false;
+        return;
+      }
+
+      print('🔄 [SYNC] Starting background sync for user: $userId');
+
+      // Get last sync timestamp
+      final lastSync = prefs.getString('last_sync_timestamp') ?? '0';
+      
+      // Fetch only updates since last sync
+      final response = await http.get(
+        Uri.parse('$baseUrl/sync?user_id=$userId&last_sync=$lastSync'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final updates = data['updates'] as List;
+        
+        // Update cache for each changed task
+        for (var update in updates) {
+          await _updateTaskCache(userId, update['task'], taskId: update['task']['id']);
+        }
+
+        // Store new sync timestamp
+        await prefs.setString('last_sync_timestamp', DateTime.now().toIso8601String());
+        print('✅ [SYNC] Background sync completed successfully');
+      }
+    } catch (e) {
+      print('❌ [SYNC] Background sync failed: $e');
+    } finally {
+      _isSyncing = false;
+    }
+  }
+
   Future<Map<String, dynamic>> register({
     required String username,
     required String email,
@@ -303,7 +375,7 @@ class ApiService {
     }
   }
 
-  Future<String> createTask({
+  Future<Map<String, dynamic>> createTask({
     required String title,
     required String description,
     required String assignedTo,
@@ -335,6 +407,20 @@ class ApiService {
         }
       }
 
+      // Get assignee's FCM token from server
+      final tokenResponse = await http.get(
+        Uri.parse('$baseUrl/user/$assignedTo/fcm-token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+
+      String? assigneeFcmToken;
+      if (tokenResponse.statusCode == 200) {
+        assigneeFcmToken = json.decode(tokenResponse.body)['fcm_token'];
+      }
+
       // Prepare the request body
       final taskData = {
         'title': title,
@@ -347,6 +433,7 @@ class ApiService {
         'audio_note': audioNote,
         'alarm_settings': alarmSettings,
         'attachments': attachmentData,
+        'assignee_fcm_token': assigneeFcmToken,
       };
 
       final response = await http.post(
@@ -356,28 +443,44 @@ class ApiService {
           'Accept': 'application/json',
         },
         body: json.encode(taskData),
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw TimeoutException('Request timed out');
-        },
-      );
+      ).timeout(const Duration(seconds: 10));
 
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
+      print('📤 [API] Create task response status: ${response.statusCode}');
 
       if (response.statusCode == 201) {
         final responseData = json.decode(response.body);
-        return responseData['message'] ?? 'Task created successfully';
+        final newTask = responseData['task'];
+        
+        // Update cache for both users
+        await _updateTaskCache(assignedTo, newTask);
+        await _updateTaskCache(assignedBy, newTask);
+        
+        // Clear assignments cache for both users to force refresh
+        final assigneeAssignmentsKey = 'task_assignments_$assignedTo';
+        final assignerAssignmentsKey = 'task_assignments_$assignedBy';
+        _cacheManager.getData(assigneeAssignmentsKey)?.clear();
+        _cacheManager.getData(assignerAssignmentsKey)?.clear();
+        
+        // Trigger background sync
+        _syncController.add(null);
+        
+        return {
+          'success': true,
+          'message': responseData['message'] ?? 'Task created successfully',
+          'task': newTask,
+        };
       } else {
-        throw Exception('Failed to create task: ${response.statusCode} - ${response.body}');
+        return {
+          'success': false,
+          'message': 'Failed to create task: ${response.statusCode}',
+        };
       }
-    } on TimeoutException {
-      throw Exception('Connection timed out. Please check your internet connection and try again.');
-    } on SocketException catch (e) {
-      throw Exception('Network error: ${e.message}. Please check your internet connection.');
     } catch (e) {
-      throw Exception('Failed to create task: $e');
+      print('❌ [API] Error creating task: $e');
+      return {
+        'success': false,
+        'message': 'Failed to create task: $e',
+      };
     }
   }
 
@@ -550,53 +653,32 @@ class ApiService {
         return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
       }
 
-      // Try to get data from SharedPreferences if no cache
-      final prefs = await SharedPreferences.getInstance();
-      final storedData = prefs.getString(cacheKey);
-      if (storedData != null) {
-        print('✅ [STORAGE] Found stored task assignments');
-        final data = json.decode(storedData) as List;
-        // Cache the data in memory
-        _cacheManager.setData(cacheKey, data);
-        return data.map((json) => TaskAssignment.fromJson(json)).toList();
-      }
-
       print('🔍 [API] Fetching task assignments for user: $userId');
-      
-      // Try to fetch from API
-      try {
-        final response = await http.get(
-          Uri.parse('$baseUrl/tasks/assignments/$userId'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-        ).timeout(const Duration(seconds: 5));
+      final response = await http.get(
+        Uri.parse('$baseUrl/tasks/assignments/$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
 
-        print('📥 [API] Task assignments response status: ${response.statusCode}');
+      print('📥 [API] Task assignments response status: ${response.statusCode}');
+      print('📥 [API] Task assignments response body: ${response.body}');
 
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body)['assignments'] as List;
-          
-          // Cache in memory
-          _cacheManager.setData(cacheKey, data);
-          
-          // Store in SharedPreferences for offline access
-          await prefs.setString(cacheKey, json.encode(data));
-          
-          print('💾 [CACHE] Saved task assignments to cache and storage');
-          return data.map((json) => TaskAssignment.fromJson(json)).toList();
-        }
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final assignments = data['assignments'] as List;
         
-        // If API fails, return empty list instead of throwing
-        return [];
-      } catch (e) {
-        print('❌ [API] Error fetching task assignments: $e');
-        // Return empty list on error instead of throwing
+        // Cache the data
+        _cacheManager.setData(cacheKey, assignments);
+        
+        return assignments.map((json) => TaskAssignment.fromJson(json)).toList();
+      } else {
+        print('❌ [API] Failed to fetch task assignments: ${response.statusCode}');
         return [];
       }
     } catch (e) {
-      print('❌ [CACHE] Error accessing cache: $e');
+      print('❌ [API] Error fetching task assignments: $e');
       return [];
     }
   }
@@ -647,7 +729,7 @@ class ApiService {
     }
   }
 
-  Future<String> updateTask({
+  Future<Map<String, dynamic>> updateTask({
     required String taskId,
     required String title,
     required String description,
@@ -661,6 +743,20 @@ class ApiService {
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
+      // Get assignee's FCM token from server
+      final tokenResponse = await http.get(
+        Uri.parse('$baseUrl/user/$assignedTo/fcm-token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+
+      String? assigneeFcmToken;
+      if (tokenResponse.statusCode == 200) {
+        assigneeFcmToken = json.decode(tokenResponse.body)['fcm_token'];
+      }
+
       // Prepare the request body
       final taskData = {
         'title': title,
@@ -673,6 +769,7 @@ class ApiService {
         'updated_by': assignedBy,
         'audio_note': audioNote,
         'alarm_settings': alarmSettings,
+        'assignee_fcm_token': assigneeFcmToken,
       };
 
       // Convert attachments to base64 if present
@@ -702,19 +799,94 @@ class ApiService {
           'Accept': 'application/json',
         },
         body: json.encode(taskData),
-      );
+      ).timeout(const Duration(seconds: 10));
 
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
+      print('📤 [API] Update task response status: ${response.statusCode}');
+      print('📤 [API] Update task response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        return responseData['message'] ?? 'Task updated successfully';
+        final updatedTask = responseData['task'] ?? responseData;
+        
+        // Update cache for both users
+        await _updateTaskCache(assignedTo, updatedTask, taskId: taskId);
+        await _updateTaskCache(assignedBy, updatedTask, taskId: taskId);
+        
+        // Clear assignments cache for both users to force refresh
+        final assigneeAssignmentsKey = 'task_assignments_$assignedTo';
+        final assignerAssignmentsKey = 'task_assignments_$assignedBy';
+        _cacheManager.getData(assigneeAssignmentsKey)?.clear();
+        _cacheManager.getData(assignerAssignmentsKey)?.clear();
+        
+        // Trigger background sync
+        _syncController.add(null);
+        
+        return {
+          'success': true,
+          'message': responseData['message'] ?? 'Task updated successfully',
+          'task': updatedTask,
+        };
       } else {
-        throw Exception('Failed to update task: ${response.statusCode} - ${response.body}');
+        print('❌ [API] Failed to update task: ${response.statusCode}');
+        return {
+          'success': false,
+          'message': 'Failed to update task: ${response.statusCode}',
+        };
       }
     } catch (e) {
-      throw Exception('Failed to update task: $e');
+      print('❌ [API] Error updating task: $e');
+      return {
+        'success': false,
+        'message': 'Failed to update task: $e',
+      };
+    }
+  }
+
+  // Helper method to update task cache
+  Future<void> _updateTaskCache(String userId, Map<String, dynamic> task, {String? taskId}) async {
+    final cacheKey = 'tasks_$userId';
+    final assignmentsKey = 'task_assignments_$userId';
+    
+    try {
+      // Get existing cached tasks
+      var cachedData = _cacheManager.getData(cacheKey);
+      List<dynamic> tasks = [];
+      
+      if (cachedData != null) {
+        tasks = cachedData as List;
+        
+        if (taskId != null) {
+          // Update existing task
+          final index = tasks.indexWhere((t) => t['id'] == taskId);
+          if (index != -1) {
+            tasks[index] = task;
+          } else {
+            tasks.add(task);
+          }
+        } else {
+          // Add new task
+          tasks.add(task);
+        }
+      } else {
+        tasks = [task];
+      }
+      
+      // Update memory cache
+      _cacheManager.setData(cacheKey, tasks);
+      
+      // Clear assignments cache to force refresh
+      _cacheManager.getData(assignmentsKey)?.clear();
+      
+      // Update persistent storage
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(cacheKey, json.encode(tasks));
+      
+      // Trigger background sync
+      _syncController.add(null);
+      
+      print('💾 [CACHE] Updated tasks cache for user: $userId');
+    } catch (e) {
+      print('❌ [CACHE] Error updating task cache: $e');
     }
   }
 

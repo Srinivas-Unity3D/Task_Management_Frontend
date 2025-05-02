@@ -1265,7 +1265,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           };
         }
 
-        String response;
+        Map<String, dynamic> response;
         if (widget.isEditMode) {
           // Update existing task
           response = await _apiService.updateTask(
@@ -1301,11 +1301,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           _isLoading = false;
         });
 
+        if (!response['success']) {
+          throw Exception(response['message']);
+        }
+
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              widget.isEditMode ? 'Task updated successfully' : 'Task created successfully',
+              response['message'] ?? (widget.isEditMode ? 'Task updated successfully' : 'Task created successfully'),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 14,
