@@ -4,6 +4,7 @@ import '../models/task.dart';
 import '../services/api_service.dart';
 import '../widgets/common_app_bar.dart';
 import '../widgets/dashboard/side_panel.dart';
+import '../widgets/filter_panel.dart';
 import '../models/user.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import './create_task_screen.dart';
@@ -19,16 +20,92 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   final ApiService _apiService = ApiService();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Task> _tasks = [];
+  List<Task> _filteredTasks = [];
   bool _isLoading = true;
   bool _hasUnreadNotifications = false;
   String? _currentUserId;
   String? _currentRole;
   String? _currentUsername;
+  OverlayEntry? _filterOverlay;
 
   @override
   void initState() {
     super.initState();
     _loadUserAndTasks();
+  }
+
+  @override
+  void dispose() {
+    _removeFilterPanel();
+    super.dispose();
+  }
+
+  void _showFilterPanel(BuildContext context, Offset buttonPosition) {
+    _removeFilterPanel();
+
+    _filterOverlay = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          GestureDetector(
+            onTap: _removeFilterPanel,
+            child: Container(
+              color: Colors.transparent,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          ),
+          Positioned(
+            top: buttonPosition.dy + 50,
+            right: 24,
+            child: FilterPanel(
+              onPrioritySelected: _filterByPriority,
+              onAssigneeSort: _sortByAssignee,
+              onRecentTasksSelected: _filterByRecent,
+              onRoleSelected: _filterByRole,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Overlay.of(context).insert(_filterOverlay!);
+  }
+
+  void _removeFilterPanel() {
+    _filterOverlay?.remove();
+    _filterOverlay = null;
+  }
+
+  void _filterByPriority(String priority) {
+    setState(() {
+      _filteredTasks = _tasks.where((task) => 
+        task.priority.toString().split('.').last.toLowerCase() == priority.toLowerCase()
+      ).toList();
+    });
+    _removeFilterPanel();
+  }
+
+  void _sortByAssignee(String order) {
+    setState(() {
+      _filteredTasks = List.from(_tasks)
+        ..sort((a, b) => order == 'asc' 
+          ? a.assignedBy.compareTo(b.assignedBy)
+          : b.assignedBy.compareTo(a.assignedBy));
+    });
+    _removeFilterPanel();
+  }
+
+  void _filterByRecent() {
+    setState(() {
+      _filteredTasks = List.from(_tasks)
+        ..sort((a, b) => b.deadline.compareTo(a.deadline));
+    });
+    _removeFilterPanel();
+  }
+
+  void _filterByRole(String role) {
+    // Implement role filtering if needed
+    _removeFilterPanel();
   }
 
   Future<void> _loadUserAndTasks() async {
@@ -61,6 +138,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
               .map((task) => Task.fromJson(task))
               .where((task) => task.assignedTo == _currentUsername)  // Filter tasks assigned to current user
               .toList();
+          _filteredTasks = _tasks;
         });
         print('📋 MyTasksScreen - Loaded ${_tasks.length} tasks assigned to $_currentUsername');
       }
@@ -288,7 +366,9 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                   child: IconButton(
                     icon: const Icon(Icons.filter_list, color: AppColors.accentCyan),
                     onPressed: () {
-                      // TODO: Implement filter functionality
+                      final RenderBox button = context.findRenderObject() as RenderBox;
+                      final Offset buttonPosition = button.localToGlobal(Offset.zero);
+                      _showFilterPanel(context, buttonPosition);
                     },
                   ),
                 ),
@@ -313,7 +393,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 ? const Center(
                     child: CircularProgressIndicator(color: AppColors.accentCyan),
                   )
-                : _tasks.isEmpty
+                : _filteredTasks.isEmpty
                     ? const Center(
                         child: Text(
                           'No tasks available',
@@ -328,8 +408,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                         color: AppColors.accentCyan,
                         child: ListView.builder(
                           padding: const EdgeInsets.all(24),
-                          itemCount: _tasks.length,
-                          itemBuilder: (context, index) => _buildTaskCard(_tasks[index]),
+                          itemCount: _filteredTasks.length,
+                          itemBuilder: (context, index) => _buildTaskCard(_filteredTasks[index]),
                         ),
                       ),
           ),

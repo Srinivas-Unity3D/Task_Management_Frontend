@@ -9,6 +9,7 @@ import '../services/socket_service.dart';
 import '../theme/colors.dart';
 import '../widgets/common_app_bar.dart';
 import '../widgets/dashboard/side_panel.dart';
+import '../widgets/filter_panel.dart';
 import './create_task_screen.dart';
 
 class AssignTasksScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   final _socketService = SocketService.instance;
   final _notificationService = NotificationService();
   List<TaskAssignment> _assignments = [];
+  List<TaskAssignment> _filteredAssignments = [];
   bool _isLoading = true;
   String? _currentUserId;
   String? _currentRole;
@@ -32,6 +34,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
       _currentRole?.toLowerCase() == 'super admin';
   bool _hasUnreadNotifications = false;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  OverlayEntry? _filterOverlay;
 
   @override
   void initState() {
@@ -56,6 +59,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   void dispose() {
     print('🔔 AssignTasksScreen - dispose');
     _socketService.removeTaskNotificationListener(_handleNewNotification);
+    _removeFilterPanel();
     super.dispose();
   }
 
@@ -109,6 +113,74 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
     }
   }
 
+  void _showFilterPanel(BuildContext context, Offset buttonPosition) {
+    _removeFilterPanel();
+
+    _filterOverlay = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          GestureDetector(
+            onTap: _removeFilterPanel,
+            child: Container(
+              color: Colors.transparent,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          ),
+          Positioned(
+            top: buttonPosition.dy + 50,
+            right: 24,
+            child: FilterPanel(
+              onPrioritySelected: _filterByPriority,
+              onAssigneeSort: _sortByAssignee,
+              onRecentTasksSelected: _filterByRecent,
+              onRoleSelected: _filterByRole,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Overlay.of(context).insert(_filterOverlay!);
+  }
+
+  void _removeFilterPanel() {
+    _filterOverlay?.remove();
+    _filterOverlay = null;
+  }
+
+  void _filterByPriority(String priority) {
+    setState(() {
+      _filteredAssignments = _assignments.where((assignment) => 
+        assignment.priority.toLowerCase() == priority.toLowerCase()
+      ).toList();
+    });
+    _removeFilterPanel();
+  }
+
+  void _sortByAssignee(String order) {
+    setState(() {
+      _filteredAssignments = List.from(_assignments)
+        ..sort((a, b) => order == 'asc' 
+          ? a.assigneeName.compareTo(b.assigneeName)
+          : b.assigneeName.compareTo(a.assigneeName));
+    });
+    _removeFilterPanel();
+  }
+
+  void _filterByRecent() {
+    setState(() {
+      _filteredAssignments = List.from(_assignments)
+        ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
+    });
+    _removeFilterPanel();
+  }
+
+  void _filterByRole(String role) {
+    // Implement role filtering if needed
+    _removeFilterPanel();
+  }
+
   Future<void> _fetchAssignments() async {
     if (!mounted) return;
 
@@ -153,6 +225,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
         if (mounted) {
           setState(() {
             _assignments = assignments!;
+            _filteredAssignments = assignments!;
             _isLoading = false;
           });
           print('✅ AssignTasksScreen - Assignments updated successfully');
@@ -259,7 +332,9 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                       child: IconButton(
                         icon: const Icon(Icons.filter_list, color: AppColors.accentCyan),
                         onPressed: () {
-                          // TODO: Implement filter functionality
+                          final RenderBox button = context.findRenderObject() as RenderBox;
+                          final Offset buttonPosition = button.localToGlobal(Offset.zero);
+                          _showFilterPanel(context, buttonPosition);
                         },
                       ),
                     ),
@@ -313,9 +388,9 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.all(24),
-                      itemCount: _assignments.length,
+                      itemCount: _filteredAssignments.length,
                       itemBuilder: (context, index) {
-                        final assignment = _assignments[index];
+                        final assignment = _filteredAssignments[index];
                         return _buildTaskAssignmentItem(assignment);
                       },
                     ),
