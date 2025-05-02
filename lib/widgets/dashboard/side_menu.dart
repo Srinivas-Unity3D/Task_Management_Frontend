@@ -67,6 +67,59 @@ class SideMenu extends StatelessWidget {
     }
   }
 
+  Future<void> _showExitConfirmation(BuildContext context) async {
+    final bool? shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.cardBackground,
+          title: const Text(
+            'Exit',
+            style: TextStyle(
+              color: AppColors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: const Text(
+            'Are you sure you want to exit?',
+            style: TextStyle(
+              color: AppColors.textGrey,
+              fontSize: 16,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'No',
+                style: TextStyle(
+                  color: AppColors.textGrey,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text(
+                'Yes',
+                style: TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldExit == true) {
+      onClose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -142,24 +195,24 @@ class SideMenu extends StatelessWidget {
             icon: Icons.assignment_outlined,
             label: 'My Tasks',
             onTap: () {
-              // TODO: Navigate to My Tasks
-              onClose();
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/my-tasks');
             },
           ),
           _buildMenuItem(
             icon: Icons.history,
             label: 'History',
             onTap: () {
-              // TODO: Navigate to History
-              onClose();
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/history');
             },
           ),
           _buildMenuItem(
             icon: Icons.assignment_ind_outlined,
             label: 'Assign Tasks',
             onTap: () {
-              // TODO: Navigate to Assign Tasks
-              onClose();
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/assign-tasks');
             },
           ),
           const Spacer(),
@@ -171,9 +224,7 @@ class SideMenu extends StatelessWidget {
           _buildMenuItem(
             icon: Icons.exit_to_app,
             label: 'Exit',
-            onTap: () {
-              // TODO: Handle exit
-            },
+            onTap: () => _showExitConfirmation(context),
           ),
           const SizedBox(height: 24),
         ],

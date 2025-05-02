@@ -24,21 +24,21 @@ class NavigationMenu extends StatelessWidget {
       children: [
         const SizedBox(height: 24),
         _buildMenuItem(
-          icon: Icons.dashboard,
+          icon: Icons.dashboard_outlined,
           label: 'Dashboard',
           onTap: onDashboardPressed,
           isSelected: currentView == ViewState.dashboard,
         ),
         const SizedBox(height: 16),
         _buildMenuItem(
-          icon: Icons.task,
+          icon: Icons.task_outlined,
           label: 'My Tasks',
           onTap: onMyTasksPressed,
           isSelected: currentView == ViewState.myTasks,
         ),
         const SizedBox(height: 16),
         _buildMenuItem(
-          icon: Icons.history,
+          icon: Icons.history_outlined,
           label: 'History',
           onTap: onHistoryPressed,
           isSelected: currentView == ViewState.history,
@@ -62,15 +62,16 @@ class NavigationMenu extends StatelessWidget {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF0D1526) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: isSelected 
-              ? Border.all(color: const Color(0xFF7DF9FF), width: 1)
-              : null,
+          color: isSelected ? AppColors.inputBackground : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? AppColors.accentCyan : Colors.transparent,
+            width: 1,
+          ),
         ),
         child: Row(
           children: [

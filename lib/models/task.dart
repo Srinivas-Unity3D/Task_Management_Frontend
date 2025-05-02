@@ -20,6 +20,7 @@ class Task {
   final TaskStatus status;
   final String assignedBy;
   final String assignedTo;
+  final DateTime? completedAt;
 
   Task({
     required this.taskId,
@@ -30,6 +31,7 @@ class Task {
     required this.status,
     required this.assignedBy,
     required this.assignedTo,
+    this.completedAt,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -42,6 +44,7 @@ class Task {
       status: _parseStatus(json['status']),
       assignedBy: json['assigned_by'],
       assignedTo: json['assigned_to'],
+      completedAt: json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,
     );
   }
 
@@ -55,6 +58,7 @@ class Task {
       'status': status.toString().split('.').last,
       'assigned_by': assignedBy,
       'assigned_to': assignedTo,
+      'completed_at': completedAt?.toIso8601String(),
     };
   }
 

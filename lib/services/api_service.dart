@@ -531,4 +531,34 @@ class ApiService {
       throw Exception('Failed to update task: $e');
     }
   }
+
+  Future<Map<String, dynamic>> getCompletedTasks() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/tasks?status=completed'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to load completed tasks',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Connection error. Please try again.',
+      };
+    }
+  }
 } 
