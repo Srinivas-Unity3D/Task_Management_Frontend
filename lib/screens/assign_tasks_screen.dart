@@ -116,6 +116,11 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   void _showFilterPanel(BuildContext context, Offset buttonPosition) {
     _removeFilterPanel();
 
+    final buttonSize = 40.0; // Height of the filter button
+    final headerHeight = 80.0; // Approximate height of the header section
+    final topPadding = 16.0; // Padding above the filter button
+    final extraTopOffset = 8.0; // Extra space below the button
+
     _filterOverlay = OverlayEntry(
       builder: (context) => Stack(
         children: [
@@ -128,13 +133,33 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
             ),
           ),
           Positioned(
-            top: buttonPosition.dy + 50,
-            right: 24,
-            child: FilterPanel(
-              onPrioritySelected: _filterByPriority,
-              onAssigneeSort: _sortByAssignee,
-              onRecentTasksSelected: _filterByRecent,
-              onRoleSelected: _filterByRole,
+            top: headerHeight +
+                topPadding +
+                buttonSize +
+                extraTopOffset, // Added extra space below
+            right: 70, // Moved left by reducing right padding
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Transform.rotate(
+                  angle: 0.785,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    margin: const EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                FilterPanel(
+                  onPrioritySelected: _filterByPriority,
+                  onAssigneeSort: _sortByAssignee,
+                  onRecentTasksSelected: _filterByRecent,
+                  onRoleSelected: _filterByRole,
+                ),
+              ],
             ),
           ),
         ],
@@ -151,9 +176,10 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
 
   void _filterByPriority(String priority) {
     setState(() {
-      _filteredAssignments = _assignments.where((assignment) => 
-        assignment.priority.toLowerCase() == priority.toLowerCase()
-      ).toList();
+      _filteredAssignments = _assignments
+          .where((assignment) =>
+              assignment.priority.toLowerCase() == priority.toLowerCase())
+          .toList();
     });
     _removeFilterPanel();
   }
@@ -161,9 +187,9 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   void _sortByAssignee(String order) {
     setState(() {
       _filteredAssignments = List.from(_assignments)
-        ..sort((a, b) => order == 'asc' 
-          ? a.assigneeName.compareTo(b.assigneeName)
-          : b.assigneeName.compareTo(a.assigneeName));
+        ..sort((a, b) => order == 'asc'
+            ? a.assigneeName.compareTo(b.assigneeName)
+            : b.assigneeName.compareTo(a.assigneeName));
     });
     _removeFilterPanel();
   }
@@ -200,16 +226,16 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
         try {
           // Get all assignments
           assignments = await _apiService.getTaskAssignments(_currentUserId!);
-          
+
           // Filter assignments to only show tasks assigned by the current user to others
           if (assignments != null && _currentUsername != null) {
             assignments = assignments
-                .where((assignment) => 
-                  assignment.assignerName == _currentUsername && 
-                  assignment.assigneeName != _currentUsername
-                )
+                .where((assignment) =>
+                    assignment.assignerName == _currentUsername &&
+                    assignment.assigneeName != _currentUsername)
                 .toList();
-            print('🔄 AssignTasksScreen - Filtered ${assignments.length} tasks assigned by $_currentUsername to others');
+            print(
+                '🔄 AssignTasksScreen - Filtered ${assignments.length} tasks assigned by $_currentUsername to others');
           }
         } catch (e) {
           print('❌ AssignTasksScreen - Attempt ${retryCount + 1} failed: $e');
@@ -330,10 +356,13 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                         ),
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.filter_list, color: AppColors.accentCyan),
+                        icon: const Icon(Icons.filter_list,
+                            color: AppColors.accentCyan),
                         onPressed: () {
-                          final RenderBox button = context.findRenderObject() as RenderBox;
-                          final Offset buttonPosition = button.localToGlobal(Offset.zero);
+                          final RenderBox button =
+                              context.findRenderObject() as RenderBox;
+                          final Offset buttonPosition =
+                              button.localToGlobal(Offset.zero);
                           _showFilterPanel(context, buttonPosition);
                         },
                       ),

@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import '../theme/colors.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/task.dart';
+import '../models/user.dart';
 import '../services/api_service.dart';
+import '../theme/colors.dart';
 import '../widgets/common_app_bar.dart';
 import '../widgets/dashboard/side_panel.dart';
 import '../widgets/filter_panel.dart';
-import '../models/user.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import './create_task_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
@@ -43,6 +44,11 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   void _showFilterPanel(BuildContext context, Offset buttonPosition) {
     _removeFilterPanel();
 
+    final buttonSize = 40.0; // Height of the filter button
+    final headerHeight = 80.0; // Approximate height of the header section
+    final topPadding = 16.0; // Padding above the filter button
+    final extraTopOffset = 20.0; // Extra space below the button
+
     _filterOverlay = OverlayEntry(
       builder: (context) => Stack(
         children: [
@@ -55,13 +61,33 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ),
           ),
           Positioned(
-            top: buttonPosition.dy + 50,
-            right: 24,
-            child: FilterPanel(
-              onPrioritySelected: _filterByPriority,
-              onAssigneeSort: _sortByAssignee,
-              onRecentTasksSelected: _filterByRecent,
-              onRoleSelected: _filterByRole,
+            top: headerHeight +
+                topPadding +
+                buttonSize +
+                extraTopOffset, // Added extra space below
+            right: 75, // Moved left by reducing right padding
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Transform.rotate(
+                  angle: 0.785,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    margin: const EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                FilterPanel(
+                  onPrioritySelected: _filterByPriority,
+                  onAssigneeSort: _sortByAssignee,
+                  onRecentTasksSelected: _filterByRecent,
+                  onRoleSelected: _filterByRole,
+                ),
+              ],
             ),
           ),
         ],
@@ -78,9 +104,11 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
   void _filterByPriority(String priority) {
     setState(() {
-      _filteredTasks = _tasks.where((task) => 
-        task.priority.toString().split('.').last.toLowerCase() == priority.toLowerCase()
-      ).toList();
+      _filteredTasks = _tasks
+          .where((task) =>
+              task.priority.toString().split('.').last.toLowerCase() ==
+              priority.toLowerCase())
+          .toList();
     });
     _removeFilterPanel();
   }
@@ -88,9 +116,9 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   void _sortByAssignee(String order) {
     setState(() {
       _filteredTasks = List.from(_tasks)
-        ..sort((a, b) => order == 'asc' 
-          ? a.assignedBy.compareTo(b.assignedBy)
-          : b.assignedBy.compareTo(a.assignedBy));
+        ..sort((a, b) => order == 'asc'
+            ? a.assignedBy.compareTo(b.assignedBy)
+            : b.assignedBy.compareTo(a.assignedBy));
     });
     _removeFilterPanel();
   }
@@ -123,24 +151,28 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   Future<void> _loadTasks() async {
     try {
       setState(() => _isLoading = true);
-      
+
       // Only proceed if we have the current username
       if (_currentUsername == null) {
         print('Error: Current username is null');
         return;
       }
 
-      final response = await _apiService.getTasks(username: _currentUsername!, role: _currentRole ?? '');
+      final response = await _apiService.getTasks(
+          username: _currentUsername!, role: _currentRole ?? '');
       if (response['success']) {
         final tasksJson = response['data'] as List;
         setState(() {
           _tasks = tasksJson
               .map((task) => Task.fromJson(task))
-              .where((task) => task.assignedTo == _currentUsername)  // Filter tasks assigned to current user
+              .where((task) =>
+                  task.assignedTo ==
+                  _currentUsername) // Filter tasks assigned to current user
               .toList();
           _filteredTasks = _tasks;
         });
-        print('📋 MyTasksScreen - Loaded ${_tasks.length} tasks assigned to $_currentUsername');
+        print(
+            '📋 MyTasksScreen - Loaded ${_tasks.length} tasks assigned to $_currentUsername');
       }
     } catch (e) {
       print('❌ MyTasksScreen - Error loading tasks: $e');
@@ -240,7 +272,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                           initialTitle: task.title,
                           initialDescription: task.description,
                           initialAssignee: task.assignedTo,
-                          initialPriority: task.priority.toString().split('.').last,
+                          initialPriority:
+                              task.priority.toString().split('.').last,
                           initialDueDate: task.deadline,
                           initialStatus: task.status.toString().split('.').last,
                         ),
@@ -364,10 +397,13 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
-                    icon: const Icon(Icons.filter_list, color: AppColors.accentCyan),
+                    icon: const Icon(Icons.filter_list,
+                        color: AppColors.accentCyan),
                     onPressed: () {
-                      final RenderBox button = context.findRenderObject() as RenderBox;
-                      final Offset buttonPosition = button.localToGlobal(Offset.zero);
+                      final RenderBox button =
+                          context.findRenderObject() as RenderBox;
+                      final Offset buttonPosition =
+                          button.localToGlobal(Offset.zero);
                       _showFilterPanel(context, buttonPosition);
                     },
                   ),
@@ -379,7 +415,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
-                    icon: const Icon(Icons.download, color: AppColors.accentCyan),
+                    icon:
+                        const Icon(Icons.download, color: AppColors.accentCyan),
                     onPressed: () {
                       // TODO: Implement download functionality
                     },
@@ -391,7 +428,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.accentCyan),
+                    child:
+                        CircularProgressIndicator(color: AppColors.accentCyan),
                   )
                 : _filteredTasks.isEmpty
                     ? const Center(
@@ -409,7 +447,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                         child: ListView.builder(
                           padding: const EdgeInsets.all(24),
                           itemCount: _filteredTasks.length,
-                          itemBuilder: (context, index) => _buildTaskCard(_filteredTasks[index]),
+                          itemBuilder: (context, index) =>
+                              _buildTaskCard(_filteredTasks[index]),
                         ),
                       ),
           ),
@@ -417,4 +456,4 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
       ),
     );
   }
-} 
+}

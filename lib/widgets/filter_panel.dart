@@ -20,63 +20,56 @@ class FilterPanel extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: Container(
-        width: 200,
-        padding: const EdgeInsets.all(16),
+        width: 180,
         decoration: BoxDecoration(
-          color: AppColors.cardBackground,
+          color: const Color(0xFF1E293B),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: AppColors.borderColor.withOpacity(0.1),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'SORT BY PRIORITY',
-              style: TextStyle(
-                color: AppColors.textGrey,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Text(
+                'SORT BY PRIORITY',
+                style: TextStyle(
+                  color: AppColors.textGrey.withOpacity(0.6),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
             _buildFilterOption('Urgent Tasks', () => onPrioritySelected('high')),
             _buildFilterOption('Medium Priority', () => onPrioritySelected('medium')),
             _buildFilterOption('Low Priority', () => onPrioritySelected('low')),
-            const SizedBox(height: 16),
-            const Text(
-              'SORT BY ASSIGNEE',
-              style: TextStyle(
-                color: AppColors.textGrey,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'SORT BY ASSIGNEE',
+                style: TextStyle(
+                  color: AppColors.textGrey.withOpacity(0.6),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
             _buildFilterOption('Assignee (A-Z)', () => onAssigneeSort('asc')),
             _buildFilterOption('Assignee (Z-A)', () => onAssigneeSort('desc')),
-            const SizedBox(height: 16),
-            const Text(
-              'OTHER',
-              style: TextStyle(
-                color: AppColors.textGrey,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'OTHER',
+                style: TextStyle(
+                  color: AppColors.textGrey.withOpacity(0.6),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
             _buildFilterOption('Recent Tasks', onRecentTasksSelected),
             _buildFilterOption('Role', () => onRoleSelected('role')),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -86,15 +79,15 @@ class FilterPanel extends StatelessWidget {
   Widget _buildFilterOption(String label, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
         child: Text(
           label,
           style: const TextStyle(
-            color: AppColors.white,
+            color: Colors.white,
             fontSize: 14,
+            fontWeight: FontWeight.w400,
           ),
         ),
       ),
