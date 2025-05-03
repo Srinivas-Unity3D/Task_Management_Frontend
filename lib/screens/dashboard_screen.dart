@@ -20,6 +20,7 @@ import '../services/socket_service.dart';
 import '../widgets/common_notification_icon.dart';
 import '../services/audio_service.dart';
 import '../widgets/common_app_bar.dart';
+import '../services/notification_state_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -33,10 +34,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final ApiService _apiService = ApiService();
   final _socketService = SocketService.instance;
   final _audioService = AudioService();
+  final _notificationState = NotificationStateService();
   User? _user;
   TaskStats? _taskStats;
   bool _isLoading = true;
-  bool _hasUnreadNotifications = false;
   ViewState _currentView = ViewState.dashboard;
   List<Task> _userTasks = [];
 
@@ -45,11 +46,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     print('🔄 Dashboard - Initializing...');
     _initializeServices();
+    _notificationState.addListener(_onNotificationStateChanged);
   }
 
   @override
   void dispose() {
-    // Remove socket listeners when disposing
+    _notificationState.removeListener(_onNotificationStateChanged);
     _socketService.removeTaskNotificationListener(_handleTaskNotification);
     _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
     _audioService.dispose();
@@ -93,16 +95,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
         
         print('🔄 Dashboard - Connecting socket for user: $username');
-        // Connect socket with username
-        _socketService.connect(username);
         
         // Remove any existing listeners before adding new ones
         _socketService.removeTaskNotificationListener(_handleTaskNotification);
         _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
         
-        // Setup socket listeners
-        print('🔄 Dashboard - Setting up socket listeners');
-        _setupSocketListeners();
+        // Connect socket with username and wait for connection
+        await _socketService.connect(username);
+        
+        // Setup socket listeners after successful connection
+        if (_socketService.isConnected) {
+          print('🔄 Dashboard - Setting up socket listeners');
+          _setupSocketListeners();
+        } else {
+          print('❌ Dashboard - Socket connection failed');
+        }
       }
     } catch (e) {
       print('❌ Dashboard - Error loading user data: $e');
@@ -116,14 +123,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _socketService.listenToDashboardUpdates(_handleDashboardUpdate);
   }
 
-  void _playNotificationSound() async {
+  void _playNotificationSound() {
     try {
       print('🔔 Dashboard - Playing notification sound...');
-      await _audioService.playNotificationSound();
-      await HapticFeedback.mediumImpact();
-      print('🔔 Dashboard - Notification sound and haptic feedback completed');
+      _audioService.playNotificationSound();
+      print('🔔 Dashboard - Notification sound completed');
     } catch (e) {
       print('🔔 Dashboard - Error playing notification: $e');
+    }
+  }
+
+  void _onNotificationStateChanged() {
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -131,22 +143,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted && _user != null) {
       print('🔔 Dashboard - Received task notification: $data');
       
+      final taskData = data['task'] ?? data;
+      final eventType = data['type'] ?? 'task_update';
+      
       // Check if the current user is the creator/updater
-      final bool isCreator = data['task']?['assigned_by'] == _user!.username;
-      final bool isUpdater = data['task']?['updated_by'] == _user!.username;
+      final bool isCreator = taskData['assigned_by'] == _user!.username;
+      final bool isUpdater = taskData['updated_by'] == _user!.username;
+      
+      print('🔔 Dashboard - Creator: $isCreator, Updater: $isUpdater, Username: ${_user!.username}');
       
       // Only show notification if user is not the creator/updater
       if (!isCreator && !isUpdater) {
-        setState(() {
-          _hasUnreadNotifications = true;
-        });
+        // Update notification state
+        _notificationState.setUnreadNotifications(true);
         
         // Play notification sound and vibrate
         _playNotificationSound();
+        HapticFeedback.mediumImpact();
         
         // Show notification for new tasks or updates
-        if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
-          _showTaskNotification(data['task']);
+        if (eventType == 'task_created' || eventType == 'task_updated') {
+          // Only show snackbar if this screen is currently visible and notification hasn't been shown
+          if (ModalRoute.of(context)!.isCurrent && !_notificationState.notificationShown) {
+            final bool isUpdate = taskData['updated_by'] != null;
+            final String title = isUpdate ? 'Task Updated' : 'New Task Assigned';
+            final String message = isUpdate 
+                ? '${taskData['title']} updated by ${taskData['updated_by']}'
+                : taskData['title'] ?? 'No title';
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      message,
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+                backgroundColor: Color(0xFF1E293B),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                action: SnackBarAction(
+                  label: 'VIEW',
+                  textColor: Color(0xFF7DF9FF),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => CreateTaskScreen(
+                          isEditMode: true,
+                          taskId: taskData['task_id'],
+                          initialTitle: taskData['title'],
+                          initialDescription: taskData['description'],
+                          initialAssignee: taskData['assigned_to'],
+                          initialPriority: taskData['priority'],
+                          initialDueDate: DateTime.parse(taskData['deadline']),
+                          initialStatus: taskData['status'],
+                        ),
+                      ),
+                    ).then((_) => _loadTasks());
+                  },
+                ),
+              ),
+            );
+            // Mark that notification was shown
+            _notificationState.markNotificationShown();
+          }
         }
       }
       
@@ -160,44 +235,95 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted && _user != null) {
       print('📨 Dashboard - Received update: $data');
       
+      final taskData = data['task'] ?? data;
+      final eventType = data['type'] ?? 'task_update';
+      
       // Check if the current user is the creator/updater
-      final bool isCreator = data['assigned_by'] == _user!.username;
-      final bool isUpdater = data['updated_by'] == _user!.username;
+      final bool isCreator = taskData['assigned_by'] == _user!.username;
+      final bool isUpdater = taskData['updated_by'] == _user!.username;
+      
+      print('📨 Dashboard - Creator: $isCreator, Updater: $isUpdater, Username: ${_user!.username}');
       
       // Play notification sound if user is not the creator/updater
       if (!isCreator && !isUpdater) {
-        setState(() {
-          _hasUnreadNotifications = true;
-        });
+        // Update notification state
+        _notificationState.setUnreadNotifications(true);
+        
+        // Play notification sound and vibrate
         _playNotificationSound();
+        HapticFeedback.mediumImpact();
+        
+        // Show snackbar if screen is visible and notification hasn't been shown
+        if (ModalRoute.of(context)!.isCurrent && !_notificationState.notificationShown) {
+          final bool isUpdate = taskData['updated_by'] != null;
+          final String title = isUpdate ? 'Task Updated' : 'New Task Assigned';
+          final String message = isUpdate 
+              ? '${taskData['title']} updated by ${taskData['updated_by']}'
+              : taskData['title'] ?? 'No title';
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    message,
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+              backgroundColor: Color(0xFF1E293B),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              action: SnackBarAction(
+                label: 'VIEW',
+                textColor: Color(0xFF7DF9FF),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CreateTaskScreen(
+                        isEditMode: true,
+                        taskId: taskData['task_id'],
+                        initialTitle: taskData['title'],
+                        initialDescription: taskData['description'],
+                        initialAssignee: taskData['assigned_to'],
+                        initialPriority: taskData['priority'],
+                        initialDueDate: DateTime.parse(taskData['deadline']),
+                        initialStatus: taskData['status'],
+                      ),
+                    ),
+                  ).then((_) => _loadTasks());
+                },
+              ),
+            ),
+          );
+          // Mark that notification was shown
+          _notificationState.markNotificationShown();
+        }
       }
 
       // Always refresh tasks list regardless of who created/updated
       print('🔄 Dashboard - Refreshing tasks after update...');
       await _loadTasks();
-      
-      // Show a snackbar with the update message
-      if (mounted) {
-        final String actionType = data['type'] == 'task_created' ? 'created' : 'updated';
-        final String message = isCreator || isUpdater 
-          ? 'Task $actionType successfully!'
-          : 'A task has been $actionType';
-          
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
     }
   }
 
   void _clearNotifications() {
     if (mounted) {
       setState(() {
-        _hasUnreadNotifications = false;
+        _notificationState.clearNotifications();
       });
     }
   }
@@ -211,61 +337,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              message,
-              style: TextStyle(color: Colors.white70),
-            ),
-          ],
-        ),
-        backgroundColor: Color(0xFF1E293B),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-        action: SnackBarAction(
-          label: 'VIEW',
-          textColor: Color(0xFF7DF9FF),
-          onPressed: () {
-            // Navigate to task details
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => CreateTaskScreen(
-                  isEditMode: true,
-                  taskId: task['task_id'],
-                  initialTitle: task['title'],
-                  initialDescription: task['description'],
-                  initialAssignee: task['assigned_to'],
-                  initialPriority: task['priority'],
-                  initialDueDate: DateTime.parse(task['deadline']),
-                  initialStatus: task['status'],
+    // Only show snackbar if the screen is currently visible
+    if (ModalRoute.of(context)!.isCurrent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ).then((_) => _loadTasks()); // Refresh after returning from edit screen
-          },
+              SizedBox(height: 4),
+              Text(
+                message,
+                style: TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
+          backgroundColor: Color(0xFF1E293B),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          action: SnackBarAction(
+            label: 'VIEW',
+            textColor: Color(0xFF7DF9FF),
+            onPressed: () {
+              // Navigate to task details
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CreateTaskScreen(
+                    isEditMode: true,
+                    taskId: task['task_id'],
+                    initialTitle: task['title'],
+                    initialDescription: task['description'],
+                    initialAssignee: task['assigned_to'],
+                    initialPriority: task['priority'],
+                    initialDueDate: DateTime.parse(task['deadline']),
+                    initialStatus: task['status'],
+                  ),
+                ),
+              ).then((_) => _loadTasks()); // Refresh after returning from edit screen
+            },
+          ),
         ),
-      ),
-    );
-
-    // Set notification dot if the notification is not being actively viewed
-    if (!ModalRoute.of(context)!.isCurrent) {
-      setState(() {
-        _hasUnreadNotifications = true;
-      });
+      );
     }
   }
 
@@ -433,8 +555,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           CommonAppBar(
             onMenuPressed: _showSidePanel,
-            hasUnreadNotifications: _hasUnreadNotifications,
-            onNotificationCleared: _clearNotifications,
+            hasUnreadNotifications: _notificationState.hasUnreadNotifications,
+            onNotificationCleared: _notificationState.clearNotifications,
           ),
           Container(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),

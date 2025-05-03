@@ -70,37 +70,60 @@ class SocketService {
         print('🔌 Socket connected successfully');
         _isConnecting = false;
         _reconnectAttempts = 0;
+        connected.value = true;
         _startPingTimer();
         _registerUser();
       });
 
       _socket!.onDisconnect((_) {
         print('🔌 Socket disconnected');
+        connected.value = false;
         _stopPingTimer();
         _handleDisconnect();
       });
 
       _socket!.onError((error) {
         print('🔌 Socket error: $error');
+        connected.value = false;
         _handleError();
       });
 
       _socket!.on('task_notification', (data) {
         print('📨 Received task notification: $data');
+        print('📨 Current listeners count: ${_taskNotificationListeners.length}');
         for (var listener in _taskNotificationListeners) {
-          listener(data);
+          try {
+            listener(data);
+          } catch (e) {
+            print('Error in task notification listener: $e');
+          }
+        }
+      });
+
+      _socket!.on('dashboard_update', (data) {
+        print('📨 Received dashboard update: $data');
+        print('📨 Current dashboard listeners count: ${_dashboardUpdateListeners.length}');
+        for (var listener in _dashboardUpdateListeners) {
+          try {
+            listener(data);
+          } catch (e) {
+            print('Error in dashboard update listener: $e');
+          }
         }
       });
 
       // Connect socket
       _socket!.connect();
+      print('🔌 Waiting for connection...');
       
-      // Wait for connection or timeout
+      // Wait for connection
       await _waitForConnection();
+      print('🔌 Connection wait completed');
       
     } catch (e) {
       print('🔌 Error connecting to socket: $e');
       _isConnecting = false;
+      connected.value = false;
       _handleError();
     }
   }
@@ -170,11 +193,17 @@ class SocketService {
       _socket!.emit('register', {'username': _currentUsername});
       
       _socket!.once('register_response', (data) {
-        print('🔌 Received register response: $data');
+        print('🔌 Register response received: $data');
         if (data['status'] == 'registered') {
+          _isRegistered = true;
           print('🔌 Successfully registered user: $_currentUsername');
+        } else {
+          print('🔌 Failed to register user: $_currentUsername');
+          _isRegistered = false;
         }
       });
+    } else {
+      print('🔌 Cannot register user: socket not connected or username not set');
     }
   }
 

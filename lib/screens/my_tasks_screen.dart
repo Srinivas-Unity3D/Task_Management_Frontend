@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/task.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../services/notification_state_service.dart';
+import '../services/socket_service.dart';
+import '../services/audio_service.dart';
 import '../theme/colors.dart';
 import '../widgets/common_app_bar.dart';
 import '../widgets/dashboard/side_panel.dart';
@@ -20,6 +24,9 @@ class MyTasksScreen extends StatefulWidget {
 class _MyTasksScreenState extends State<MyTasksScreen> {
   final ApiService _apiService = ApiService();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _notificationState = NotificationStateService();
+  final _socketService = SocketService.instance;
+  final _audioService = AudioService();
   List<Task> _tasks = [];
   List<Task> _filteredTasks = [];
   bool _isLoading = true;
@@ -32,12 +39,107 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   @override
   void initState() {
     super.initState();
+    print('🔄 MyTasksScreen - Initializing...');
     _loadUserAndTasks();
+    _notificationState.addListener(_onNotificationStateChanged);
+    _setupSocketListeners();
+  }
+
+  void _setupSocketListeners() {
+    print('🔔 MyTasksScreen - Setting up socket listeners');
+    // Remove any existing listeners before adding new ones
+    _socketService.removeTaskNotificationListener(_handleNewNotification);
+    _socketService.listenToTaskNotifications(_handleNewNotification);
+  }
+
+  void _handleNewNotification(dynamic data) {
+    print('🔔 MyTasksScreen - Received notification: $data');
+    if (mounted) {
+      // Check if this is a task update notification
+      if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
+        print('🔄 MyTasksScreen - Task update received, refreshing tasks...');
+        
+        // Play notification sound and vibrate
+        _audioService.playNotificationSound();
+        HapticFeedback.mediumImpact();
+        
+        // Show snackbar if screen is visible and notification hasn't been shown yet
+        if (ModalRoute.of(context)!.isCurrent && !_notificationState.notificationShown) {
+          final taskData = data['task'] ?? data;
+          final bool isUpdate = taskData['updated_by'] != null;
+          final String title = isUpdate ? 'Task Updated' : 'New Task Assigned';
+          final String message = isUpdate 
+              ? '${taskData['title']} updated by ${taskData['updated_by']}'
+              : taskData['title'] ?? 'No title';
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    message,
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+              backgroundColor: Color(0xFF1E293B),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              action: SnackBarAction(
+                label: 'VIEW',
+                textColor: Color(0xFF7DF9FF),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CreateTaskScreen(
+                        isEditMode: true,
+                        taskId: taskData['task_id'],
+                        initialTitle: taskData['title'],
+                        initialDescription: taskData['description'],
+                        initialAssignee: taskData['assigned_to'],
+                        initialPriority: taskData['priority'],
+                        initialDueDate: DateTime.parse(taskData['deadline']),
+                        initialStatus: taskData['status'],
+                      ),
+                    ),
+                  ).then((_) => _loadTasks());
+                },
+              ),
+            ),
+          );
+          // Mark that notification was shown
+          _notificationState.markNotificationShown();
+        }
+
+        // Add slight delay before refreshing to ensure server has processed the update
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _loadTasks();
+        });
+      }
+
+      // Update notification state
+      _notificationState.setUnreadNotifications(true);
+    }
   }
 
   @override
   void dispose() {
+    _socketService.removeTaskNotificationListener(_handleNewNotification);
     _removeFilterPanel();
+    _notificationState.removeListener(_onNotificationStateChanged);
     super.dispose();
   }
 
@@ -134,6 +236,13 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   void _filterByRole(String role) {
     // Implement role filtering if needed
     _removeFilterPanel();
+  }
+
+  void _onNotificationStateChanged() {
+    print('🔔 MyTasksScreen - Notification state changed: ${_notificationState.hasUnreadNotifications}');
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadUserAndTasks() async {
@@ -371,12 +480,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         children: [
           CommonAppBar(
             onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
-            hasUnreadNotifications: _hasUnreadNotifications,
-            onNotificationCleared: () {
-              setState(() {
-                _hasUnreadNotifications = false;
-              });
-            },
+            hasUnreadNotifications: _notificationState.hasUnreadNotifications,
+            onNotificationCleared: _notificationState.clearNotifications,
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
