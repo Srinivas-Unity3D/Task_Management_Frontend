@@ -1305,6 +1305,21 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           throw Exception(response['message']);
         }
 
+        // Force cache invalidation and refresh for both users
+        final prefs = await SharedPreferences.getInstance();
+        final currentUserRole = prefs.getString('role') ?? '';
+        String assigneeRole = '';
+        // Try to get assignee role from prefs or fallback to 'user'
+        if (_selectedAssignee != null) {
+          // If you store roles for users in prefs, fetch here. Otherwise, fallback.
+          // For now, fallback to 'user'.
+          assigneeRole = 'user';
+        }
+        await _apiService.updateTaskCache(_currentUsername!, currentUserRole);
+        if (_selectedAssignee != null) {
+          await _apiService.updateTaskCache(_selectedAssignee!, assigneeRole);
+        }
+
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1331,8 +1346,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ),
         );
 
-        // Return true to trigger refresh in parent screen
-        Navigator.pop(context, true);
+        // Navigate back to previous screen with refresh signal
+        if (mounted) {
+          Navigator.pop(context, true); // Pass true to indicate successful update
+        }
       } catch (e) {
         setState(() {
           _isLoading = false;

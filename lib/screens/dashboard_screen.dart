@@ -139,7 +139,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _handleTaskNotification(dynamic data) {
+  void _handleTaskNotification(dynamic data) async {
     if (mounted && _user != null) {
       print('🔔 Dashboard - Received task notification: $data');
       
@@ -227,7 +227,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       
       // Always refresh tasks list to keep it up to date
       print('🔄 Dashboard - Refreshing tasks after notification...');
-      _loadTasks();
+      await _loadTasks();
+      if (mounted) {
+        setState(() {}); // Force UI refresh
+      }
     }
   }
 
@@ -317,6 +320,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Always refresh tasks list regardless of who created/updated
       print('🔄 Dashboard - Refreshing tasks after update...');
       await _loadTasks();
+      if (mounted) {
+        setState(() {}); // Force UI refresh
+      }
     }
   }
 
@@ -518,7 +524,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           MaterialPageRoute(
             builder: (context) => const MyTasksScreen(),
           ),
-        ).then((_) => _loadTasks()); // Refresh tasks after returning
+        ).then((result) {
+          // Always refresh tasks when returning, regardless of result
+          _loadTasks();
+          if (mounted) {
+            setState(() {});
+          }
+        });
         break;
       case ViewState.assignTasks:
         Navigator.push(
@@ -526,7 +538,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           MaterialPageRoute(
             builder: (context) => const AssignTasksScreen(),
           ),
-        ).then((_) => _loadTasks()); // Refresh tasks after returning
+        ).then((result) {
+          // Always refresh tasks when returning, regardless of result
+          _loadTasks();
+          if (mounted) {
+            setState(() {});
+          }
+        });
         break;
       case ViewState.dashboard:
         // No navigation needed for dashboard
@@ -534,6 +552,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     setState(() {
       _currentView = newView;
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Listen for route changes
+    ModalRoute.of(context)?.addScopedWillPopCallback(() async {
+      // This will be called when the screen is about to be popped
+      await _loadTasks();
+      if (mounted) {
+        setState(() {});
+      }
+      return true;
     });
   }
 

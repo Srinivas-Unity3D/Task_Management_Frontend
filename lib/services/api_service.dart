@@ -142,7 +142,7 @@ class ApiService {
         
         // Update cache for each changed task
         for (var update in updates) {
-          await _updateTaskCache(userId, update['task'], taskId: update['task']['id']);
+          await updateTaskCache(userId, role);
         }
 
         // Store new sync timestamp
@@ -479,8 +479,7 @@ class ApiService {
         final newTask = responseData['task'];
         
         // Update cache for both users
-        await _updateTaskCache(assignedTo, newTask);
-        await _updateTaskCache(assignedBy, newTask);
+        await updateTaskCache(assignedTo, assignedBy);
         
         // Clear assignments cache for both users to force refresh
         final assigneeAssignmentsKey = 'task_assignments_$assignedTo';
@@ -897,8 +896,7 @@ class ApiService {
         final updatedTask = responseData['task'] ?? responseData;
         
         // Update cache for both users
-        await _updateTaskCache(assignedTo, updatedTask, taskId: taskId);
-        await _updateTaskCache(assignedBy, updatedTask, taskId: taskId);
+        await updateTaskCache(assignedTo, assignedBy);
         
         // Clear assignments cache for both users to force refresh
         final assigneeAssignmentsKey = 'task_assignments_$assignedTo';
@@ -931,48 +929,24 @@ class ApiService {
   }
 
   // Helper method to update task cache
-  Future<void> _updateTaskCache(String userId, Map<String, dynamic> task, {String? taskId}) async {
-    final cacheKey = 'tasks_$userId';
-    final assignmentsKey = 'task_assignments_$userId';
-    
+  Future<void> updateTaskCache(String username, String role) async {
+    final cacheKey = 'tasks_${username}_${role}';
     try {
-      // Get existing cached tasks
-      var cachedData = _cacheManager.getData(cacheKey);
-      List<dynamic> tasks = [];
-      
-      if (cachedData != null) {
-        tasks = cachedData as List;
-        
-        if (taskId != null) {
-          // Update existing task
-          final index = tasks.indexWhere((t) => t['id'] == taskId);
-          if (index != -1) {
-            tasks[index] = task;
-          } else {
-            tasks.add(task);
-          }
-        } else {
-          // Add new task
-          tasks.add(task);
-        }
-      } else {
-        tasks = [task];
+      _cacheManager.getData(cacheKey)?.clear();
+      final response = await _dio.get(
+        '/tasks',
+        queryParameters: {
+          'username': username,
+          'role': role,
+        },
+      );
+      if (response.statusCode == 200) {
+        final tasks = response.data;
+        _cacheManager.setData(cacheKey, tasks);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(cacheKey, json.encode(tasks));
+        print('💾 [CACHE] Updated tasks cache for user: $username, role: $role');
       }
-      
-      // Update memory cache
-      _cacheManager.setData(cacheKey, tasks);
-      
-      // Clear assignments cache to force refresh
-      _cacheManager.getData(assignmentsKey)?.clear();
-      
-      // Update persistent storage
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(cacheKey, json.encode(tasks));
-      
-      // Trigger background sync
-      _syncController.add(null);
-      
-      print('💾 [CACHE] Updated tasks cache for user: $userId');
     } catch (e) {
       print('❌ [CACHE] Error updating task cache: $e');
     }
