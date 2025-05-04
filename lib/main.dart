@@ -26,12 +26,13 @@ void main() async {  // Made async to properly handle initialization
   // Get current user and register with socket
   final prefs = await SharedPreferences.getInstance();
   final username = prefs.getString('username');
-  if (username != null) {
+  final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+
+  if (isLoggedIn && username != null) {
+    print('🔌 [main.dart] Auto-login: calling setLoggedIn() before connect()');
+    socketService.setLoggedIn(); // Ensure _isLoggedOut is false
     socketService.connect(username);
   }
-
-  // Check if user is logged in
-  final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
 
   runApp(ErrorBoundary(
     child: MyApp(isLoggedIn: isLoggedIn),

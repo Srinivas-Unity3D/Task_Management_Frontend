@@ -267,7 +267,6 @@ class SocketService {
       // Reset all state
       _currentUsername = null;
       _isRegistered = false;
-      _serverUrl = null;
       
       print('🔌 Socket service disconnected successfully');
     } catch (e) {
@@ -275,7 +274,6 @@ class SocketService {
       // Force cleanup on error
       _socket = null;
       _currentUsername = null;
-      _serverUrl = null;
       connected.value = false;
     }
   }

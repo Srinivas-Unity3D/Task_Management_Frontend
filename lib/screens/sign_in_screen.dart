@@ -93,6 +93,8 @@ class _SignInScreenState extends State<SignInScreen> {
         // Get prefs instance (should be ready by now)
         final prefs = await prefsFuture;
         
+        // Set socket service as logged in before connecting
+        _socketService.setLoggedIn();
         // Start socket connection in parallel with data saving
         final socketFuture = _socketService.connect(username);
         
