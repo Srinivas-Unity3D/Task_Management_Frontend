@@ -300,4 +300,16 @@ class SocketService {
     _isLoggedOut = false;
     _reconnectAttempts = 0;
   }
+
+  // Add method to emit task notifications
+  void emitTaskNotification(Map<String, dynamic> taskData) {
+    if (_socket != null && _socket!.connected) {
+      print('📨 [Socket] Emitting task notification: $taskData');
+      _socket!.emit('task_notification', taskData);
+    } else {
+      print('⚠️ [Socket] Cannot emit task notification: socket not connected');
+      // Try to reconnect
+      connect(_currentUsername ?? '');
+    }
+  }
 } 

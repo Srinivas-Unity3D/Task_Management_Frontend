@@ -1,7 +1,8 @@
 enum TaskPriority {
   low,
   medium,
-  high
+  high,
+  urgent
 }
 
 enum TaskStatus {
@@ -21,6 +22,7 @@ class Task {
   final String assignedBy;
   final String assignedByRole;
   final String assignedTo;
+  final String assignedToRole;
   final DateTime? completedAt;
 
   Task({
@@ -33,6 +35,7 @@ class Task {
     required this.assignedBy,
     required this.assignedByRole,
     required this.assignedTo,
+    required this.assignedToRole,
     this.completedAt,
   });
 
@@ -47,6 +50,7 @@ class Task {
       assignedBy: json['assigned_by'] ?? '',
       assignedByRole: json['assigned_by_role'] ?? '',
       assignedTo: json['assigned_to'] ?? '',
+      assignedToRole: json['assigned_to_role'] ?? '',
       completedAt: json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,
     );
   }
@@ -62,6 +66,7 @@ class Task {
       'assigned_by': assignedBy,
       'assigned_by_role': assignedByRole,
       'assigned_to': assignedTo,
+      'assigned_to_role': assignedToRole,
       'completed_at': completedAt?.toIso8601String(),
     };
   }
@@ -74,6 +79,8 @@ class Task {
         return TaskPriority.medium;
       case 'high':
         return TaskPriority.high;
+      case 'urgent':
+        return TaskPriority.urgent;
       default:
         return TaskPriority.medium;
     }

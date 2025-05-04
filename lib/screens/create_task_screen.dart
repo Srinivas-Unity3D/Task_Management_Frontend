@@ -105,6 +105,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _isLoadingAttachments = true;
   String? _currentlyPlayingNoteId;
 
+  bool _isDisposed = false;
+
   @override
   void initState() {
     super.initState();
@@ -121,15 +123,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _recordingTimer?.cancel();
     _playbackTimer?.cancel();
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
-    _audioPlayer.dispose();
+    _disposeAudioPlayer();
     _audioRecorder.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
-    _disposeAudioPlayer();
     super.dispose();
   }
 
@@ -1213,6 +1215,26 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     );
   }
 
+  // Add this getter for alarm settings
+  Map<String, dynamic>? get _alarmSettings {
+    if (_alarmStartDate == null || _alarmStartTime == null) return null;
+    
+    return {
+      'start_date': _alarmStartDate!.toIso8601String(),
+      'start_time': '${_alarmStartTime!.hour}:${_alarmStartTime!.minute}',
+      'frequency': _alarmFrequency,
+    };
+  }
+
+  // Convert PlatformFile to File
+  List<File>? get _attachmentFiles {
+    if (_selectedFiles.isEmpty) return null;
+    return _selectedFiles
+        .where((pFile) => pFile.path != null)
+        .map((pFile) => File(pFile.path!))
+        .toList();
+  }
+
   Future<void> _handleCreateTask() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
@@ -1237,33 +1259,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           };
         }
 
-        // Handle attachments
-        List<File>? attachments;
-        if (_selectedFiles.isNotEmpty) {
-          attachments = _selectedFiles.map((file) {
-            if (file.path == null) {
-              throw Exception('File path is null');
-            }
-            return File(file.path!);
-          }).toList();
-        }
-
-        // Create alarm settings if needed
-        Map<String, dynamic>? alarmSettings;
-        if (_alarmStartDate != null && _alarmStartTime != null) {
-          final alarmDateTime = DateTime(
-            _alarmStartDate!.year,
-            _alarmStartDate!.month,
-            _alarmStartDate!.day,
-            _alarmStartTime!.hour,
-            _alarmStartTime!.minute,
-          );
-          
-          alarmSettings = {
-            'alarm_time': alarmDateTime.toIso8601String(),
-            'is_enabled': true,
-          };
-        }
+        // Get current user info
+        final prefs = await SharedPreferences.getInstance();
+        _currentUsername = prefs.getString('username');
+        
+        print('📝 [CreateTask] Updating task with data:');
+        print('Title: ${_titleController.text}');
+        print('Description: ${_descriptionController.text}');
+        print('Assignee: $_selectedAssignee');
+        print('Priority: $_priority');
+        print('Status: ${_getStatusString(_status)}');
+        print('Due Date: $_dueDate');
 
         Map<String, dynamic> response;
         if (widget.isEditMode) {
@@ -1278,11 +1284,45 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             priority: _priority.toLowerCase(),
             status: _getStatusString(_status),
             audioNote: audioNote,
-            attachments: attachments,
-            alarmSettings: alarmSettings,
+            attachments: _attachmentFiles,
+            alarmSettings: _alarmSettings,
           );
+
+          print('📤 [CreateTask] Update task response: $response');
+          
+          if (!response['success']) {
+            throw Exception(response['message'] ?? 'Operation failed');
+          }
+
+          // Wait a moment to ensure DB update is complete
+          await Future.delayed(const Duration(milliseconds: 300));
+
+          // Prepare task data for socket notification
+          final taskData = {
+            'task_id': widget.taskId,
+            'title': _titleController.text,
+            'description': _descriptionController.text,
+            'assigned_to': _selectedAssignee,
+            'assigned_by': _currentUsername,
+            'deadline': (_dueDate ?? DateTime.now()).toIso8601String(),
+            'priority': _priority.toLowerCase(),
+            'status': _getStatusString(_status),
+            'type': 'task_updated',
+            'updated_by': _currentUsername,
+          };
+
+          // Emit socket notification
+          print('🔔 [CreateTask] Emitting socket notification: $taskData');
+          _socketService.emitTaskNotification(taskData);
+
+          // Clear cache to force fresh data on next load
+          _apiService.clearCache();
+
+          // Wait for socket event to be processed
+          await Future.delayed(const Duration(milliseconds: 300));
+
         } else {
-          // Create new task
+          // Create new task logic remains the same
           response = await _apiService.createTask(
             title: _titleController.text,
             description: _descriptionController.text,
@@ -1292,73 +1332,74 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             priority: _priority.toLowerCase(),
             status: 'pending',
             audioNote: audioNote,
-            attachments: attachments,
-            alarmSettings: alarmSettings,
+            attachments: _attachmentFiles,
+            alarmSettings: _alarmSettings,
           );
-        }
 
-        setState(() {
-          _isLoading = false;
-        });
+          print('📤 [CreateTask] Create task response: $response');
 
-        if (!response['success']) {
-          throw Exception(response['message']);
-        }
+          if (!response['success']) {
+            throw Exception(response['message'] ?? 'Operation failed');
+          }
 
-        // Force cache invalidation and refresh for both users
-        final prefs = await SharedPreferences.getInstance();
-        final currentUserRole = prefs.getString('role') ?? '';
-        String assigneeRole = '';
-        // Try to get assignee role from prefs or fallback to 'user'
-        if (_selectedAssignee != null) {
-          // If you store roles for users in prefs, fetch here. Otherwise, fallback.
-          // For now, fallback to 'user'.
-          assigneeRole = 'user';
-        }
-        await _apiService.updateTaskCache(_currentUsername!, currentUserRole);
-        if (_selectedAssignee != null) {
-          await _apiService.updateTaskCache(_selectedAssignee!, assigneeRole);
+          // Clear cache for both users to force refresh
+          _apiService.clearCache();
+
+          // Emit socket notification with full task data
+          final taskData = {
+            'task_id': response['task_id'],
+            'title': _titleController.text,
+            'description': _descriptionController.text,
+            'assigned_to': _selectedAssignee,
+            'assigned_by': _currentUsername,
+            'deadline': (_dueDate ?? DateTime.now()).toIso8601String(),
+            'priority': _priority.toLowerCase(),
+            'status': 'pending',
+            'type': 'task_created',
+            'updated_by': _currentUsername,
+          };
+          
+          print('🔔 [CreateTask] Emitting socket notification: $taskData');
+          _socketService.emitTaskNotification(taskData);
         }
 
         // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              response['message'] ?? (widget.isEditMode ? 'Task updated successfully' : 'Task created successfully'),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: const Color(0xFF1E293B),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: const BorderSide(
-                color: Color(0xFF7DF9FF),
-                width: 1,
-              ),
-            ),
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-
-        // Navigate back to previous screen with refresh signal
         if (mounted) {
-          Navigator.pop(context, true); // Pass true to indicate successful update
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                response['message'] ?? (widget.isEditMode ? 'Task updated successfully' : 'Task created successfully'),
+                style: const TextStyle(color: Colors.white),
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+
+          // Wait for server to process the update
+          await Future.delayed(const Duration(milliseconds: 500));
+
+          // Pop back with success result
+          Navigator.pop(context, true);
         }
       } catch (e) {
-        setState(() {
-          _isLoading = false;
-        });
-
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error ${widget.isEditMode ? "updating" : "creating"} task: $e')),
-        );
+        print('❌ [CreateTask] Error: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Error: ${e.toString()}',
+                style: const TextStyle(color: Colors.white),
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       }
     }
   }
@@ -1413,7 +1454,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       statuses.forEach((permission, status) {
         print('  - ${permission.toString()}: $status');
       });
-    } catch (e) {
+      } catch (e) {
       print('❌ [Permissions] Error requesting initial permissions: $e');
     }
   }
@@ -1517,8 +1558,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
     } catch (e) {
       print('❌ [Recording] Error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
           content: Text('Failed to start recording: $e'),
           duration: const Duration(seconds: 5),
         ),
@@ -1605,17 +1646,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<void> _playRecording() async {
-    if (_recordedFilePath == null || _isRecording) return;
+    if (_isDisposed || _recordedFilePath == null || _isRecording || _audioPlayer.state == PlayerState.disposed) return;
     
     try {
       if (_isPlaying) {
-        await _audioPlayer.stop();
-        _playbackTimer?.cancel();
-        setState(() {
-          _isPlaying = false;
-          _playbackPosition = Duration.zero;
-          _canScroll = true;
-        });
+        await _stopPlayback();
       } else {
         await _audioPlayer.play(DeviceFileSource(_recordedFilePath!));
         setState(() {
@@ -1625,22 +1660,26 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
         // Listen for playback completion
         _audioPlayer.onPlayerComplete.listen((event) {
-          _playbackTimer?.cancel();
-          setState(() {
-            _isPlaying = false;
-            _playbackPosition = Duration.zero;
-            _canScroll = true;
-          });
+          if (!_isDisposed) {
+            _playbackTimer?.cancel();
+            setState(() {
+              _isPlaying = false;
+              _playbackPosition = Duration.zero;
+              _canScroll = true;
+            });
+          }
         });
       }
     } catch (e) {
       print('❌ [Playback] Error: $e');
       _playbackTimer?.cancel();
-      setState(() {
-        _isPlaying = false;
-        _playbackPosition = Duration.zero;
-        _canScroll = true;
-      });
+      if (!_isDisposed) {
+        setState(() {
+          _isPlaying = false;
+          _playbackPosition = Duration.zero;
+          _canScroll = true;
+        });
+      }
     }
   }
 
@@ -1671,13 +1710,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   // Add playback methods
   Future<void> _stopPlayback() async {
     try {
-      await _audioPlayer.stop();
-      setState(() {
-        _isPlaying = false;
-        _playbackPosition = Duration.zero;
-        _canScroll = true;
-      });
-      _playbackTimer?.cancel();
+      if (!_isDisposed && _audioPlayer.state != PlayerState.disposed) {
+        await _audioPlayer.stop();
+        setState(() {
+          _isPlaying = false;
+          _playbackPosition = Duration.zero;
+          _canScroll = true;
+        });
+        _playbackTimer?.cancel();
+      }
     } catch (e) {
       print('❌ [Playback] Error stopping playback: $e');
     }
@@ -1935,6 +1976,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     try {
       print('🎵 [Audio] Initializing audio player...');
       
+      if (_isDisposed) return;
+
       // Configure audio player for streaming
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
       await _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
@@ -1959,7 +2002,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       _positionSubscription?.cancel();
       _positionSubscription = _audioPlayer.onPositionChanged.listen(
         (position) {
-          if (mounted) {
+          if (mounted && !_isDisposed) {
             setState(() {
               _playbackPosition = position;
             });
@@ -1974,7 +2017,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       _durationSubscription?.cancel();
       _durationSubscription = _audioPlayer.onDurationChanged.listen(
         (duration) {
-          if (mounted) {
+          if (mounted && !_isDisposed) {
             setState(() {
               _totalDuration = duration;
             });
@@ -1987,7 +2030,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       
       // Set up completion listener
       _audioPlayer.onPlayerComplete.listen((_) {
-        if (mounted) {
+        if (mounted && !_isDisposed) {
           setState(() {
             _isPlaying = false;
             _playbackPosition = Duration.zero;
@@ -1999,7 +2042,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       // Set up state change listener
       _audioPlayer.onPlayerStateChanged.listen(
         (state) {
-          if (mounted) {
+          if (mounted && !_isDisposed) {
             setState(() {
               _isPlaying = state == PlayerState.playing;
             });
@@ -2019,8 +2062,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   void _disposeAudioPlayer() {
-    _positionSubscription?.cancel();
-    _durationSubscription?.cancel();
-    _audioPlayer.dispose();
+    try {
+      if (!_isDisposed) {
+        _positionSubscription?.cancel();
+        _durationSubscription?.cancel();
+        if (_audioPlayer.state != PlayerState.disposed) {
+          _audioPlayer.dispose();
+        }
+      }
+    } catch (e) {
+      print('⚠️ [Audio] Error disposing audio player: $e');
+    }
   }
-} 
+}

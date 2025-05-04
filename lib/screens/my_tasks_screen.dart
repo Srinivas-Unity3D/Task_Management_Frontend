@@ -52,104 +52,94 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     _socketService.listenToTaskNotifications(_handleNewNotification);
   }
 
-  void _handleNewNotification(dynamic data) {
-    print('🔔 MyTasksScreen - Received notification: $data');
-    if (mounted) {
-      // Check if this is a task update notification
-      if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
-        final taskData = data['task'] ?? data;
-        final eventType = data['type'] ?? 'task_update';
-        
-        // Get all relevant roles
-        final bool isCreator = taskData['assigned_by'] == _currentUsername;
-        final bool isUpdater = taskData['updated_by'] == _currentUsername;
-        final bool isAssignee = taskData['assigned_to'] == _currentUsername;
-        
-        bool shouldShowNotification = false;
-        
-        // For task creation
-        if (eventType == 'task_created') {
-          shouldShowNotification = isAssignee && !isCreator;
-        }
-        // For task updates
-        else if (eventType == 'task_updated') {
-          shouldShowNotification = (isCreator && !isUpdater) || (isAssignee && !isUpdater);
-        }
+  void _handleNewNotification(dynamic taskData) {
+    if (!mounted) return;
 
-        if (shouldShowNotification) {
-          // Play notification sound and vibrate
-          _audioService.playNotificationSound();
-          HapticFeedback.mediumImpact();
-          
-          // Show snackbar if screen is visible and notification hasn't been shown yet
-          if (ModalRoute.of(context)!.isCurrent && !_notificationState.notificationShown) {
-            final bool isUpdate = taskData['updated_by'] != null;
-            final String title = isUpdate ? 'Task Updated' : 'New Task Assigned';
-            final String message = isUpdate 
-                ? '${taskData['title']} updated by ${taskData['updated_by']}'
-                : taskData['title'] ?? 'No title';
+    print('🔔 [MyTasks] Received task notification: $taskData');
 
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+    // Check if this notification is relevant for the current user
+    if (_currentUsername == null) return;
+
+    final bool isAssignee = taskData['assigned_to'] == _currentUsername;
+    final bool isAssigner = taskData['assigned_by'] == _currentUsername;
+    final bool isUpdater = taskData['updated_by'] == _currentUsername;
+
+    print('🔍 [MyTasks] Notification relevance check:');
+    print('Current user: $_currentUsername');
+    print('Is assignee: $isAssignee');
+    print('Is assigner: $isAssigner');
+    print('Is updater: $isUpdater');
+
+    // If the current user is involved in the task
+    if (isAssignee || isAssigner) {
+      // If the user is not the one who made the update
+      if (!isUpdater) {
+        final String title = taskData['type'] == 'task_created' 
+            ? 'New Task Assigned'
+            : 'Task Updated';
+        
+        final String message = taskData['type'] == 'task_created'
+            ? 'A new task has been assigned to you'
+            : 'Task "${taskData['title']}" has been updated';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  message,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF1E293B),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            action: SnackBarAction(
+              label: 'VIEW',
+              textColor: const Color(0xFF7DF9FF),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CreateTaskScreen(
+                      isEditMode: true,
+                      taskId: taskData['task_id'],
+                      initialTitle: taskData['title'],
+                      initialDescription: taskData['description'],
+                      initialAssignee: taskData['assigned_to'],
+                      initialPriority: taskData['priority'],
+                      initialDueDate: DateTime.parse(taskData['deadline']),
+                      initialStatus: taskData['status'],
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      message,
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                ),
-                backgroundColor: Color(0xFF1E293B),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                action: SnackBarAction(
-                  label: 'VIEW',
-                  textColor: Color(0xFF7DF9FF),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => CreateTaskScreen(
-                          isEditMode: true,
-                          taskId: taskData['task_id'],
-                          initialTitle: taskData['title'],
-                          initialDescription: taskData['description'],
-                          initialAssignee: taskData['assigned_to'],
-                          initialPriority: taskData['priority'],
-                          initialDueDate: DateTime.parse(taskData['deadline']),
-                          initialStatus: taskData['status'],
-                        ),
-                      ),
-                    ).then((_) => _loadTasks());
-                  },
-                ),
-              ),
-            );
-            // Mark that notification was shown
-            _notificationState.markNotificationShown();
-          }
-
-          // Update notification state
-          _notificationState.setUnreadNotifications(true);
-        }
-
-        // Add slight delay before refreshing to ensure server has processed the update
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _loadTasks();
-        });
+                  ),
+                ).then((_) => _loadTasks());
+              },
+            ),
+          ),
+        );
       }
+
+      // Clear API cache to force fresh data
+      _apiService.clearCache();
+
+      // Add a slight delay before refreshing to ensure server has processed the update
+      Future.delayed(const Duration(milliseconds: 500), () {
+        print('🔄 [MyTasks] Reloading tasks after notification');
+        _loadTasks();
+      });
     }
   }
 
@@ -277,40 +267,62 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
   Future<void> _loadTasks() async {
     try {
+      if (!mounted) return;
+      
       setState(() => _isLoading = true);
 
       // Only proceed if we have the current username
       if (_currentUsername == null) {
-        print('Error: Current username is null');
+        print('❌ MyTasksScreen - Error: Current username is null');
         return;
       }
 
+      print('🔄 MyTasksScreen - Loading tasks for user: $_currentUsername');
+      
+      // Force a fresh fetch by clearing cache first
+      _apiService.clearCache();
+      
       final response = await _apiService.getTasks(
-          username: _currentUsername!, role: _currentRole ?? '');
+        username: _currentUsername!,
+        role: _currentRole ?? '',
+      );
+
+      if (!mounted) return;
+
       if (response['success']) {
         final tasksJson = response['data'] as List;
+        final allTasks = tasksJson.map((task) => Task.fromJson(task)).toList();
+        
+        // Filter tasks where user is either assignee or assigner
+        final userTasks = allTasks.where((task) => 
+          task.assignedTo == _currentUsername || task.assignedBy == _currentUsername
+        ).toList();
+        
+        print('📊 [MyTasks] Task breakdown:');
+        print('Total tasks: ${allTasks.length}');
+        print('Tasks assigned to $_currentUsername: ${allTasks.where((t) => t.assignedTo == _currentUsername).length}');
+        print('Tasks assigned by $_currentUsername: ${allTasks.where((t) => t.assignedBy == _currentUsername).length}');
+        print('Total relevant tasks: ${userTasks.length}');
+        
         setState(() {
-          _tasks = tasksJson
-              .map((task) => Task.fromJson(task))
-              .where((task) => task.assignedTo == _currentUsername) // Only show tasks assigned to the admin
-              .toList();
-          _filteredTasks = _tasks;
+          _tasks = userTasks;
+          _filteredTasks = userTasks;
+          _isLoading = false;
         });
-        print('📋 MyTasksScreen - Loaded ${_tasks.length} tasks assigned to $_currentUsername');
+        print('✅ MyTasksScreen - Loaded ${_tasks.length} tasks for $_currentUsername');
+      } else {
+        throw Exception(response['message'] ?? 'Failed to load tasks');
       }
     } catch (e) {
       print('❌ MyTasksScreen - Error loading tasks: $e');
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error loading tasks: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
       }
     }
   }
@@ -323,18 +335,27 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         return Colors.yellow;
       case TaskPriority.high:
         return Colors.orange;
+      case TaskPriority.urgent:
+        return Colors.red;
       default:
         return Colors.grey;
     }
   }
 
   Widget _buildTaskCard(Task task) {
+    final bool isAssignedByMe = task.assignedBy == _currentUsername;
+    final bool isAssignedToMe = task.assignedTo == _currentUsername;
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isAssignedByMe ? AppColors.accentCyan.withOpacity(0.3) : AppColors.borderColor,
+          width: 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -345,7 +366,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 radius: 20,
                 backgroundColor: AppColors.inputBackground,
                 child: Text(
-                  task.assignedBy[0].toUpperCase(),
+                  isAssignedByMe ? task.assignedTo[0].toUpperCase() : task.assignedBy[0].toUpperCase(),
                   style: const TextStyle(
                     color: AppColors.accentCyan,
                     fontSize: 16,
@@ -358,16 +379,42 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      task.assignedBy,
-                      style: const TextStyle(
-                        color: AppColors.accentCyan,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          isAssignedByMe ? task.assignedTo : task.assignedBy,
+                          style: const TextStyle(
+                            color: AppColors.accentCyan,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isAssignedByMe 
+                              ? AppColors.accentCyan.withOpacity(0.1)
+                              : AppColors.cardBackground,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.accentCyan.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            isAssignedByMe ? 'Assigned by me' : 'Assigned to me',
+                            style: TextStyle(
+                              color: AppColors.accentCyan,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     Text(
-                      task.assignedByRole,
+                      isAssignedByMe ? task.assignedToRole : task.assignedByRole,
                       style: const TextStyle(
                         color: AppColors.textGrey,
                         fontSize: 12,
@@ -396,8 +443,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                           initialTitle: task.title,
                           initialDescription: task.description,
                           initialAssignee: task.assignedTo,
-                          initialPriority:
-                              task.priority.toString().split('.').last,
+                          initialPriority: task.priority.toString().split('.').last,
                           initialDueDate: task.deadline,
                           initialStatus: task.status.toString().split('.').last,
                         ),
@@ -448,20 +494,44 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ],
           ),
           const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: _getPriorityColor(task.priority).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              task.priority.toString().split('.').last,
-              style: TextStyle(
-                color: _getPriorityColor(task.priority),
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _getPriorityColor(task.priority).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  task.priority.toString().split('.').last,
+                  style: TextStyle(
+                    color: _getPriorityColor(task.priority),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: AppColors.borderColor,
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  task.status.toString().split('.').last,
+                  style: TextStyle(
+                    color: AppColors.textGrey,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

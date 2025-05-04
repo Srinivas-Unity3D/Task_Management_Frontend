@@ -816,6 +816,12 @@ class ApiService {
     }
   }
 
+  // Add method to clear all cache
+  void clearCache() {
+    print('🧹 [CACHE] Clearing all cache');
+    _cacheManager.clearCache();
+  }
+
   Future<Map<String, dynamic>> updateTask({
     required String taskId,
     required String title,
@@ -830,18 +836,25 @@ class ApiService {
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
+      print('📤 [API] Updating task $taskId with data:');
+      print('Title: $title');
+      print('Description: $description');
+      print('AssignedTo: $assignedTo');
+      print('AssignedBy: $assignedBy');
+      print('Priority: $priority');
+      print('Status: $status');
+
       // Get assignee's FCM token from server
-      final tokenResponse = await http.get(
-        Uri.parse('$baseUrl/user/$assignedTo/fcm-token'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+      final tokenResponse = await _dio.get(
+        '/user/$assignedTo/fcm-token',
+        options: Options(
+          validateStatus: (status) => true,
+        ),
       );
 
       String? assigneeFcmToken;
       if (tokenResponse.statusCode == 200) {
-        assigneeFcmToken = json.decode(tokenResponse.body)['fcm_token'];
+        assigneeFcmToken = tokenResponse.data['fcm_token'];
       }
 
       // Prepare the request body
@@ -879,30 +892,26 @@ class ApiService {
         taskData['attachments'] = attachmentData;
       }
 
-      final response = await http.put(
-        Uri.parse('$baseUrl/tasks/$taskId'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(taskData),
-      ).timeout(const Duration(seconds: 10));
+      final response = await _dio.put(
+        '/tasks/$taskId',
+        data: taskData,
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          validateStatus: (status) => true,
+        ),
+      );
 
       print('📤 [API] Update task response status: ${response.statusCode}');
-      print('📤 [API] Update task response body: ${response.body}');
+      print('📤 [API] Update task response data: ${response.data}');
 
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        final updatedTask = responseData['task'] ?? responseData;
+        final responseData = response.data;
         
-        // Update cache for both users
-        await updateTaskCache(assignedTo, assignedBy);
-        
-        // Clear assignments cache for both users to force refresh
-        final assigneeAssignmentsKey = 'task_assignments_$assignedTo';
-        final assignerAssignmentsKey = 'task_assignments_$assignedBy';
-        _cacheManager.getData(assigneeAssignmentsKey)?.clear();
-        _cacheManager.getData(assignerAssignmentsKey)?.clear();
+        // Clear all cache to force refresh
+        clearCache();
         
         // Trigger background sync
         _syncController.add(null);
@@ -910,13 +919,14 @@ class ApiService {
         return {
           'success': true,
           'message': responseData['message'] ?? 'Task updated successfully',
-          'task': updatedTask,
+          'task': responseData,
         };
       } else {
         print('❌ [API] Failed to update task: ${response.statusCode}');
+        print('❌ [API] Error message: ${response.data}');
         return {
           'success': false,
-          'message': 'Failed to update task: ${response.statusCode}',
+          'message': response.data['message'] ?? 'Failed to update task: ${response.statusCode}',
         };
       }
     } catch (e) {
