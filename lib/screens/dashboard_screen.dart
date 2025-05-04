@@ -541,7 +541,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   end: Offset.zero,
                 ).animate(curvedAnimation),
                 child: SidePanel(
-                  onLogout: _handleLogout,
+                  onLogout: () {},  // Empty callback since logout is now handled in SidePanel
                   onClose: () => Navigator.pop(context),
                   user: _user!,
                   currentRoute: '/',

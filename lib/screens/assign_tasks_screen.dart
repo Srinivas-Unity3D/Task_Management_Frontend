@@ -398,16 +398,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
       backgroundColor: AppColors.background,
       key: _scaffoldKey,
       drawer: SidePanel(
-        onLogout: () async {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.clear();
-          if (mounted) {
-            Navigator.of(context).pushNamedAndRemoveUntil(
-              '/',
-              (route) => false,
-            );
-          }
-        },
+        onLogout: () {},
         onClose: () => Navigator.pop(context),
         user: User(
           userId: _currentUserId ?? '',

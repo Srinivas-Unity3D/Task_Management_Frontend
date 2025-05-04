@@ -24,6 +24,7 @@ class SocketService {
   bool _isRegistered = false;
   int _reconnectAttempts = 0;
   static const int maxReconnectAttempts = 5;
+  bool _isLoggedOut = true;
 
   // Private constructor
   SocketService._internal();
@@ -40,13 +41,18 @@ class SocketService {
   }
 
   Future<void> connect(String username) async {
+    if (_isLoggedOut) {
+      print('🔌 Cannot connect: User is logged out');
+      return;
+    }
+
     if (_isConnecting) {
       print('🔌 Already attempting to connect...');
       return;
     }
 
     if (_socket?.connected ?? false) {
-      print('🔌 Socket already connected');
+      print('🔌 Already connected');
       return;
     }
 
@@ -56,75 +62,72 @@ class SocketService {
     try {
       print('🔌 Attempting to connect to socket...');
       
-      _socket = IO.io(_serverUrl, <String, dynamic>{
-        'transports': ['websocket'],
-        'autoConnect': true,
-        'reconnection': true,
-        'reconnectionDelay': 1000,
-        'reconnectionDelayMax': 5000,
-        'reconnectionAttempts': maxReconnectAttempts,
-      });
+      // Only attempt connection if not logged out
+      if (!_isLoggedOut) {
+        _socket = IO.io(_serverUrl, <String, dynamic>{
+          'transports': ['websocket'],
+          'autoConnect': false,
+          'reconnection': false,
+        });
 
-      // Setup event handlers
-      _socket!.onConnect((_) {
-        print('🔌 Socket connected successfully');
-        _isConnecting = false;
-        _reconnectAttempts = 0;
-        connected.value = true;
-        _startPingTimer();
-        _registerUser();
-      });
-
-      _socket!.onDisconnect((_) {
-        print('🔌 Socket disconnected');
-        connected.value = false;
-        _stopPingTimer();
-        _handleDisconnect();
-      });
-
-      _socket!.onError((error) {
-        print('🔌 Socket error: $error');
-        connected.value = false;
-        _handleError();
-      });
-
-      _socket!.on('task_notification', (data) {
-        print('📨 Received task notification: $data');
-        print('📨 Current listeners count: ${_taskNotificationListeners.length}');
-        for (var listener in _taskNotificationListeners) {
-          try {
-            listener(data);
-          } catch (e) {
-            print('Error in task notification listener: $e');
+        _socket!.onConnect((_) {
+          if (_isLoggedOut) {
+            _socket?.disconnect();
+            return;
           }
-        }
-      });
+          print('🔌 Socket connected successfully');
+          _isConnecting = false;
+          _reconnectAttempts = 0;
+          connected.value = true;
+          _registerUser();
+        });
 
-      _socket!.on('dashboard_update', (data) {
-        print('📨 Received dashboard update: $data');
-        print('📨 Current dashboard listeners count: ${_dashboardUpdateListeners.length}');
-        for (var listener in _dashboardUpdateListeners) {
-          try {
-            listener(data);
-          } catch (e) {
-            print('Error in dashboard update listener: $e');
+        _socket!.onDisconnect((_) {
+          print('🔌 Socket disconnected');
+          connected.value = false;
+          if (!_isLoggedOut) {
+            _handleDisconnect();
           }
-        }
-      });
+        });
 
-      // Connect socket
-      _socket!.connect();
-      print('🔌 Waiting for connection...');
-      
-      // Wait for connection
-      await _waitForConnection();
-      print('🔌 Connection wait completed');
-      
+        _socket!.onError((error) {
+          print('🔌 Socket error: $error');
+          connected.value = false;
+          if (!_isLoggedOut) {
+            _handleError();
+          }
+        });
+
+        _socket!.on('task_notification', (data) {
+          print('📨 Received task notification: $data');
+          print('📨 Current listeners count: ${_taskNotificationListeners.length}');
+          for (var listener in _taskNotificationListeners) {
+            try {
+              listener(data);
+            } catch (e) {
+              print('Error in task notification listener: $e');
+            }
+          }
+        });
+
+        _socket!.on('dashboard_update', (data) {
+          print('📨 Received dashboard update: $data');
+          print('📨 Current dashboard listeners count: ${_dashboardUpdateListeners.length}');
+          for (var listener in _dashboardUpdateListeners) {
+            try {
+              listener(data);
+            } catch (e) {
+              print('Error in dashboard update listener: $e');
+            }
+          }
+        });
+
+        _socket!.connect();
+      }
     } catch (e) {
       print('🔌 Error connecting to socket: $e');
       _isConnecting = false;
       connected.value = false;
-      _handleError();
     }
   }
 
@@ -166,12 +169,20 @@ class SocketService {
   }
 
   void _handleDisconnect() {
-    _isConnecting = false;
+    if (_socket == null || _isLoggedOut) return;
+    
+    print('🔌 Socket disconnected');
+    connected.value = false;
+    
     if (_reconnectAttempts < maxReconnectAttempts) {
+      _reconnectAttempts++;
+      final delay = Duration(seconds: _reconnectAttempts * 2);
+      print('🔌 Attempting reconnection in ${delay.inSeconds} seconds (attempt $_reconnectAttempts)');
       _reconnectTimer?.cancel();
-      _reconnectTimer = Timer(Duration(seconds: _reconnectAttempts + 1), () {
-        _reconnectAttempts++;
-        connect(_currentUsername!);
+      _reconnectTimer = Timer(delay, () {
+        if (_currentUsername != null && !_isLoggedOut) {
+          connect(_currentUsername!);
+        }
       });
     }
   }
@@ -221,15 +232,52 @@ class SocketService {
   }
 
   void disconnect() {
-    _stopPingTimer();
-    _reconnectTimer?.cancel();
-    _socket?.disconnect();
-    _socket?.dispose();
-    _socket = null;
-    _currentUsername = null;
-    _isConnecting = false;
-    _reconnectAttempts = 0;
-    _taskNotificationListeners.clear();
+    try {
+      print('🔌 Disconnecting socket service...');
+      
+      // Immediately set all flags to prevent any reconnection
+      _isLoggedOut = true;
+      _isConnecting = false;
+      _reconnectAttempts = maxReconnectAttempts;
+      connected.value = false;
+      
+      // Cancel timers immediately
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      _pingTimer?.cancel();
+      _pingTimer = null;
+
+      // Clear all listeners and callbacks immediately
+      _taskNotificationListeners.clear();
+      _dashboardUpdateListeners.clear();
+
+      // Force socket cleanup
+      if (_socket != null) {
+        try {
+          _socket!.clearListeners();
+          _socket!.destroy();
+          _socket!.disconnect();
+          _socket!.close();
+        } catch (e) {
+          print('⚠️ Socket cleanup error: $e');
+        }
+        _socket = null;
+      }
+
+      // Reset all state
+      _currentUsername = null;
+      _isRegistered = false;
+      _serverUrl = null;
+      
+      print('🔌 Socket service disconnected successfully');
+    } catch (e) {
+      print('❌ Error during socket disconnection: $e');
+      // Force cleanup on error
+      _socket = null;
+      _currentUsername = null;
+      _serverUrl = null;
+      connected.value = false;
+    }
   }
 
   bool get isConnected => _socket?.connected ?? false;
@@ -248,5 +296,10 @@ class SocketService {
   void dispose() {
     print('🔌 Disposing socket service');
     disconnect();
+  }
+
+  void setLoggedIn() {
+    _isLoggedOut = false;
+    _reconnectAttempts = 0;
   }
 } 

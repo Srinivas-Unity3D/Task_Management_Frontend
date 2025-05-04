@@ -5,47 +5,45 @@ class AudioService {
   static final AudioService _instance = AudioService._internal();
   factory AudioService() => _instance;
 
-  final AudioPlayer _player = AudioPlayer();
+  AudioPlayer? _player;
   bool _isInitialized = false;
 
   AudioService._internal();
 
   Future<void> initialize() async {
-    if (_isInitialized) return;
-    
     try {
-      await _player.setSource(AssetSource('sounds/notification.mp3'));
-      _isInitialized = true;
-      debugPrint('🔊 AudioService initialized successfully');
+      if (!_isInitialized) {
+        _player = AudioPlayer();
+        _isInitialized = true;
+      }
     } catch (e) {
-      debugPrint('❌ AudioService initialization error: $e');
-      // Don't throw, just log the error
+      print('❌ AudioService initialization error: $e');
     }
   }
 
   Future<void> playNotificationSound() async {
     try {
-      if (!_isInitialized) {
-        await initialize();
+      if (_isInitialized && _player != null) {
+        await _player!.play(AssetSource('sounds/notification.mp3'));
       }
-      
-      // Stop any current playback
-      await _player.stop();
-      
-      // Reset to beginning
-      await _player.seek(Duration.zero);
-      
-      // Play the sound
-      await _player.play(AssetSource('sounds/notification.mp3'));
-      debugPrint('🔊 Playing notification sound');
     } catch (e) {
-      debugPrint('❌ Error playing notification sound: $e');
-      // Don't throw, just log the error
+      print('❌ AudioService playback error: $e');
     }
   }
 
-  void dispose() {
-    _player.dispose();
-    _isInitialized = false;
+  Future<void> dispose() async {
+    try {
+      if (_isInitialized && _player != null) {
+        await _player!.stop();
+        await _player!.dispose();
+        _player = null;
+        _isInitialized = false;
+      }
+    } catch (e) {
+      print('❌ AudioService disposal error: $e');
+      // Even if disposal fails, make sure we clear the references
+      _player = null;
+      _isInitialized = false;
+    }
   }
 } 
