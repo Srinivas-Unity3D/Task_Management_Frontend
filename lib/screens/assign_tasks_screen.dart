@@ -507,7 +507,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                       itemCount: _filteredAssignments.length,
                       itemBuilder: (context, index) {
                         final assignment = _filteredAssignments[index];
-                        return _buildTaskAssignmentItem(assignment);
+                        return _buildAssignmentCard(assignment);
                       },
                     ),
             ),
@@ -517,13 +517,17 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
     );
   }
 
-  Widget _buildTaskAssignmentItem(TaskAssignment assignment) {
+  Widget _buildAssignmentCard(TaskAssignment assignment) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.borderColor,
+          width: 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -636,20 +640,64 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
             ],
           ),
           const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: _getPriorityColor(assignment.priority).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              assignment.priority,
-              style: TextStyle(
-                color: _getPriorityColor(assignment.priority),
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _getPriorityColor(assignment.priority).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  assignment.priority.toLowerCase(),
+                  style: TextStyle(
+                    color: _getPriorityColor(assignment.priority),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: AppColors.borderColor,
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  assignment.currentTask,
+                  style: TextStyle(
+                    color: AppColors.textGrey,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: AppColors.borderColor,
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  'May ${assignment.dueDate.day.toString().padLeft(2, '0')}',
+                  style: TextStyle(
+                    color: AppColors.textGrey,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
