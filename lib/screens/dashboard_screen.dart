@@ -1,26 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../widgets/dashboard/profile_section.dart';
-import '../widgets/dashboard/navigation_menu.dart';
-import '../widgets/dashboard/stats_card.dart';
-import '../models/user.dart';
+
 import '../models/task.dart';
 import '../models/task_stats.dart';
+import '../models/user.dart';
 import '../models/view_state.dart';
-import '../theme/colors.dart';
-import 'sign_in_screen.dart';
-import '../widgets/dashboard/side_panel.dart';
-import '../widgets/custom_text_field.dart';
-import '../services/api_service.dart';
-import '../screens/create_task_screen.dart';
 import '../screens/assign_tasks_screen.dart';
+import '../screens/create_task_screen.dart';
 import '../screens/my_tasks_screen.dart';
-import '../services/socket_service.dart';
-import '../widgets/common_notification_icon.dart';
+import '../services/api_service.dart';
 import '../services/audio_service.dart';
-import '../widgets/common_app_bar.dart';
 import '../services/notification_state_service.dart';
+import '../services/socket_service.dart';
+import '../theme/colors.dart';
+import '../widgets/common_app_bar.dart';
+import '../widgets/custom_text_field.dart';
+import '../widgets/dashboard/side_panel.dart';
+import '../widgets/dashboard/stats_card.dart';
+import 'sign_in_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -63,11 +61,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       print('🔄 Dashboard - Initializing services...');
       await _audioService.initialize();
       print('🔄 Dashboard - Audio service initialized');
-      
+
       // Load initial data
       await _loadUserAndSetupSocket();
       print('🔄 Dashboard - Initial data loaded');
-      
+
       // Initial tasks load
       await _loadTasks();
       print('🔄 Dashboard - Initial tasks loaded');
@@ -82,7 +80,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final prefs = await SharedPreferences.getInstance();
       final username = prefs.getString('username');
       final userId = prefs.getString('user_id') ?? '';
-      
+
       if (username != null) {
         // Set up user data
         _user = User(
@@ -93,16 +91,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           role: prefs.getString('role') ?? '',
           fcmToken: null,
         );
-        
+
         print('🔄 Dashboard - Connecting socket for user: $username');
-        
+
         // Remove any existing listeners before adding new ones
         _socketService.removeTaskNotificationListener(_handleTaskNotification);
         _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
-        
+
         // Connect socket with username and wait for connection
         await _socketService.connect(username);
-        
+
         // Setup socket listeners after successful connection
         if (_socketService.isConnected) {
           print('🔄 Dashboard - Setting up socket listeners');
@@ -146,14 +144,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final taskData = data['task'] ?? data;
       final eventType = data['type'] ?? 'task_update';
       
-      // Check if the current user is the creator/updater
+      // Get all relevant roles
       final bool isCreator = taskData['assigned_by'] == _user!.username;
       final bool isUpdater = taskData['updated_by'] == _user!.username;
+      final bool isAssignee = taskData['assigned_to'] == _user!.username;
       
-      print('🔔 Dashboard - Creator: $isCreator, Updater: $isUpdater, Username: ${_user!.username}');
+      print('🔔 Dashboard - Creator: $isCreator, Updater: $isUpdater, Assignee: $isAssignee, Username: ${_user!.username}');
       
-      // Only show notification if user is not the creator/updater
-      if (!isCreator && !isUpdater) {
+      bool shouldShowNotification = false;
+      
+      // For task creation
+      if (eventType == 'task_created') {
+        shouldShowNotification = isAssignee && !isCreator;
+        print('🔔 Dashboard - Task Created - shouldShowNotification: $shouldShowNotification (isAssignee: $isAssignee, !isCreator: ${!isCreator})');
+      }
+      // For task updates
+      else if (eventType == 'task_updated') {
+        shouldShowNotification = (isCreator && !isUpdater) || (isAssignee && !isUpdater);
+        print('🔔 Dashboard - Task Updated - shouldShowNotification: $shouldShowNotification');
+      }
+
+      print('🔔 Dashboard - Final shouldShowNotification value: $shouldShowNotification');
+
+      // Show notification if conditions are met
+      if (shouldShowNotification == true) {
+        print('🔔 Dashboard - Showing notification');
         // Update notification state
         _notificationState.setUnreadNotifications(true);
         
@@ -223,6 +238,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _notificationState.markNotificationShown();
           }
         }
+      } else {
+        print('🔔 Dashboard - Skipping notification as shouldShowNotification is false');
       }
       
       // Always refresh tasks list to keep it up to date
@@ -237,18 +254,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _handleDashboardUpdate(dynamic data) async {
     if (mounted && _user != null) {
       print('📨 Dashboard - Received update: $data');
-      
+
       final taskData = data['task'] ?? data;
       final eventType = data['type'] ?? 'task_update';
       
-      // Check if the current user is the creator/updater
+      // Get all relevant roles
       final bool isCreator = taskData['assigned_by'] == _user!.username;
       final bool isUpdater = taskData['updated_by'] == _user!.username;
+      final bool isAssignee = taskData['assigned_to'] == _user!.username;
       
-      print('📨 Dashboard - Creator: $isCreator, Updater: $isUpdater, Username: ${_user!.username}');
+      print('📨 Dashboard - Creator: $isCreator, Updater: $isUpdater, Assignee: $isAssignee, Username: ${_user!.username}');
       
-      // Play notification sound if user is not the creator/updater
-      if (!isCreator && !isUpdater) {
+      bool shouldShowNotification = false;
+      
+      // For task creation
+      if (eventType == 'task_created') {
+        shouldShowNotification = isAssignee && !isCreator;
+        print('📨 Dashboard - Task Created - shouldShowNotification: $shouldShowNotification (isAssignee: $isAssignee, !isCreator: ${!isCreator})');
+      }
+      // For task updates
+      else if (eventType == 'task_updated') {
+        shouldShowNotification = (isCreator && !isUpdater) || (isAssignee && !isUpdater);
+        print('📨 Dashboard - Task Updated - shouldShowNotification: $shouldShowNotification');
+      }
+
+      print('📨 Dashboard - Final shouldShowNotification value: $shouldShowNotification');
+
+      // Show notification if conditions are met
+      if (shouldShowNotification == true) {  // Explicit check for true
+        print('📨 Dashboard - Showing notification');
         // Update notification state
         _notificationState.setUnreadNotifications(true);
         
@@ -315,6 +349,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           // Mark that notification was shown
           _notificationState.markNotificationShown();
         }
+      } else {
+        print('📨 Dashboard - Skipping notification as shouldShowNotification is false');
       }
 
       // Always refresh tasks list regardless of who created/updated
@@ -337,7 +373,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showTaskNotification(Map<String, dynamic> task) {
     final bool isUpdate = task['updated_by'] != null;
     final String title = isUpdate ? 'Task Updated' : 'New Task Assigned';
-    final String message = isUpdate 
+    final String message = isUpdate
         ? '${task['title']} updated by ${task['updated_by']}'
         : task['title'] ?? 'No title';
 
@@ -389,7 +425,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     initialStatus: task['status'],
                   ),
                 ),
-              ).then((_) => _loadTasks()); // Refresh after returning from edit screen
+              ).then((_) =>
+                  _loadTasks()); // Refresh after returning from edit screen
             },
           ),
         ),
@@ -399,7 +436,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadTasks() async {
     if (_user == null) return; // Don't load tasks if user is not initialized
-    
+
     try {
       // Get the stored user data from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
@@ -408,7 +445,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final role = prefs.getString('role') ?? '';
 
       // Fetch tasks from API
-      final response = await _apiService.getTasks(username: _user!.username, role: _user!.role);
+      final response = await _apiService.getTasks(
+          username: _user!.username, role: _user!.role);
       if (response['success']) {
         final tasksJson = response['data'] as List;
         if (mounted) {
@@ -450,7 +488,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _socketService.disconnect();
     // Clear all stored data
     await prefs.clear();
-    
+
     if (mounted) {
       // Navigate to login screen
       Navigator.of(context).pushReplacement(
@@ -468,7 +506,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _showSidePanel() {
     if (_user == null) return; // Don't show panel if user is not initialized
-    
+
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -719,7 +757,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Expanded(
                                         child: Text(
@@ -755,7 +794,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ))
                       .toList(),
-                  if (_userTasks.where((task) => task.assignedTo == _user!.username).isEmpty)
+                  if (_userTasks
+                      .where((task) => task.assignedTo == _user!.username)
+                      .isEmpty)
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
                       child: Text(
@@ -922,15 +963,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _formatDate(DateTime date) {
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${months[date.month - 1]} ${date.day.toString().padLeft(2, '0')}';
   }
 
   void _showAssignTaskDialog(String memberName) {
     final TextEditingController _titleController = TextEditingController();
-    final TextEditingController _descriptionController = TextEditingController();
+    final TextEditingController _descriptionController =
+        TextEditingController();
 
     showDialog(
       context: context,
