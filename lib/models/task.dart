@@ -91,6 +91,7 @@ class Task {
       case 'pending':
         return TaskStatus.pending;
       case 'in_progress':
+      case 'inprogress':
         return TaskStatus.inProgress;
       case 'completed':
         return TaskStatus.completed;

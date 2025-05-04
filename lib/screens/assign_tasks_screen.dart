@@ -48,6 +48,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
     _initializeServices();
     _loadUserAndAssignments();
     _notificationState.addListener(_onNotificationStateChanged);
+    _socketService.listenToUiRefresh(_handleUiRefresh);
   }
 
   Future<void> _initializeServices() async {
@@ -65,9 +66,17 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   void dispose() {
     print('🔔 AssignTasksScreen - dispose');
     _socketService.removeTaskNotificationListener(_handleNewNotification);
+    _socketService.removeUiRefreshListener(_handleUiRefresh);
     _removeFilterPanel();
     _notificationState.removeListener(_onNotificationStateChanged);
     super.dispose();
+  }
+
+  void _handleUiRefresh(String screenName) {
+    if (mounted && screenName == 'assign-tasks') {
+      print('🔄 AssignTasks - Refreshing UI from broadcast');
+      _fetchAssignments();
+    }
   }
 
   void _handleNewNotification(dynamic data) {
@@ -99,7 +108,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
           _audioService.playNotificationSound();
           HapticFeedback.mediumImpact();
           
-          // Show snackbar if screen is visible and notification hasn't been shown yet
+          // Show snackbar if screen is visible and notification hasn't been shown
           if (ModalRoute.of(context)!.isCurrent && !_notificationState.notificationShown) {
             final bool isUpdate = taskData['updated_by'] != null;
             final String title = isUpdate ? 'Task Updated' : 'New Task Assigned';
@@ -132,29 +141,9 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                action: SnackBarAction(
-                  label: 'VIEW',
-                  textColor: Color(0xFF7DF9FF),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => CreateTaskScreen(
-                          isEditMode: true,
-                          taskId: taskData['task_id'],
-                          initialTitle: taskData['title'],
-                          initialDescription: taskData['description'],
-                          initialAssignee: taskData['assigned_to'],
-                          initialPriority: taskData['priority'],
-                          initialDueDate: DateTime.parse(taskData['deadline']),
-                          initialStatus: taskData['status'],
-                        ),
-                      ),
-                    ).then((_) => _fetchAssignments());
-                  },
-                ),
               ),
             );
+            
             // Mark that notification was shown
             _notificationState.markNotificationShown();
           }
@@ -163,10 +152,13 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
           _notificationState.setUnreadNotifications(true);
         }
 
-        // Add slight delay before refreshing to ensure server has processed the update
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _fetchAssignments();
-        });
+        // Broadcast UI refresh to all screens
+        _socketService.broadcastUiRefresh('dashboard');
+        _socketService.broadcastUiRefresh('my-tasks');
+        _socketService.broadcastUiRefresh('assign-tasks');
+        
+        // Also refresh current screen
+        _fetchAssignments();
       }
     }
   }

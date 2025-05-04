@@ -43,6 +43,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     _loadUserAndTasks();
     _notificationState.addListener(_onNotificationStateChanged);
     _setupSocketListeners();
+    _socketService.listenToUiRefresh(_handleUiRefresh);
   }
 
   void _setupSocketListeners() {
@@ -50,6 +51,13 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     // Remove any existing listeners before adding new ones
     _socketService.removeTaskNotificationListener(_handleNewNotification);
     _socketService.listenToTaskNotifications(_handleNewNotification);
+  }
+
+  void _handleUiRefresh(String screenName) {
+    if (mounted && screenName == 'my-tasks') {
+      print('🔄 MyTasks - Refreshing UI from broadcast');
+      _loadTasks();
+    }
   }
 
   void _handleNewNotification(dynamic taskData) {
@@ -82,70 +90,57 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ? 'A new task has been assigned to you'
             : 'Task "${taskData['title']}" has been updated';
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  message,
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ],
-            ),
-            backgroundColor: const Color(0xFF1E293B),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            action: SnackBarAction(
-              label: 'VIEW',
-              textColor: const Color(0xFF7DF9FF),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => CreateTaskScreen(
-                      isEditMode: true,
-                      taskId: taskData['task_id'],
-                      initialTitle: taskData['title'],
-                      initialDescription: taskData['description'],
-                      initialAssignee: taskData['assigned_to'],
-                      initialPriority: taskData['priority'],
-                      initialDueDate: DateTime.parse(taskData['deadline']),
-                      initialStatus: taskData['status'],
+        // Show snackbar if screen is visible
+        if (ModalRoute.of(context)!.isCurrent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ).then((_) => _loadTasks());
-              },
+                  SizedBox(height: 4),
+                  Text(
+                    message,
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+              backgroundColor: Color(0xFF1E293B),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
-          ),
-        );
+          );
+        }
+
+        // Play notification sound
+        _audioService.playNotificationSound();
+        HapticFeedback.mediumImpact();
       }
 
-      // Clear API cache to force fresh data
-      _apiService.clearCache();
-
-      // Add a slight delay before refreshing to ensure server has processed the update
-      Future.delayed(const Duration(milliseconds: 500), () {
-        print('🔄 [MyTasks] Reloading tasks after notification');
-        _loadTasks();
-      });
+      // Broadcast UI refresh to all screens
+      _socketService.broadcastUiRefresh('dashboard');
+      _socketService.broadcastUiRefresh('my-tasks');
+      _socketService.broadcastUiRefresh('assign-tasks');
+      
+      // Also refresh current screen
+      print('🔄 [MyTasks] Reloading tasks after notification');
+      _loadTasks();
     }
   }
 
   @override
   void dispose() {
     _socketService.removeTaskNotificationListener(_handleNewNotification);
+    _socketService.removeUiRefreshListener(_handleUiRefresh);
     _removeFilterPanel();
     _notificationState.removeListener(_onNotificationStateChanged);
     super.dispose();

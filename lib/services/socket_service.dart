@@ -25,6 +25,7 @@ class SocketService {
   int _reconnectAttempts = 0;
   static const int maxReconnectAttempts = 5;
   bool _isLoggedOut = true;
+  final List<Function(String)> _uiRefreshListeners = [];
 
   // Private constructor
   SocketService._internal();
@@ -231,6 +232,28 @@ class SocketService {
     print('📨 Removed task notification listener. Remaining: ${_taskNotificationListeners.length}');
   }
 
+  void listenToUiRefresh(Function(String) onRefresh) {
+    print('📨 Adding UI refresh listener');
+    _uiRefreshListeners.add(onRefresh);
+    print('📨 Current number of UI refresh listeners: ${_uiRefreshListeners.length}');
+  }
+
+  void removeUiRefreshListener(Function(String) listener) {
+    _uiRefreshListeners.remove(listener);
+    print('📨 Removed UI refresh listener. Remaining: ${_uiRefreshListeners.length}');
+  }
+
+  void broadcastUiRefresh(String screenName) {
+    print('📨 Broadcasting UI refresh for screen: $screenName');
+    for (var listener in _uiRefreshListeners) {
+      try {
+        listener(screenName);
+      } catch (e) {
+        print('Error in UI refresh listener: $e');
+      }
+    }
+  }
+
   void disconnect() {
     try {
       print('🔌 Disconnecting socket service...');
@@ -250,6 +273,7 @@ class SocketService {
       // Clear all listeners and callbacks immediately
       _taskNotificationListeners.clear();
       _dashboardUpdateListeners.clear();
+      _uiRefreshListeners.clear();
 
       // Force socket cleanup
       if (_socket != null) {
