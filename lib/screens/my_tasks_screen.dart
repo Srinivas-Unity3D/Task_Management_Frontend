@@ -293,9 +293,9 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         final tasksJson = response['data'] as List;
         final allTasks = tasksJson.map((task) => Task.fromJson(task)).toList();
         
-        // Filter tasks where user is either assignee or assigner
+        // Filter tasks where user is only the assignee
         final userTasks = allTasks.where((task) => 
-          task.assignedTo == _currentUsername || task.assignedBy == _currentUsername
+          task.assignedTo == _currentUsername
         ).toList();
         
         print('📊 [MyTasks] Task breakdown:');
@@ -343,9 +343,6 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   }
 
   Widget _buildTaskCard(Task task) {
-    final bool isAssignedByMe = task.assignedBy == _currentUsername;
-    final bool isAssignedToMe = task.assignedTo == _currentUsername;
-    
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -353,7 +350,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isAssignedByMe ? AppColors.accentCyan.withOpacity(0.3) : AppColors.borderColor,
+          color: AppColors.borderColor,
           width: 1,
         ),
       ),
@@ -366,7 +363,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 radius: 20,
                 backgroundColor: AppColors.inputBackground,
                 child: Text(
-                  isAssignedByMe ? task.assignedTo[0].toUpperCase() : task.assignedBy[0].toUpperCase(),
+                  task.assignedBy[0].toUpperCase(),
                   style: const TextStyle(
                     color: AppColors.accentCyan,
                     fontSize: 16,
@@ -379,42 +376,16 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          isAssignedByMe ? task.assignedTo : task.assignedBy,
-                          style: const TextStyle(
-                            color: AppColors.accentCyan,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: isAssignedByMe 
-                              ? AppColors.accentCyan.withOpacity(0.1)
-                              : AppColors.cardBackground,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppColors.accentCyan.withOpacity(0.3),
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            isAssignedByMe ? 'Assigned by me' : 'Assigned to me',
-                            style: TextStyle(
-                              color: AppColors.accentCyan,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      task.assignedBy,
+                      style: const TextStyle(
+                        color: AppColors.accentCyan,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     Text(
-                      isAssignedByMe ? task.assignedToRole : task.assignedByRole,
+                      task.assignedByRole,
                       style: const TextStyle(
                         color: AppColors.textGrey,
                         fontSize: 12,
@@ -531,11 +502,39 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: AppColors.borderColor,
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  'May ${task.deadline.day.toString().padLeft(2, '0')}',
+                  style: TextStyle(
+                    color: AppColors.textGrey,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  String _formatDate(DateTime date) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${months[date.month - 1]} ${date.day.toString().padLeft(2, '0')}';
   }
 
   @override
