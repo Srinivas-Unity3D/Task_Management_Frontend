@@ -214,6 +214,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       // Fetch existing voice notes and attachments
       await _loadTaskVoiceNotes();
       await _loadTaskAttachments();
+    } else {
+      // Not edit mode: mark attachments as loaded so the button shows
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _isLoadingAttachments = false;
+          });
+        }
+      });
     }
   }
 
@@ -506,25 +515,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     });
   }
 
-  String _getFileIcon(String? extension) {
-    switch (extension?.toLowerCase()) {
-      case 'pdf':
-        return '📄';
-      case 'doc':
-      case 'docx':
-        return '📝';
-      case 'xls':
-      case 'xlsx':
-        return '📊';
-      case 'txt':
-        return '📃';
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-        return '🖼️';
-      default:
-        return '📎';
-    }
+  IconData _getFileIcon(String? fileType) {
+    if (fileType == null) return Icons.insert_drive_file;
+    
+    final type = fileType.toLowerCase();
+    if (type.contains('pdf')) return Icons.picture_as_pdf;
+    if (type.contains('doc') || type.contains('docx')) return Icons.description;
+    if (type.contains('xls') || type.contains('xlsx')) return Icons.table_chart;
+    if (type.contains('ppt') || type.contains('pptx')) return Icons.slideshow;
+    if (type.contains('txt')) return Icons.text_snippet;
+    if (type.contains('zip') || type.contains('rar')) return Icons.archive;
+    if (type.contains('jpg') || type.contains('jpeg') || type.contains('png')) return Icons.image;
+    return Icons.insert_drive_file;
   }
 
   @override
@@ -1142,136 +1144,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                       ],
                       const SizedBox(height: 16),
                       // Attachments
-                      const Text(
-                        'Attachments',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.inputBackground,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppColors.borderColor),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            GestureDetector(
-                              onTap: _isUploadingFiles ? null : _pickFiles,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: _isUploadingFiles ? AppColors.borderColor : AppColors.background,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: AppColors.borderColor),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.add,
-                                      color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _isUploadingFiles ? 'Uploading...' : 'Add files...',
-                                      style: TextStyle(
-                                        color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            if (_selectedFiles.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                '${_selectedFiles.length} file${_selectedFiles.length > 1 ? 's' : ''} selected',
-                                style: const TextStyle(
-                                  color: Color(0xFF94A3B8),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Column(
-                                children: List.generate(_selectedFiles.length, (index) {
-                                  final file = _selectedFiles[index];
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.background,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppColors.borderColor),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Text(
-                                          _getFileIcon(file.extension),
-                                          style: const TextStyle(fontSize: 20),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                file.name,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 14,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              Text(
-                                                '${(file.size / 1024).toStringAsFixed(2)} KB',
-                                                style: TextStyle(
-                                                  color: Colors.grey[400],
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(Icons.close, color: Colors.red, size: 20),
-                                          onPressed: () => _removeFile(index),
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      // Existing attachments in edit mode
-                      if (widget.isEditMode)
-                        _existingAttachments.isEmpty
-                          ? Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Color(0xFF0D1526),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Color(0xFF1E293B)),
-                              ),
-                              child: const Text(
-                                'No attachments.',
-                                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-                              ),
-                            )
-                          : _buildExistingAttachments(),
+                      _buildAttachmentsSection(),
                       const SizedBox(height: 16),
                       // Action Buttons
                       Row(
@@ -1390,13 +1263,19 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       final createdBy = note['created_by'];
       try {
         final formData = FormData.fromMap({
-          'files[]': await MultipartFile.fromFile(file.path, filename: fileName),
+          'files[]': await MultipartFile.fromFile(
+            file.path,
+            filename: fileName,
+          ),
           'type': 'audio',
         });
         final response = await ApiService().dio.post(
           '/upload',
           data: formData,
-          options: Options(contentType: 'multipart/form-data'),
+          options: Options(
+            contentType: 'multipart/form-data',
+            validateStatus: (status) => true,
+          ),
         );
         if (response.statusCode == 200 && response.data['success'] == true) {
           final uploaded = response.data['files'][0];
@@ -1406,6 +1285,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             'duration': duration.inSeconds,
             'created_by': createdBy,
           });
+          print('✅ [Upload] Successfully uploaded audio: ${uploaded['file_path']}');
         } else {
           print('❌ [Upload] Failed to upload audio: ${response.data}');
         }
@@ -1421,46 +1301,52 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       setState(() {
         _isLoading = true;
       });
+
       try {
-        await _stopPlayback();
-        // Upload local voice notes first
-        List<Map<String, dynamic>> audioNotes = await _uploadLocalVoiceNotes();
+        // Prepare audio notes list
+        final List<Map<String, dynamic>> audioNotes = [];
         
-        // Upload attachments if any
-        List<Map<String, dynamic>> uploadedAttachments = [];
-        if (_selectedFiles.isNotEmpty) {
-          print('📤 [CreateTask] Starting file uploads...');
-          for (var file in _selectedFiles) {
-            try {
-              if (file.path == null) {
-                print('⚠️ [CreateTask] File path is null, skipping upload');
-                continue;
-              }
+        // Add new voice note if recorded
+        if (_recordedFilePath != null) {
+          try {
+            final file = File(_recordedFilePath!);
+            if (await file.exists()) {
+              final fileName = 'voice_note_${DateTime.now().millisecondsSinceEpoch}.m4a';
+              final response = await _apiService.uploadFile(file, fileName);
               
-              print('📤 [CreateTask] Uploading file: ${file.name}');
-              final formData = FormData.fromMap({
-                'files[]': await MultipartFile.fromFile(file.path!, filename: file.name),
-                'type': 'document',
-              });
-              
-              final response = await _apiService.dio.post(
-                '/upload',
-                data: formData,
-                options: Options(contentType: 'multipart/form-data'),
-              );
-              
-              if (response.statusCode == 200 && response.data['success'] == true) {
-                final uploaded = response.data['files'][0];
-                uploadedAttachments.add({
-                  'file_path': uploaded['file_path'],
-                  'file_name': uploaded['file_name'],
-                  'file_type': file.extension,
-                  'file_size': file.size,
+              if (response['success']) {
+                audioNotes.add({
+                  'file_path': response['file_path'],
+                  'file_name': fileName,
+                  'duration': _recordingDuration.inSeconds,
                   'created_by': _currentUsername,
                 });
-                print('✅ [CreateTask] File uploaded successfully: ${file.name}');
-              } else {
-                print('❌ [CreateTask] Failed to upload file: ${response.data}');
+              }
+            }
+          } catch (e) {
+            print('❌ [CreateTask] Error uploading voice note: $e');
+          }
+        }
+
+        // Prepare attachments list
+        final List<Map<String, dynamic>> uploadedAttachments = [];
+        
+        // Upload new files
+        if (_selectedFiles.isNotEmpty) {
+          for (var file in _selectedFiles) {
+            try {
+              if (file.path != null) {
+                final response = await _apiService.uploadFile(File(file.path!), file.name);
+                
+                if (response['success']) {
+                  uploadedAttachments.add({
+                    'file_path': response['file_path'],
+                    'file_name': file.name,
+                    'file_type': file.extension ?? 'unknown',
+                    'file_size': file.size,
+                    'uploaded_by': _currentUsername,
+                  });
+                }
               }
             } catch (e) {
               print('❌ [CreateTask] Error uploading file ${file.name}: $e');
@@ -1493,6 +1379,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('Due Date: $_dueDate');
         print('Audio Notes: ${audioNotes.length}');
         print('Attachments: ${uploadedAttachments.length}');
+        print('Existing Attachments: ${_existingAttachments.length}');
 
         Map<String, dynamic> response;
         if (widget.isEditMode) {
@@ -2057,105 +1944,164 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     }
   }
 
-  // Update the existing attachments list builder
-  Widget _buildExistingAttachments() {
+  Widget _buildAttachmentsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_existingAttachments.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          const Text(
-            'Existing Attachments',
-            style: TextStyle(
-              color: Color(0xFF94A3B8),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
+        Text(
+          'Attachments',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 8),
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _existingAttachments.length,
-            itemBuilder: (context, index) {
-              final attachment = _existingAttachments[index];
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(8),
+        ),
+        const SizedBox(height: 8),
+        if (_isLoadingAttachments)
+          Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+            ),
+          )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Existing attachments
+              if (_existingAttachments.isNotEmpty) ...[
+                Text(
+                  'Existing Attachments',
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 14,
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Text(
-                      _getFileIcon(attachment.fileType),
-                      style: const TextStyle(fontSize: 20),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _existingAttachments.map((attachment) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Color(0xFF0D1526),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Color(0xFF1E293B)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
+                          Icon(
+                            _getFileIcon(attachment.fileType),
+                            color: Color(0xFF7DF9FF),
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
                           Text(
                             attachment.fileName,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: Colors.white,
-                              fontSize: 14,
+                              fontSize: 12,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                          Row(
-                            children: [
-                              Text(
-                                '${(attachment.fileSize / 1024).toStringAsFixed(2)} KB',
-                                style: const TextStyle(
-                                  color: Color(0xFF94A3B8),
-                                  fontSize: 12,
-                                ),
-                              ),
-                              if (attachment.createdBy != null) ...[
-                                const Text(
-                                  ' • ',
-                                  style: TextStyle(
-                                    color: Color(0xFF94A3B8),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                Text(
-                                  'By ${attachment.createdBy}',
-                                  style: const TextStyle(
-                                    color: Color(0xFF94A3B8),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ],
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: Icon(Icons.download, color: Color(0xFF7DF9FF), size: 16),
+                            tooltip: 'Download',
+                            onPressed: () async {
+                              await _openAttachment(attachment);
+                            },
                           ),
                         ],
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.download, color: Color(0xFF7DF9FF)),
-                      onPressed: () => _openAttachment(attachment),
-                      tooltip: 'Download',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () {
-                        setState(() {
-                          _existingAttachments.removeAt(index);
-                        });
-                      },
-                      tooltip: 'Delete',
-                    ),
-                  ],
+                    );
+                  }).toList(),
                 ),
-              );
-            },
+                const SizedBox(height: 16),
+              ],
+              // New attachments
+              if (_selectedFiles.isNotEmpty) ...[
+                Text(
+                  'New Attachments',
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _selectedFiles.map((file) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Color(0xFF0D1526),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Color(0xFF7DF9FF)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _getFileIcon(file.extension),
+                            color: Color(0xFF7DF9FF),
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            file.name,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedFiles.remove(file);
+                              });
+                            },
+                            child: Icon(
+                              Icons.close,
+                              color: Colors.red,
+                              size: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+              ],
+              // Add attachment button
+              TextButton.icon(
+                onPressed: _pickFiles,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  backgroundColor: Color(0xFF0D1526),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: Color(0xFF1E293B)),
+                  ),
+                ),
+                icon: Icon(
+                  Icons.attach_file,
+                  color: Color(0xFF7DF9FF),
+                  size: 16,
+                ),
+                label: Text(
+                  'Add Attachment',
+                  style: TextStyle(
+                    color: Color(0xFF7DF9FF),
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
       ],
     );
   }

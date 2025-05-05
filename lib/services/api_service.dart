@@ -532,15 +532,10 @@ class ApiService {
 
   Future<String?> downloadVoiceNote(VoiceNote voiceNote) async {
     try {
-      if (voiceNote.id == null) {
-        print('❌ Voice note ID is null');
-        return null;
-      }
-
-      // Use the filePath from the voice note metadata
+      // Extract the filename from the file_path
       final filePathFromMeta = voiceNote.filePath;
-      if (filePathFromMeta == null || filePathFromMeta.isEmpty) {
-        print('❌ Voice note filePath is null or empty');
+      if (filePathFromMeta == null) {
+        print('❌ Voice note file path is null');
         return null;
       }
 
@@ -555,8 +550,8 @@ class ApiService {
       final fileName = '${voiceNote.id}.wav';
       final localFilePath = '${audioDir.path}/$fileName';
 
-      // Download the actual audio file from the backend
-      final url = '${ApiService.baseUrl}/$filePathFromMeta';
+      // Download the actual audio file from the backend using the correct endpoint
+      final url = '${ApiService.baseUrl}/uploads/audio/${filePathFromMeta.split('/').last}';
       print('⬇️ Downloading audio from: $url');
       final response = await _dio.download(
         url,
@@ -568,20 +563,33 @@ class ApiService {
         ),
       );
 
-      if (response.statusCode == 200) {
-        final file = File(localFilePath);
-        final fileSize = await file.length();
-        print('✅ Voice note downloaded successfully: $localFilePath');
-        print('📏 Downloaded file size: $fileSize bytes');
-        // Print first 32 bytes for debugging
-        final bytes = await file.openRead(0, fileSize < 32 ? fileSize : 32).toList();
-        final flatBytes = bytes.expand((b) => b).toList();
-        print('🔎 First bytes: ${flatBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-        return localFilePath;
-      } else {
-        print('❌ Failed to download voice note: ${response.statusCode}');
+      // Check file existence and size after download
+      final file = File(localFilePath);
+      if (!await file.exists()) {
+        print('❌ Downloaded file does not exist at $localFilePath');
         return null;
       }
+      final fileSize = await file.length();
+      print('✅ Downloaded file exists. Size: $fileSize bytes');
+      if (fileSize == 0) {
+        print('❌ Downloaded file is empty');
+        return null;
+      }
+      if (fileSize < 1024) { // If file is less than 1KB, likely an error page
+        final content = await file.readAsString();
+        print('⚠️ Downloaded file is very small. Contents:\n$content');
+        if (content.contains('<html') || content.contains('DOCTYPE html')) {
+          print('❌ Downloaded file is an HTML error page, not audio.');
+          return null;
+        }
+      }
+
+      print('✅ Voice note downloaded successfully: $localFilePath');
+      // Print first 32 bytes for debugging
+      final bytes = await file.openRead(0, fileSize < 32 ? fileSize : 32).toList();
+      final flatBytes = bytes.expand((b) => b).toList();
+      print('🔎 First bytes: ${flatBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+      return localFilePath;
     } catch (e) {
       print('❌ Error downloading voice note: $e');
       return null;
@@ -861,7 +869,7 @@ class ApiService {
     List<String>? existingAttachmentIds,
   }) async {
     try {
-      print('📤 [API] Updating task $taskId with data:');
+      print('\n📤 [API] Updating task $taskId with data:');
       print('Title: $title');
       print('Description: $description');
       print('AssignedTo: $assignedTo');
@@ -872,50 +880,51 @@ class ApiService {
       print('New Attachments: ${attachments?.length ?? 0}');
       print('Existing Attachments: ${existingAttachmentIds?.length ?? 0}');
 
-      // Get assignee's FCM token from server (use /get_fcm_token with POST)
-      String? assigneeFcmToken;
-      try {
-        final tokenResponse = await _dio.post(
-          '/get_fcm_token',
-          data: {'username': assignedTo},
-          options: Options(
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            validateStatus: (status) => true,
-          ),
-        );
-        if (tokenResponse.statusCode == 200) {
-          assigneeFcmToken = tokenResponse.data['fcm_token'];
-        }
-      } catch (_) {}
+      final prefs = await SharedPreferences.getInstance();
+      final updatedBy = prefs.getString('username');
+      
+      if (updatedBy == null) {
+        throw Exception('User not logged in');
+      }
 
-      // Prepare the request body
-      final taskData = {
+      // Get existing audio notes
+      final existingAudioNotes = await getTaskVoiceNotes(taskId);
+      final allAudioNotes = [
+        ...existingAudioNotes.map((note) => {
+          'file_id': note.id,
+          'file_path': note.filePath,
+          'duration': note.duration.inMilliseconds, // Convert Duration to milliseconds
+          'file_name': note.fileName,
+          'created_by': note.createdBy,
+        }),
+        ...?audioNotes?.map((note) => {
+          ...note,
+          'duration': note['duration'] is Duration ? (note['duration'] as Duration).inMilliseconds : note['duration'],
+        }),
+      ];
+
+      final requestData = {
         'title': title,
         'description': description,
         'assigned_to': assignedTo,
         'assigned_by': assignedBy,
+        'updated_by': updatedBy,
         'deadline': deadline.toIso8601String(),
         'priority': priority,
         'status': status,
-        'updated_by': assignedBy,
-        'audio_notes': audioNotes,
+        'audio_notes': allAudioNotes,
+        'new_attachments': attachments,
         'alarm_settings': alarmSettings,
-        'assignee_fcm_token': assigneeFcmToken,
         'existing_attachment_ids': existingAttachmentIds,
-        'attachments': attachments,
       };
+
+      print('📤 [API] Sending update request with data:');
+      print(requestData);
 
       final response = await _dio.put(
         '/tasks/$taskId',
-        data: taskData,
+        data: requestData,
         options: Options(
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
           validateStatus: (status) => true,
         ),
       );
@@ -923,26 +932,29 @@ class ApiService {
       print('📤 [API] Update task response status: ${response.statusCode}');
       print('📤 [API] Update task response data: ${response.data}');
 
-      if (response.statusCode == 200) {
-        final responseData = response.data;
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        // Update cache for both users
+        await updateTaskCache(assignedTo, assignedBy);
         
-        // Clear all cache to force refresh
-        clearCache();
+        // Clear assignments cache for both users to force refresh
+        final assigneeAssignmentsKey = 'task_assignments_$assignedTo';
+        final assignerAssignmentsKey = 'task_assignments_$assignedBy';
+        _cacheManager.getData(assigneeAssignmentsKey)?.clear();
+        _cacheManager.getData(assignerAssignmentsKey)?.clear();
         
         // Trigger background sync
         _syncController.add(null);
         
         return {
           'success': true,
-          'message': responseData['message'] ?? 'Task updated successfully',
-          'task': responseData,
+          'message': response.data['message'] ?? 'Task updated successfully',
         };
       } else {
         print('❌ [API] Failed to update task: ${response.statusCode}');
         print('❌ [API] Error message: ${response.data}');
         return {
           'success': false,
-          'message': response.data['message'] ?? 'Failed to update task: ${response.statusCode}',
+          'message': response.data['message'] ?? 'Failed to update task',
         };
       }
     } catch (e) {
@@ -1012,5 +1024,52 @@ class ApiService {
   Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('token');
+  }
+
+  Future<Map<String, dynamic>> uploadFile(File file, String fileName) async {
+    try {
+      print('📤 [API] Uploading file: $fileName');
+      
+      final formData = FormData.fromMap({
+        'files[]': await MultipartFile.fromFile(
+          file.path,
+          filename: fileName,
+        ),
+        'type': 'document',
+      });
+
+      final response = await _dio.post(
+        '/upload',
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+          validateStatus: (status) => true,
+        ),
+      );
+
+      print('📤 [API] Upload response status: ${response.statusCode}');
+      print('📤 [API] Upload response data: ${response.data}');
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final uploaded = response.data['files'][0];
+        return {
+          'success': true,
+          'file_path': uploaded['file_path'],
+          'file_name': uploaded['file_name'],
+        };
+      } else {
+        print('❌ [API] Failed to upload file: ${response.data}');
+        return {
+          'success': false,
+          'message': response.data['message'] ?? 'Failed to upload file',
+        };
+      }
+    } catch (e) {
+      print('❌ [API] Error uploading file: $e');
+      return {
+        'success': false,
+        'message': 'Failed to upload file: $e',
+      };
+    }
   }
 } 
