@@ -97,8 +97,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Duration _playbackPosition = Duration.zero;
   Timer? _playbackTimer;
   Duration _totalDuration = Duration.zero;
-  StreamSubscription? _positionSubscription;
-  StreamSubscription? _durationSubscription;
+  StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<Duration>? _durationSubscription;
 
   List<PlatformFile> _selectedFiles = [];
   bool _isUploadingFiles = false;
@@ -277,6 +277,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       setState(() {
         _playbackPosition = position;
       });
+      // Check if playback is complete (allowing a small margin)
+      if (_isPlaying && _totalDuration.inMilliseconds > 0 &&
+          (position.inMilliseconds >= _totalDuration.inMilliseconds - 200)) {
+        setState(() {
+          _isPlaying = false;
+          _currentlyPlayingNoteIndex = null;
+          _playbackPosition = Duration.zero;
+        });
+      }
     });
 
     // Listen to duration changes
@@ -284,6 +293,30 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       setState(() {
         _totalDuration = duration;
       });
+    });
+
+    // Listen to player state changes
+    _audioPlayer.onPlayerStateChanged.listen(
+      (state) {
+        if (mounted && !_isDisposed) {
+          // Do NOT reset _isPlaying here; rely on position check above
+          print('🎵 [Audio] Player state changed: $state');
+        }
+      },
+      onError: (error) {
+        print('❌ [Audio] State listener error: $error');
+      },
+    );
+
+    // Listen to playback completion (keep for safety, but rely on position check)
+    _audioPlayer.onPlayerComplete.listen((_) {
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _isPlaying = false;
+          _currentlyPlayingNoteIndex = null;
+          _playbackPosition = Duration.zero;
+        });
+      }
     });
   }
 
@@ -883,16 +916,21 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                         Row(
                                           children: [
                                             IconButton(
-                                              icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, color: Color(0xFF7DF9FF)),
+                                              icon: Icon(
+                                                isPlaying ? Icons.pause : Icons.play_arrow,
+                                                color: const Color(0xFF7DF9FF),
+                                              ),
                                               onPressed: () async {
                                                 if (isPlaying) {
                                                   await _stopPlayback();
                                                   setState(() {
                                                     _currentlyPlayingNoteIndex = null;
+                                                    _isPlaying = false;
                                                   });
                                                 } else {
                                                   setState(() {
                                                     _currentlyPlayingNoteIndex = index;
+                                                    _isPlaying = true;
                                                   });
                                                   await _audioPlayer.play(DeviceFileSource(note['file_path']));
                                                 }
@@ -1005,7 +1043,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                             itemCount: _voiceNotes.length,
                             itemBuilder: (context, index) {
                               final voiceNote = _voiceNotes[index];
-                              final isPlaying = _currentlyPlayingNoteIndex == index;
+                              final isPlaying = _currentlyPlayingNoteIndex == index && _isPlaying;
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 padding: const EdgeInsets.all(12),
@@ -1014,63 +1052,88 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(color: const Color(0xFF1E293B)),
                                 ),
-                                child: Row(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    IconButton(
-                                      icon: Icon(
-                                        isPlaying ? Icons.pause : Icons.play_arrow,
-                                        color: const Color(0xFF7DF9FF),
-                                      ),
-                                      onPressed: () async {
-                                        if (isPlaying) {
-                                          await _stopPlayback();
-                                          setState(() {
-                                            _currentlyPlayingNoteIndex = null;
-                                          });
-                                        } else {
-                                          setState(() {
-                                            _currentlyPlayingNoteIndex = index;
-                                          });
-                                          await _playVoiceNote(voiceNote);
-                                        }
-                                      },
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          icon: Icon(
+                                            isPlaying ? Icons.pause : Icons.play_arrow,
+                                            color: const Color(0xFF7DF9FF),
+                                          ),
+                                          onPressed: () async {
+                                            if (isPlaying) {
+                                              await _stopPlayback();
+                                              setState(() {
+                                                _currentlyPlayingNoteIndex = null;
+                                                _isPlaying = false;
+                                              });
+                                            } else {
+                                              setState(() {
+                                                _currentlyPlayingNoteIndex = index;
+                                                _isPlaying = true;
+                                              });
+                                              await _playVoiceNote(voiceNote);
+                                            }
+                                          },
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Voice Note ${index + 1}',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'By: ${voiceNote.createdBy}',
+                                                style: const TextStyle(
+                                                  color: Color(0xFF94A3B8),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Voice Note ${index + 1}',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w500,
+                                    // Always show timeline for currently playing note
+                                    if (isPlaying)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 8.0),
+                                        child: Row(
+                                          children: [
+                                            Text(
+                                              _formatDuration(_playbackPosition),
+                                              style: const TextStyle(color: Colors.white, fontSize: 12),
                                             ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'By: ${voiceNote.createdBy}',
-                                            style: const TextStyle(
-                                              color: Color(0xFF94A3B8),
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                          if (isPlaying && _totalDuration.inSeconds > 0) ...[
-                                            const SizedBox(height: 8),
-                                            ClipRRect(
-                                              borderRadius: BorderRadius.circular(4),
-                                              child: LinearProgressIndicator(
-                                                value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
-                                                backgroundColor: const Color(0xFF0D1526),
-                                                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
-                                                minHeight: 2,
+                                            Expanded(
+                                              child: Padding(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                                child: LinearProgressIndicator(
+                                                  value: _totalDuration.inMilliseconds == 0
+                                                      ? 0
+                                                      : _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
+                                                  backgroundColor: Colors.grey[800],
+                                                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+                                                  minHeight: 4,
+                                                ),
                                               ),
                                             ),
+                                            Text(
+                                              _formatDuration(_totalDuration),
+                                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                                            ),
                                           ],
-                                        ],
+                                        ),
                                       ),
-                                    ),
                                   ],
                                 ),
                               );
@@ -1874,11 +1937,21 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         await _audioPlayer.stop();
       }
 
-      // Get the API URL for the voice note
-      final apiUrl = '${ApiService.baseUrl}/tasks/$taskId/audio';
-      print('🎵 Playing voice note from URL: $apiUrl');
+      // First try to get the file path from the voice note
+      String? filePath = voiceNote.filePath;
+      
+      // If no file path, try to download the audio
+      if (filePath == null || !File(filePath).existsSync()) {
+        print('📥 Downloading voice note...');
+        filePath = await _apiService.downloadVoiceNote(voiceNote);
+        if (filePath == null) {
+          throw Exception('Failed to download voice note');
+        }
+      }
 
-      // Configure audio player for streaming
+      print('🎵 Playing voice note from local file: $filePath');
+
+      // Configure audio player for local file playback
       await _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
       
       // Set audio context mode to spatial audio
@@ -1897,9 +1970,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         ),
       ));
 
-      // Start playback
-      await _audioPlayer.setSourceUrl(apiUrl);
-      await _audioPlayer.resume();
+      // Start playback from local file
+      await _audioPlayer.play(DeviceFileSource(filePath));
+
+      // Fetch and set duration after playback starts
+      final duration = await _audioPlayer.getDuration();
+      print('🎵 [Audio] Fetched duration: $duration');
+      if (duration != null && mounted) {
+        setState(() {
+          _totalDuration = duration;
+        });
+      }
       
       setState(() {
         _isPlaying = true;

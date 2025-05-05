@@ -519,11 +519,24 @@ class ApiService {
     try {
       print('📞 [API] Fetching voice notes for task: $taskId');
       final response = await _dio.get('/tasks/$taskId/audio');
-      print('✅ [API] Voice notes response status: ${response.statusCode}');
+      print('✅ [API] Voice notes response status: [36m[1m${response.statusCode}[0m');
       print('✅ [API] Voice notes response data: ${response.data}');
       if (response.statusCode == 200) {
         final List<dynamic> data = response.data;
-        return data.map((json) => VoiceNote.fromJson(json)).toList();
+        // Patch: Ensure each VoiceNote has taskId set
+        return data.map((json) {
+          final note = VoiceNote.fromJson(json);
+          return note.taskId == null ? VoiceNote(
+            id: note.id,
+            taskId: taskId,
+            filePath: note.filePath,
+            audioData: note.audioData,
+            createdBy: note.createdBy,
+            createdAt: note.createdAt,
+            duration: note.duration,
+            fileName: note.fileName,
+          ) : note;
+        }).toList();
       } else if (response.statusCode == 404) {
         print('ℹ️ [API] No voice notes found for task');
         return [];
@@ -538,25 +551,58 @@ class ApiService {
 
   Future<String?> downloadVoiceNote(VoiceNote voiceNote) async {
     try {
-      if (voiceNote.audioData == null) {
-        print('❌ [API] No audio data available for download');
+      if (voiceNote.id == null) {
+        print('❌ Voice note ID is null');
         return null;
       }
 
-      final tempDir = await getTemporaryDirectory();
-      final fileName = voiceNote.fileName.isNotEmpty ? voiceNote.fileName : 'voice_note.wav';
-      final file = File('${tempDir.path}/$fileName');
+      // Use the filePath from the voice note metadata
+      final filePathFromMeta = voiceNote.filePath;
+      if (filePathFromMeta == null || filePathFromMeta.isEmpty) {
+        print('❌ Voice note filePath is null or empty');
+        return null;
+      }
 
-      print('📝 [API] Saving voice note to: ${file.path}');
-      
-      // Decode base64 audio data and write to file
-      final bytes = base64.decode(voiceNote.audioData!);
-      await file.writeAsBytes(bytes);
-      
-      print('✅ [API] Voice note saved successfully');
-      return file.path;
+      // Create directory for audio files if it doesn't exist
+      final directory = await getApplicationDocumentsDirectory();
+      final audioDir = Directory('${directory.path}/audio');
+      if (!await audioDir.exists()) {
+        await audioDir.create(recursive: true);
+      }
+
+      // Always use .wav extension for audio files
+      final fileName = '${voiceNote.id}.wav';
+      final localFilePath = '${audioDir.path}/$fileName';
+
+      // Download the actual audio file from the backend
+      final url = '${ApiService.baseUrl}/$filePathFromMeta';
+      print('⬇️ Downloading audio from: $url');
+      final response = await _dio.download(
+        url,
+        localFilePath,
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: Duration(minutes: 2),
+          sendTimeout: Duration(minutes: 2),
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final file = File(localFilePath);
+        final fileSize = await file.length();
+        print('✅ Voice note downloaded successfully: $localFilePath');
+        print('📏 Downloaded file size: $fileSize bytes');
+        // Print first 32 bytes for debugging
+        final bytes = await file.openRead(0, fileSize < 32 ? fileSize : 32).toList();
+        final flatBytes = bytes.expand((b) => b).toList();
+        print('🔎 First bytes: ${flatBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+        return localFilePath;
+      } else {
+        print('❌ Failed to download voice note: ${response.statusCode}');
+        return null;
+      }
     } catch (e) {
-      print('❌ [API] Error downloading voice note: $e');
+      print('❌ Error downloading voice note: $e');
       return null;
     }
   }
@@ -998,5 +1044,11 @@ class ApiService {
         'message': 'Connection error. Please try again.',
       };
     }
+  }
+
+  // Helper to get auth token from SharedPreferences
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('token');
   }
 } 
