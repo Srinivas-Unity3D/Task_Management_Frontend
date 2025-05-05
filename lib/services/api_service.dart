@@ -414,29 +414,10 @@ class ApiService {
     required String priority,
     required String status,
     List<Map<String, dynamic>>? audioNotes,
-    List<File>? attachments,
+    List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
-      // Convert attachments to base64
-      List<Map<String, dynamic>> attachmentData = [];
-      if (attachments != null) {
-        for (var file in attachments) {
-          if (await file.exists()) {
-            List<int> fileBytes = await file.readAsBytes();
-            String base64File = base64Encode(fileBytes);
-            String fileName = file.path.split('/').last;
-            String fileType = fileName.split('.').last;
-            
-            attachmentData.add({
-              'file_name': fileName,
-              'file_type': fileType,
-              'file_data': base64File,
-            });
-          }
-        }
-      }
-
       // Get assignee's FCM token from server (use /get_fcm_token with POST)
       String? assigneeFcmToken;
       try {
@@ -464,7 +445,7 @@ class ApiService {
         'status': status,
         'audio_notes': audioNotes,
         'alarm_settings': alarmSettings,
-        'attachments': attachmentData,
+        'attachments': attachments,
         'assignee_fcm_token': assigneeFcmToken,
       };
 
@@ -875,7 +856,7 @@ class ApiService {
     required String priority,
     required String status,
     List<Map<String, dynamic>>? audioNotes,
-    List<File>? attachments,
+    List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
     List<String>? existingAttachmentIds,
   }) async {
@@ -924,27 +905,8 @@ class ApiService {
         'alarm_settings': alarmSettings,
         'assignee_fcm_token': assigneeFcmToken,
         'existing_attachment_ids': existingAttachmentIds,
+        'attachments': attachments,
       };
-
-      // Convert attachments to base64 if present
-      if (attachments != null && attachments.isNotEmpty) {
-        List<Map<String, dynamic>> attachmentData = [];
-        for (var file in attachments) {
-          if (await file.exists()) {
-            List<int> fileBytes = await file.readAsBytes();
-            String base64File = base64Encode(fileBytes);
-            String fileName = file.path.split('/').last;
-            String fileType = fileName.split('.').last;
-            
-            attachmentData.add({
-              'file_name': fileName,
-              'file_type': fileType,
-              'file_data': base64File,
-            });
-          }
-        }
-        taskData['attachments'] = attachmentData;
-      }
 
       final response = await _dio.put(
         '/tasks/$taskId',

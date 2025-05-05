@@ -1425,6 +1425,49 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         await _stopPlayback();
         // Upload local voice notes first
         List<Map<String, dynamic>> audioNotes = await _uploadLocalVoiceNotes();
+        
+        // Upload attachments if any
+        List<Map<String, dynamic>> uploadedAttachments = [];
+        if (_selectedFiles.isNotEmpty) {
+          print('📤 [CreateTask] Starting file uploads...');
+          for (var file in _selectedFiles) {
+            try {
+              if (file.path == null) {
+                print('⚠️ [CreateTask] File path is null, skipping upload');
+                continue;
+              }
+              
+              print('📤 [CreateTask] Uploading file: ${file.name}');
+              final formData = FormData.fromMap({
+                'files[]': await MultipartFile.fromFile(file.path!, filename: file.name),
+                'type': 'document',
+              });
+              
+              final response = await _apiService.dio.post(
+                '/upload',
+                data: formData,
+                options: Options(contentType: 'multipart/form-data'),
+              );
+              
+              if (response.statusCode == 200 && response.data['success'] == true) {
+                final uploaded = response.data['files'][0];
+                uploadedAttachments.add({
+                  'file_path': uploaded['file_path'],
+                  'file_name': uploaded['file_name'],
+                  'file_type': file.extension,
+                  'file_size': file.size,
+                  'created_by': _currentUsername,
+                });
+                print('✅ [CreateTask] File uploaded successfully: ${file.name}');
+              } else {
+                print('❌ [CreateTask] Failed to upload file: ${response.data}');
+              }
+            } catch (e) {
+              print('❌ [CreateTask] Error uploading file ${file.name}: $e');
+            }
+          }
+        }
+
         // Add existing voice notes (edit mode)
         for (var voiceNote in _voiceNotes) {
           if (voiceNote.filePath != null) {
@@ -1449,7 +1492,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('Status: ${_getStatusString(_status)}');
         print('Due Date: $_dueDate');
         print('Audio Notes: ${audioNotes.length}');
-        print('Attachments: ${_selectedFiles.length}');
+        print('Attachments: ${uploadedAttachments.length}');
 
         Map<String, dynamic> response;
         if (widget.isEditMode) {
@@ -1463,45 +1506,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             deadline: _dueDate ?? DateTime.now(),
             priority: _priority.toLowerCase(),
             status: _getStatusString(_status),
-            audioNotes: audioNotes,  // Changed to handle multiple audio notes
-            attachments: _attachmentFiles,
+            audioNotes: audioNotes,
+            attachments: uploadedAttachments,
             alarmSettings: _alarmSettings,
             existingAttachmentIds: _existingAttachments.map((a) => a.id).toList(),
           );
-
-          print('📤 [CreateTask] Update task response: $response');
-          
-          if (!response['success']) {
-            throw Exception(response['message'] ?? 'Operation failed');
-          }
-
-          // Wait a moment to ensure DB update is complete
-          await Future.delayed(const Duration(milliseconds: 300));
-
-          // Prepare task data for socket notification
-          final taskData = {
-            'task_id': widget.taskId,
-            'title': _titleController.text,
-            'description': _descriptionController.text,
-            'assigned_to': _selectedAssignee,
-            'assigned_by': _currentUsername,
-            'deadline': (_dueDate ?? DateTime.now()).toIso8601String(),
-            'priority': _priority.toLowerCase(),
-            'status': _getStatusString(_status),
-            'type': 'task_updated',
-            'updated_by': _currentUsername,
-          };
-
-          // Emit socket notification
-          print('🔔 [CreateTask] Emitting socket notification: $taskData');
-          _socketService.emitTaskNotification(taskData);
-
-          // Clear cache to force fresh data on next load
-          _apiService.clearCache();
-
-          // Wait for socket event to be processed
-          await Future.delayed(const Duration(milliseconds: 300));
-
         } else {
           // Create new task
           response = await _apiService.createTask(
@@ -1512,36 +1521,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             deadline: _dueDate ?? DateTime.now(),
             priority: _priority.toLowerCase(),
             status: 'pending',
-            audioNotes: audioNotes,  // Changed to handle multiple audio notes
-            attachments: _attachmentFiles,
+            audioNotes: audioNotes,
+            attachments: uploadedAttachments,
             alarmSettings: _alarmSettings,
           );
+        }
 
-          print('📤 [CreateTask] Create task response: $response');
-
-          if (!response['success']) {
-            throw Exception(response['message'] ?? 'Operation failed');
-          }
-
-          // Clear cache for both users to force refresh
-          _apiService.clearCache();
-
-          // Emit socket notification with full task data
-          final taskData = {
-            'task_id': response['task_id'],
-            'title': _titleController.text,
-            'description': _descriptionController.text,
-            'assigned_to': _selectedAssignee,
-            'assigned_by': _currentUsername,
-            'deadline': (_dueDate ?? DateTime.now()).toIso8601String(),
-            'priority': _priority.toLowerCase(),
-            'status': 'pending',
-            'type': 'task_created',
-            'updated_by': _currentUsername,
-          };
-          
-          print('🔔 [CreateTask] Emitting socket notification: $taskData');
-          _socketService.emitTaskNotification(taskData);
+        print('📤 [CreateTask] Update task response: $response');
+        
+        if (!response['success']) {
+          throw Exception(response['message'] ?? 'Operation failed');
         }
 
         // Show success message
@@ -1555,13 +1544,13 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               backgroundColor: Colors.green,
             ),
           );
-
-          // Wait for server to process the update
-          await Future.delayed(const Duration(milliseconds: 500));
-
-          // Pop back with success result
-          Navigator.pop(context, true);
         }
+
+        // Wait for server to process the update
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // Pop back with success result
+        Navigator.pop(context, true);
       } catch (e) {
         print('❌ [CreateTask] Error: $e');
         if (mounted) {
@@ -2147,19 +2136,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                         ],
                       ),
                     ),
-                    // Download button
                     IconButton(
                       icon: const Icon(Icons.download, color: Color(0xFF7DF9FF)),
                       onPressed: () => _openAttachment(attachment),
                       tooltip: 'Download',
                     ),
-                    // Delete button
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
                       onPressed: () {
                         setState(() {
                           _existingAttachments.removeAt(index);
-                          _selectedFiles.removeAt(index);
                         });
                       },
                       tooltip: 'Delete',
