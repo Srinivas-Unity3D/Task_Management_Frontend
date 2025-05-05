@@ -81,6 +81,9 @@ class ApiService {
     validateStatus: (status) => true,
   ));
 
+  // Add getter for dio instance
+  Dio get dio => _dio;
+
   // Initialize the CacheManager
   final CacheManager _cacheManager = CacheManager();
 
@@ -410,7 +413,7 @@ class ApiService {
     required DateTime deadline,
     required String priority,
     required String status,
-    Map<String, dynamic>? audioNote,
+    List<Map<String, dynamic>>? audioNotes,
     List<File>? attachments,
     Map<String, dynamic>? alarmSettings,
   }) async {
@@ -434,19 +437,21 @@ class ApiService {
         }
       }
 
-      // Get assignee's FCM token from server
-      final tokenResponse = await http.get(
-        Uri.parse('$baseUrl/user/$assignedTo/fcm-token'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      );
-
+      // Get assignee's FCM token from server (use /get_fcm_token with POST)
       String? assigneeFcmToken;
-      if (tokenResponse.statusCode == 200) {
-        assigneeFcmToken = json.decode(tokenResponse.body)['fcm_token'];
-      }
+      try {
+        final tokenResponse = await http.post(
+          Uri.parse('$baseUrl/get_fcm_token'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: json.encode({'username': assignedTo}),
+        );
+        if (tokenResponse.statusCode == 200) {
+          assigneeFcmToken = json.decode(tokenResponse.body)['fcm_token'];
+        }
+      } catch (_) {}
 
       // Prepare the request body
       final taskData = {
@@ -457,14 +462,14 @@ class ApiService {
         'deadline': deadline.toIso8601String(),
         'priority': priority,
         'status': status,
-        'audio_note': audioNote,
+        'audio_notes': audioNotes,
         'alarm_settings': alarmSettings,
         'attachments': attachmentData,
         'assignee_fcm_token': assigneeFcmToken,
       };
 
       final response = await http.post(
-        Uri.parse('$baseUrl/api/tasks'),
+        Uri.parse('$baseUrl/tasks'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -513,20 +518,12 @@ class ApiService {
   Future<List<VoiceNote>> getTaskVoiceNotes(String taskId) async {
     try {
       print('📞 [API] Fetching voice notes for task: $taskId');
-      final response = await _dio.get('/api/tasks/$taskId/voice-notes');
-      
+      final response = await _dio.get('/tasks/$taskId/audio');
       print('✅ [API] Voice notes response status: ${response.statusCode}');
       print('✅ [API] Voice notes response data: ${response.data}');
-      
       if (response.statusCode == 200) {
         final List<dynamic> data = response.data;
-        return data.map((json) {
-          // Add audio_id to the json if it doesn't exist
-          if (!json.containsKey('audio_id') && !json.containsKey('id')) {
-            json['id'] = Uuid().v4();  // Generate a temporary ID if none exists
-          }
-          return VoiceNote.fromJson(json);
-        }).toList();
+        return data.map((json) => VoiceNote.fromJson(json)).toList();
       } else if (response.statusCode == 404) {
         print('ℹ️ [API] No voice notes found for task');
         return [];
@@ -535,7 +532,7 @@ class ApiService {
       }
     } catch (e) {
       print('❌ [API] Error getting task voice notes: $e');
-      return [];  // Return empty list instead of throwing
+      return [];
     }
   }
 
@@ -831,9 +828,10 @@ class ApiService {
     required DateTime deadline,
     required String priority,
     required String status,
-    Map<String, dynamic>? audioNote,
+    List<Map<String, dynamic>>? audioNotes,
     List<File>? attachments,
     Map<String, dynamic>? alarmSettings,
+    List<String>? existingAttachmentIds,
   }) async {
     try {
       print('📤 [API] Updating task $taskId with data:');
@@ -843,19 +841,28 @@ class ApiService {
       print('AssignedBy: $assignedBy');
       print('Priority: $priority');
       print('Status: $status');
+      print('Audio Notes: ${audioNotes?.length ?? 0}');
+      print('New Attachments: ${attachments?.length ?? 0}');
+      print('Existing Attachments: ${existingAttachmentIds?.length ?? 0}');
 
-      // Get assignee's FCM token from server
-      final tokenResponse = await _dio.get(
-        '/user/$assignedTo/fcm-token',
-        options: Options(
-          validateStatus: (status) => true,
-        ),
-      );
-
+      // Get assignee's FCM token from server (use /get_fcm_token with POST)
       String? assigneeFcmToken;
-      if (tokenResponse.statusCode == 200) {
-        assigneeFcmToken = tokenResponse.data['fcm_token'];
-      }
+      try {
+        final tokenResponse = await _dio.post(
+          '/get_fcm_token',
+          data: {'username': assignedTo},
+          options: Options(
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            validateStatus: (status) => true,
+          ),
+        );
+        if (tokenResponse.statusCode == 200) {
+          assigneeFcmToken = tokenResponse.data['fcm_token'];
+        }
+      } catch (_) {}
 
       // Prepare the request body
       final taskData = {
@@ -867,9 +874,10 @@ class ApiService {
         'priority': priority,
         'status': status,
         'updated_by': assignedBy,
-        'audio_note': audioNote,
+        'audio_notes': audioNotes,
         'alarm_settings': alarmSettings,
         'assignee_fcm_token': assigneeFcmToken,
+        'existing_attachment_ids': existingAttachmentIds,
       };
 
       // Convert attachments to base64 if present
