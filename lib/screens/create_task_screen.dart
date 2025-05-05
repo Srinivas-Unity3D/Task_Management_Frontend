@@ -26,6 +26,7 @@ class CreateTaskScreen extends StatefulWidget {
   final String? initialTitle;
   final String? initialDescription;
   final String? initialAssignee;
+  final String? initialAssigner;
   final String? initialPriority;
   final DateTime? initialDueDate;
   final String? initialStatus;
@@ -37,6 +38,7 @@ class CreateTaskScreen extends StatefulWidget {
     this.initialTitle,
     this.initialDescription,
     this.initialAssignee,
+    this.initialAssigner,
     this.initialPriority,
     this.initialDueDate,
     this.initialStatus,
@@ -1388,8 +1390,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             taskId: widget.taskId!,
             title: _titleController.text,
             description: _descriptionController.text,
-            assignedTo: _selectedAssignee ?? '',
-            assignedBy: _currentUsername ?? '',
+            assignedTo: widget.initialAssignee ?? '',
+            assignedBy: widget.initialAssigner ?? '',
             deadline: _dueDate ?? DateTime.now(),
             priority: _priority.toLowerCase(),
             status: _getStatusString(_status),

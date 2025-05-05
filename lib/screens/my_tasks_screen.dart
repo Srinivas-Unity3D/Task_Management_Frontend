@@ -409,6 +409,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                           initialTitle: task.title,
                           initialDescription: task.description,
                           initialAssignee: task.assignedTo,
+                          initialAssigner: task.assignedBy,
                           initialPriority: task.priority.toString().split('.').last,
                           initialDueDate: task.deadline,
                           initialStatus: task.status.toString().split('.').last,

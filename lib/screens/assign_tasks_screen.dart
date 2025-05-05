@@ -581,6 +581,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
                           initialTitle: assignment.taskName,
                           initialDescription: assignment.description,
                           initialAssignee: assignment.assigneeName,
+                          initialAssigner: assignment.assignerName,
                           initialPriority: assignment.priority,
                           initialDueDate: assignment.dueDate,
                           initialStatus: assignment.currentTask,
