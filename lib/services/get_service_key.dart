@@ -41,7 +41,8 @@ class GetServerKey {
   GetServerKey._internal();
 
   // OAuth 2.0 scope for FCM
-  static const _scope = 'https://www.googleapis.com/auth/firebase.messaging';
+  // static const _scope = 'https://www.googleapis.com/auth/firebase.messaging';
+  static const _scope = 'https://fcm.googleapis.com/v1/projects/task-man-srinivas-2/messages:send';
   // Path to service account JSON in assets
   static const _serviceAccountPath = 'assets/service-account-key.json';
   // Token cache

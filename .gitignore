@@ -45,5 +45,5 @@ app.*.map.json
 /android/app/release
 
 
-/assets/service-account-key.json
-/lib/services/get_service_key.dart
+#/assets/service-account-key.json
+#/lib/services/get_service_key.dart
