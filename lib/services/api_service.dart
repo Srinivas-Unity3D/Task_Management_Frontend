@@ -473,7 +473,7 @@ class ApiService {
 
       final response = await http
           .post(
-        Uri.parse('$baseUrl/api/tasks'),
+        Uri.parse('$baseUrl/tasks'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
