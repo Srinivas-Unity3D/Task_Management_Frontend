@@ -193,6 +193,23 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   }
 
   Widget _buildTaskCard(Task task) {
+    Color _getStatusColor(String status) {
+      switch (status.toLowerCase()) {
+        case 'pending':
+          return AppColors.pending;
+        case 'in_progress':
+          return AppColors.inProgress;
+        case 'completed':
+          return AppColors.completed;
+        default:
+          return AppColors.textGrey;
+      }
+    }
+
+    String _formatDate(DateTime date) {
+      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -312,20 +329,53 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ],
           ),
           const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: _getPriorityColor(task.priority).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              task.priority.toString().split('.').last,
-              style: TextStyle(
-                color: _getPriorityColor(task.priority),
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
+          Row(
+            children: [
+              // Priority badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _getPriorityColor(task.priority).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  task.priority.toString().split('.').last,
+                  style: TextStyle(
+                    color: _getPriorityColor(task.priority),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              // Status badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(task.status.toString().split('.').last).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  task.status.toString().split('.').last,
+                  style: TextStyle(
+                    color: _getStatusColor(task.status.toString().split('.').last),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Due date
+              Icon(Icons.calendar_today, size: 12, color: AppColors.textGrey),
+              const SizedBox(width: 2),
+              Text(
+                _formatDate(task.deadline),
+                style: TextStyle(
+                  color: AppColors.textGrey,
+                  fontSize: 10,
+                ),
+              ),
+            ],
           ),
         ],
       ),
