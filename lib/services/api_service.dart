@@ -78,8 +78,7 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> updateFcmToken(
-      String username, String fcmToken) async {
+  Future<Map<String, dynamic>> updateFcmToken(String username, String fcmToken) async {
     try {
       // First get the user_id for the username using POST request
       final response = await http.post(
@@ -94,6 +93,7 @@ class ApiService {
       );
 
       if (response.statusCode != 200) {
+        print('Failed to get user ID. Status: ${response.statusCode}, Body: ${response.body}');
         return {
           'success': false,
           'message': 'Failed to get user ID',
@@ -102,6 +102,14 @@ class ApiService {
 
       final userData = json.decode(response.body);
       final userId = userData['user_id'];
+
+      if (userId == null) {
+        print('User ID not found in response: ${response.body}');
+        return {
+          'success': false,
+          'message': 'User ID not found',
+        };
+      }
 
       // Now update the FCM token
       final updateResponse = await http.post(
