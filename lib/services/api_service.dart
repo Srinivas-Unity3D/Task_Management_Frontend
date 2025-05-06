@@ -17,6 +17,7 @@ import 'send_notification_service.dart';
 
 class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
+  // static const String baseUrl = 'http://10.20.0.248:5000';
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
     connectTimeout: const Duration(seconds: 10),

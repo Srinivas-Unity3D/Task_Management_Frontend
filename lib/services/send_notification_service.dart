@@ -128,6 +128,7 @@ class SendNotificationService {
     try {
       // Retrieve server key
       final String? serverKey = await GetServerKey().getServerKeyToken();
+      print("Server Key: --> $serverKey");
       if (serverKey == null || serverKey.isEmpty) {
         debugPrint('❌ Failed to retrieve FCM server key');
         return NotificationResult(
