@@ -31,7 +31,7 @@ void main() async {  // Made async to properly handle initialization
 
   // Initialize socket service
   final socketService = SocketService.instance;
-  socketService.init('http://10.20.0.248:5000');  // Updated to match your server IP
+  socketService.init('http://134.209.149.12:5000');  // Updated to match your server IP
   
   // Get current user and register with socket
   final prefs = await SharedPreferences.getInstance();
