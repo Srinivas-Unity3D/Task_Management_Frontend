@@ -192,6 +192,21 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     }
   }
 
+  Color _getPriorityColorString(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'low':
+        return Colors.green;
+      case 'medium':
+        return Colors.yellow;
+      case 'high':
+        return Colors.orange;
+      case 'urgent':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
   Widget _buildTaskCard(Task task) {
     Color _getStatusColor(String status) {
       switch (status.toLowerCase()) {
@@ -335,13 +350,13 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: _getPriorityColor(task.priority).withOpacity(0.2),
+                  color: _getPriorityColorString(task.priority.toString().split('.').last).withOpacity(0.2),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   task.priority.toString().split('.').last,
                   style: TextStyle(
-                    color: _getPriorityColor(task.priority),
+                    color: _getPriorityColorString(task.priority.toString().split('.').last),
                     fontSize: 10,
                     fontWeight: FontWeight.w500,
                   ),
