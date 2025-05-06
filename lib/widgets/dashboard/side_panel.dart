@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Add this import for SystemNavigator
 import '../../theme/colors.dart';
 import '../../models/user.dart';
-import '../../services/auth_service.dart';
 
 class SidePanel extends StatelessWidget {
   final VoidCallback onLogout;
@@ -21,64 +20,54 @@ class SidePanel extends StatelessWidget {
   Future<void> _showLogoutConfirmation(BuildContext context) async {
     final bool? shouldLogout = await showDialog<bool>(
       context: context,
-      barrierDismissible: false, // Prevent dismissing by tapping outside
       builder: (BuildContext context) {
-        return WillPopScope(
-          onWillPop: () async => false, // Prevent back button from dismissing
-          child: AlertDialog(
-            backgroundColor: AppColors.cardBackground,
-            title: const Text(
-              'Logout',
-              style: TextStyle(
-                color: AppColors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
+        return AlertDialog(
+          backgroundColor: AppColors.cardBackground,
+          title: const Text(
+            'Logout',
+            style: TextStyle(
+              color: AppColors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
             ),
-            content: const Text(
-              'Are you sure you want to logout?',
-              style: TextStyle(
-                color: AppColors.textGrey,
-                fontSize: 16,
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text(
-                  'No',
-                  style: TextStyle(
-                    color: AppColors.textGrey,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text(
-                  'Yes',
-                  style: TextStyle(
-                    color: AppColors.accentCyan,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
           ),
+          content: const Text(
+            'Are you sure you want to logout?',
+            style: TextStyle(
+              color: AppColors.textGrey,
+              fontSize: 16,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'No',
+                style: TextStyle(
+                  color: AppColors.textGrey,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text(
+                'Yes',
+                style: TextStyle(
+                  color: AppColors.accentCyan,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
 
     if (shouldLogout == true) {
-      // Get the root navigator context
-      final rootContext = Navigator.of(context, rootNavigator: true).context;
-      
-      // Close all dialogs and drawers first
       Navigator.of(context).pop(); // Close the side panel
-      
-      // Call logout with root context and prevent any screen rebuilds
-      await AuthService().logout(rootContext);
+      onLogout();
     }
   }
 

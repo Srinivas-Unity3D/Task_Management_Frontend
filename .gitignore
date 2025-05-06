@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+
+/assets/service-account-key.json
+/lib/services/get_service_key.dart

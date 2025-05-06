@@ -1,24 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
+import 'package:get/get_core/src/get_main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import '../services/notification_firebase_service.dart';
+import '../widgets/dashboard/profile_section.dart';
+import '../widgets/dashboard/navigation_menu.dart';
+import '../widgets/dashboard/stats_card.dart';
+import '../models/user.dart';
 import '../models/task.dart';
 import '../models/task_stats.dart';
-import '../models/user.dart';
 import '../models/view_state.dart';
-import '../screens/assign_tasks_screen.dart';
-import '../screens/create_task_screen.dart';
-import '../screens/my_tasks_screen.dart';
-import '../services/api_service.dart';
-import '../services/audio_service.dart';
-import '../services/notification_state_service.dart';
-import '../services/socket_service.dart';
 import '../theme/colors.dart';
-import '../widgets/common_app_bar.dart';
-import '../widgets/custom_text_field.dart';
-import '../widgets/dashboard/side_panel.dart';
-import '../widgets/dashboard/stats_card.dart';
 import 'sign_in_screen.dart';
+import '../widgets/dashboard/side_panel.dart';
+import '../widgets/custom_text_field.dart';
+import '../services/api_service.dart';
+import '../screens/create_task_screen.dart';
+import '../screens/assign_tasks_screen.dart';
+import '../screens/my_tasks_screen.dart';
+import '../services/socket_service.dart';
+import '../widgets/common_notification_icon.dart';
+import '../services/audio_service.dart';
+import '../widgets/common_app_bar.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -32,29 +36,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final ApiService _apiService = ApiService();
   final _socketService = SocketService.instance;
   final _audioService = AudioService();
-  final _notificationState = NotificationStateService();
   User? _user;
   TaskStats? _taskStats;
   bool _isLoading = true;
+  bool _hasUnreadNotifications = false;
   ViewState _currentView = ViewState.dashboard;
   List<Task> _userTasks = [];
+
+  NotificationFirebaseService notificationService = NotificationFirebaseService();
 
   @override
   void initState() {
     super.initState();
     print('🔄 Dashboard - Initializing...');
     _initializeServices();
-    _loadUserAndSetupSocket();
-    _notificationState.addListener(_onNotificationStateChanged);
-    _socketService.listenToUiRefresh(_handleUiRefresh);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final notificationService = Get.put(NotificationFirebaseService());
+      notificationService.initialize();
+    });
+    // notificationFirebaseService.getDeviceToken();
+    // notificationFirebaseService.firebaseInit(context);
+    // notificationFirebaseService.setupInteractMessage(context);
+    // notificationFirebaseService.requestNotificationPermission();
+
+    // Wait until after first frame to request permission
+    //WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // notificationService.re();
+      // notificationService.firebaseInit(context);
+      // notificationService.setupInteractMessage(context);
+
+    //});
   }
 
   @override
   void dispose() {
-    _notificationState.removeListener(_onNotificationStateChanged);
+    // Remove socket listeners when disposing
     _socketService.removeTaskNotificationListener(_handleTaskNotification);
     _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
-    _socketService.removeUiRefreshListener(_handleUiRefresh);
     _audioService.dispose();
     super.dispose();
   }
@@ -96,21 +114,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
 
         print('🔄 Dashboard - Connecting socket for user: $username');
+        // Connect socket with username
+        _socketService.connect(username);
 
         // Remove any existing listeners before adding new ones
         _socketService.removeTaskNotificationListener(_handleTaskNotification);
         _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
 
-        // Connect socket with username and wait for connection
-        await _socketService.connect(username);
-
-        // Setup socket listeners after successful connection
-        if (_socketService.isConnected) {
-          print('🔄 Dashboard - Setting up socket listeners');
-          _setupSocketListeners();
-        } else {
-          print('❌ Dashboard - Socket connection failed');
-        }
+        // Setup socket listeners
+        print('🔄 Dashboard - Setting up socket listeners');
+        _setupSocketListeners();
       }
     } catch (e) {
       print('❌ Dashboard - Error loading user data: $e');
@@ -124,116 +137,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _socketService.listenToDashboardUpdates(_handleDashboardUpdate);
   }
 
-  void _playNotificationSound() {
+  void _playNotificationSound() async {
     try {
       print('🔔 Dashboard - Playing notification sound...');
-      _audioService.playNotificationSound();
-      print('🔔 Dashboard - Notification sound completed');
+      await _audioService.playNotificationSound();
+      await HapticFeedback.mediumImpact();
+      print('🔔 Dashboard - Notification sound and haptic feedback completed');
     } catch (e) {
       print('🔔 Dashboard - Error playing notification: $e');
     }
   }
 
-  void _onNotificationStateChanged() {
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  void _handleUiRefresh(String screenName) {
-    if (mounted && screenName == 'dashboard') {
-      print('🔄 Dashboard - Refreshing UI from broadcast');
-      _loadTasks();
-    }
-  }
-
-  void _handleTaskNotification(dynamic data) async {
+  void _handleTaskNotification(dynamic data) {
     if (mounted && _user != null) {
       print('🔔 Dashboard - Received task notification: $data');
-      
-      final taskData = data['task'] ?? data;
-      final eventType = data['type'] ?? 'task_update';
-      
-      // Get all relevant roles
-      final bool isCreator = taskData['assigned_by'] == _user!.username;
-      final bool isUpdater = taskData['updated_by'] == _user!.username;
-      final bool isAssignee = taskData['assigned_to'] == _user!.username;
-      
-      print('🔔 Dashboard - Creator: $isCreator, Updater: $isUpdater, Assignee: $isAssignee, Username: ${_user!.username}');
-      
-      bool shouldShowNotification = false;
-      
-      // For task creation
-      if (eventType == 'task_created') {
-        shouldShowNotification = isAssignee && !isCreator;
-        print('🔔 Dashboard - Task Created - shouldShowNotification: $shouldShowNotification (isAssignee: $isAssignee, !isCreator: ${!isCreator})');
-      }
-      // For task updates
-      else if (eventType == 'task_updated') {
-        shouldShowNotification = (isCreator && !isUpdater) || (isAssignee && !isUpdater);
-        print('🔔 Dashboard - Task Updated - shouldShowNotification: $shouldShowNotification');
-      }
 
-      if (shouldShowNotification) {
-        print('🔔 Dashboard - Showing notification');
-        // Update notification state
-        _notificationState.setUnreadNotifications(true);
-        
+      // Check if the current user is the creator/updater
+      final bool isCreator = data['task']?['assigned_by'] == _user!.username;
+      final bool isUpdater = data['task']?['updated_by'] == _user!.username;
+
+      // Only show notification if user is not the creator/updater
+      if (!isCreator && !isUpdater) {
+        setState(() {
+          _hasUnreadNotifications = true;
+        });
+
         // Play notification sound and vibrate
         _playNotificationSound();
-        HapticFeedback.mediumImpact();
-        
-        // Show snackbar if screen is visible and notification hasn't been shown
-        if (ModalRoute.of(context)!.isCurrent && !_notificationState.notificationShown) {
-          final bool isUpdate = taskData['updated_by'] != null;
-          final String title = isUpdate ? 'Task Updated' : 'New Task Assigned';
-          final String message = isUpdate 
-              ? '${taskData['title']} updated by ${taskData['updated_by']}'
-              : taskData['title'] ?? 'No title';
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    message,
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                ],
-              ),
-              backgroundColor: Color(0xFF1E293B),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          );
-          
-          // Mark that notification was shown
-          _notificationState.markNotificationShown();
+        // Show notification for new tasks or updates
+        if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
+          _showTaskNotification(data['task']);
         }
       }
 
-      // Broadcast UI refresh to all screens
-      _socketService.broadcastUiRefresh('dashboard');
-      _socketService.broadcastUiRefresh('my-tasks');
-      _socketService.broadcastUiRefresh('assign-tasks');
-      
-      // Also refresh current screen
-      await _loadTasks();
-      if (mounted) {
-        setState(() {}); // Force UI refresh
-      }
+      // Always refresh tasks list to keep it up to date
+      print('🔄 Dashboard - Refreshing tasks after notification...');
+      _loadTasks();
     }
   }
 
@@ -241,110 +181,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted && _user != null) {
       print('📨 Dashboard - Received update: $data');
 
-      final taskData = data['task'] ?? data;
-      final eventType = data['type'] ?? 'task_update';
-      
-      // Get all relevant roles
-      final bool isCreator = taskData['assigned_by'] == _user!.username;
-      final bool isUpdater = taskData['updated_by'] == _user!.username;
-      final bool isAssignee = taskData['assigned_to'] == _user!.username;
-      
-      print('📨 Dashboard - Creator: $isCreator, Updater: $isUpdater, Assignee: $isAssignee, Username: ${_user!.username}');
-      
-      bool shouldShowNotification = false;
-      
-      // For task creation
-      if (eventType == 'task_created') {
-        shouldShowNotification = isAssignee && !isCreator;
-        print('📨 Dashboard - Task Created - shouldShowNotification: $shouldShowNotification (isAssignee: $isAssignee, !isCreator: ${!isCreator})');
-      }
-      // For task updates
-      else if (eventType == 'task_updated') {
-        shouldShowNotification = (isCreator && !isUpdater) || (isAssignee && !isUpdater);
-        print('📨 Dashboard - Task Updated - shouldShowNotification: $shouldShowNotification');
-      }
+      // Check if the current user is the creator/updater
+      final bool isCreator = data['assigned_by'] == _user!.username;
+      final bool isUpdater = data['updated_by'] == _user!.username;
 
-      print('📨 Dashboard - Final shouldShowNotification value: $shouldShowNotification');
-
-      // Show notification if conditions are met
-      if (shouldShowNotification == true) {  // Explicit check for true
-        print('📨 Dashboard - Showing notification');
-        // Update notification state
-        _notificationState.setUnreadNotifications(true);
-        
-        // Play notification sound and vibrate
+      // Play notification sound if user is not the creator/updater
+      if (!isCreator && !isUpdater) {
+        setState(() {
+          _hasUnreadNotifications = true;
+        });
         _playNotificationSound();
-        HapticFeedback.mediumImpact();
-        
-        // Show snackbar if screen is visible and notification hasn't been shown
-        if (ModalRoute.of(context)!.isCurrent && !_notificationState.notificationShown) {
-          final bool isUpdate = taskData['updated_by'] != null;
-          final String title = isUpdate ? 'Task Updated' : 'New Task Assigned';
-          final String message = isUpdate 
-              ? '${taskData['title']} updated by ${taskData['updated_by']}'
-              : taskData['title'] ?? 'No title';
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    message,
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                ],
-              ),
-              backgroundColor: Color(0xFF1E293B),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              action: SnackBarAction(
-                label: 'VIEW',
-                textColor: Color(0xFF7DF9FF),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CreateTaskScreen(
-                        isEditMode: true,
-                        taskId: taskData['task_id'],
-                        initialTitle: taskData['title'],
-                        initialDescription: taskData['description'],
-                        initialAssignee: taskData['assigned_to'],
-                        initialAssigner: taskData['assigned_by'],
-                        initialPriority: taskData['priority'],
-                        initialDueDate: DateTime.parse(taskData['deadline']),
-                        initialStatus: taskData['status'],
-                      ),
-                    ),
-                  ).then((_) => _loadTasks());
-                },
-              ),
-            ),
-          );
-          // Mark that notification was shown
-          _notificationState.markNotificationShown();
-        }
-      } else {
-        print('📨 Dashboard - Skipping notification as shouldShowNotification is false');
       }
 
       // Always refresh tasks list regardless of who created/updated
       print('🔄 Dashboard - Refreshing tasks after update...');
       await _loadTasks();
+
+      // Show a snackbar with the update message
       if (mounted) {
-        setState(() {}); // Force UI refresh
+        final String actionType = data['type'] == 'task_created' ? 'created' : 'updated';
+        final String message = isCreator || isUpdater
+          ? 'Task $actionType successfully!'
+          : 'A task has been $actionType';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     }
   }
@@ -352,7 +218,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _clearNotifications() {
     if (mounted) {
       setState(() {
-        _notificationState.clearNotifications();
+        _hasUnreadNotifications = false;
       });
     }
   }
@@ -366,59 +232,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (!mounted) return;
 
-    // Only show snackbar if the screen is currently visible
-    if (ModalRoute.of(context)!.isCurrent) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
               ),
-              SizedBox(height: 4),
-              Text(
-                message,
-                style: TextStyle(color: Colors.white70),
-              ),
-            ],
-          ),
-          backgroundColor: Color(0xFF1E293B),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          action: SnackBarAction(
-            label: 'VIEW',
-            textColor: Color(0xFF7DF9FF),
-            onPressed: () {
-              // Navigate to task details
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CreateTaskScreen(
-                    isEditMode: true,
-                    taskId: task['task_id'],
-                    initialTitle: task['title'],
-                    initialDescription: task['description'],
-                    initialAssignee: task['assigned_to'],
-                    initialAssigner: task['assigned_by'],
-                    initialPriority: task['priority'],
-                    initialDueDate: DateTime.parse(task['deadline']),
-                    initialStatus: task['status'],
-                  ),
-                ),
-              ).then((_) =>
-                  _loadTasks()); // Refresh after returning from edit screen
-            },
-          ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              message,
+              style: TextStyle(color: Colors.white70),
+            ),
+          ],
         ),
-      );
+        backgroundColor: Color(0xFF1E293B),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        action: SnackBarAction(
+          label: 'VIEW',
+          textColor: Color(0xFF7DF9FF),
+          onPressed: () {
+            // Navigate to task details
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CreateTaskScreen(
+                  isEditMode: true,
+                  taskId: task['task_id'],
+                  initialTitle: task['title'],
+                  initialDescription: task['description'],
+                  initialAssignee: task['assigned_to'],
+                  initialPriority: task['priority'],
+                  initialDueDate: DateTime.parse(task['deadline']),
+                  initialStatus: task['status'],
+                ),
+              ),
+            ).then((_) => _loadTasks()); // Refresh after returning from edit screen
+          },
+        ),
+      ),
+    );
+
+    // Set notification dot if the notification is not being actively viewed
+    if (!ModalRoute.of(context)!.isCurrent) {
+      setState(() {
+        _hasUnreadNotifications = true;
+      });
     }
   }
 
@@ -433,8 +301,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final role = prefs.getString('role') ?? '';
 
       // Fetch tasks from API
-      final response = await _apiService.getTasks(
-          username: _user!.username, role: _user!.role);
+      final response = await _apiService.getTasks(username: _user!.username, role: _user!.role);
       if (response['success']) {
         final tasksJson = response['data'] as List;
         if (mounted) {
@@ -529,7 +396,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   end: Offset.zero,
                 ).animate(curvedAnimation),
                 child: SidePanel(
-                  onLogout: () {},  // Empty callback since logout is now handled in SidePanel
+                  onLogout: _handleLogout,
                   onClose: () => Navigator.pop(context),
                   user: _user!,
                   currentRoute: '/',
@@ -550,13 +417,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           MaterialPageRoute(
             builder: (context) => const MyTasksScreen(),
           ),
-        ).then((result) {
-          // Always refresh tasks when returning, regardless of result
-          _loadTasks();
-          if (mounted) {
-            setState(() {});
-          }
-        });
+        ).then((_) => _loadTasks()); // Refresh tasks after returning
         break;
       case ViewState.assignTasks:
         Navigator.push(
@@ -564,13 +425,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           MaterialPageRoute(
             builder: (context) => const AssignTasksScreen(),
           ),
-        ).then((result) {
-          // Always refresh tasks when returning, regardless of result
-          _loadTasks();
-          if (mounted) {
-            setState(() {});
-          }
-        });
+        ).then((_) => _loadTasks()); // Refresh tasks after returning
         break;
       case ViewState.dashboard:
         // No navigation needed for dashboard
@@ -578,20 +433,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     setState(() {
       _currentView = newView;
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Listen for route changes
-    ModalRoute.of(context)?.addScopedWillPopCallback(() async {
-      // This will be called when the screen is about to be popped
-      await _loadTasks();
-      if (mounted) {
-        setState(() {});
-      }
-      return true;
     });
   }
 
@@ -613,8 +454,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           CommonAppBar(
             onMenuPressed: _showSidePanel,
-            hasUnreadNotifications: _notificationState.hasUnreadNotifications,
-            onNotificationCleared: _notificationState.clearNotifications,
+            hasUnreadNotifications: _hasUnreadNotifications,
+            onNotificationCleared: _clearNotifications,
           ),
           Container(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
@@ -745,8 +586,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Expanded(
                                         child: Text(
@@ -782,9 +622,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ))
                       .toList(),
-                  if (_userTasks
-                      .where((task) => task.assignedTo == _user!.username)
-                      .isEmpty)
+                  if (_userTasks.where((task) => task.assignedTo == _user!.username).isEmpty)
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
                       child: Text(
@@ -951,26 +789,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _formatDate(DateTime date) {
     final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
     return '${months[date.month - 1]} ${date.day.toString().padLeft(2, '0')}';
   }
 
   void _showAssignTaskDialog(String memberName) {
     final TextEditingController _titleController = TextEditingController();
-    final TextEditingController _descriptionController =
-        TextEditingController();
+    final TextEditingController _descriptionController = TextEditingController();
 
     showDialog(
       context: context,

@@ -22,16 +22,6 @@ class TaskAssignment {
   });
 
   factory TaskAssignment.fromJson(Map<String, dynamic> json) {
-    String normalizeStatus(String status) {
-      switch (status.toLowerCase()) {
-        case 'in_progress':
-        case 'inprogress':
-          return 'inProgress';
-        default:
-          return status;
-      }
-    }
-
     return TaskAssignment(
       taskId: json['task_id'],
       taskName: json['task_name'],
@@ -41,7 +31,7 @@ class TaskAssignment {
       assigneeRole: json['assignee_role'] ?? 'Developer',
       dueDate: DateTime.parse(json['due_date']),
       priority: json['priority'],
-      currentTask: normalizeStatus(json['current_task']),
+      currentTask: json['current_task'],
     );
   }
 
