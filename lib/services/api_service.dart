@@ -80,6 +80,9 @@ class ApiService {
 
   Future<Map<String, dynamic>> updateFcmToken(String username, String fcmToken) async {
     try {
+      print('Updating FCM token for username: $username');
+      print('FCM token to update: $fcmToken');
+
       // First get the user_id for the username using POST request
       final response = await http.post(
         Uri.parse('$baseUrl/get_fcm_token'),
@@ -91,6 +94,9 @@ class ApiService {
           'username': username,
         }),
       );
+
+      print('Get FCM token response status: ${response.statusCode}');
+      print('Get FCM token response body: ${response.body}');
 
       if (response.statusCode != 200) {
         print('Failed to get user ID. Status: ${response.statusCode}, Body: ${response.body}');
@@ -111,6 +117,8 @@ class ApiService {
         };
       }
 
+      print('Retrieved user ID: $userId');
+
       // Now update the FCM token
       final updateResponse = await http.post(
         Uri.parse('$baseUrl/update_fcm_token'),
@@ -129,11 +137,13 @@ class ApiService {
 
       final data = json.decode(updateResponse.body);
       if (updateResponse.statusCode == 200) {
+        print('FCM token updated successfully in database');
         return {
           'success': true,
           'message': data['message'] ?? 'FCM token updated successfully',
         };
       } else {
+        print('Failed to update FCM token in database');
         return {
           'success': false,
           'message': data['message'] ?? 'Failed to update FCM token',
@@ -253,6 +263,23 @@ class ApiService {
     try {
       print('Attempting login for user: $username');
 
+      // Get stored FCM token
+      final prefs = await SharedPreferences.getInstance();
+      final storedFcmToken = prefs.getString('fcm_token');
+      print('Stored FCM token: $storedFcmToken');
+
+      // Always get fresh FCM token from device
+      final freshFcmToken = await NotificationFirebaseService().getDeviceToken();
+      print('Fresh FCM token from device: $freshFcmToken');
+
+      // If we got a fresh token and it's different from stored token, update it
+      if (freshFcmToken != null && freshFcmToken.isNotEmpty) {
+        if (storedFcmToken != freshFcmToken) {
+          print('FCM token has changed, updating...');
+          await prefs.setString('fcm_token', freshFcmToken);
+        }
+      }
+
       final response = await http
           .post(
             Uri.parse('$baseUrl/login'),
@@ -263,6 +290,7 @@ class ApiService {
             body: json.encode({
               'username': username,
               'password': password,
+              'fcm_token': freshFcmToken ?? '', // Use fresh token in login request
             }),
           )
           .timeout(const Duration(seconds: 10));
@@ -274,18 +302,17 @@ class ApiService {
 
       if (response.statusCode == 200) {
         // Store user data in SharedPreferences
-        final prefs = await SharedPreferences.getInstance();
         await prefs.setString('user_id', data['user_id'].toString());
         await prefs.setString('username', data['username']);
         await prefs.setString('role', data['role']);
 
-        // Fetch and update FCM token after successful login
-        String? fcmToken = await getAndStoreFcmToken();
-        if (fcmToken != null && fcmToken.isNotEmpty) {
-          await updateFcmTokenInBackend(username, fcmToken);
+        // Always update FCM token in backend after successful login
+        if (freshFcmToken != null && freshFcmToken.isNotEmpty) {
+          print('Updating FCM token in backend after successful login');
+          final updateResult = await updateFcmToken(username, freshFcmToken);
+          print('FCM token update result: $updateResult');
         } else {
-          print(
-              'Warning: FCM token could not be retrieved during login for user $username');
+          print('No FCM token available to update after login');
         }
 
         return {
