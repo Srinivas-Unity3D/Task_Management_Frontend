@@ -160,12 +160,13 @@ class ApiService {
 
   Future<String?> getUserFcmToken(String username) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/users/$username/fcm-token'),
+      final response = await http.post(
+        Uri.parse('$baseUrl/get_fcm_token'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
+        body: json.encode({'username': username}),
       );
 
       print('Fetch FCM token response status: ${response.statusCode}');
