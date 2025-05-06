@@ -1,20 +1,22 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taskmanagement/services/notification_firebase_service.dart';
+import 'package:uuid/uuid.dart';
+
 import '../models/attachment.dart';
 import '../models/task_assignment.dart';
 import '../models/voice_note.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:uuid/uuid.dart';
 import 'send_notification_service.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://10.20.0.248:5000';
+  static const String baseUrl = 'http://134.209.149.12:5000';
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
     connectTimeout: const Duration(seconds: 10),
@@ -76,24 +78,49 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> updateFcmToken(String username, String fcmToken) async {
+  Future<Map<String, dynamic>> updateFcmToken(
+      String username, String fcmToken) async {
     try {
+      // First get the user_id for the username using POST request
       final response = await http.post(
-        Uri.parse('$baseUrl/users/$username/fcm-token'),
+        Uri.parse('$baseUrl/get_fcm_token'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: json.encode({
+          'username': username,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        return {
+          'success': false,
+          'message': 'Failed to get user ID',
+        };
+      }
+
+      final userData = json.decode(response.body);
+      final userId = userData['user_id'];
+
+      // Now update the FCM token
+      final updateResponse = await http.post(
+        Uri.parse('$baseUrl/update_fcm_token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode({
+          'user_id': userId,
           'fcm_token': fcmToken,
         }),
       );
 
-      print('Update FCM token response status: ${response.statusCode}');
-      print('Update FCM token response body: ${response.body}');
+      print('Update FCM token response status: ${updateResponse.statusCode}');
+      print('Update FCM token response body: ${updateResponse.body}');
 
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
+      final data = json.decode(updateResponse.body);
+      if (updateResponse.statusCode == 200) {
         return {
           'success': true,
           'message': data['message'] ?? 'FCM token updated successfully',
@@ -148,12 +175,17 @@ class ApiService {
   }) async {
     try {
       print('Sending signup request with data:');
+      
+      // Get FCM token before registration
+      String? fcmToken = await getAndStoreFcmToken();
+      
       final requestBody = {
         'username': username,
         'email': email,
         'phone': phone,
         'password': password,
         'role': role,
+        'fcm_token': fcmToken ?? '', // Include FCM token in registration
       };
       print(requestBody);
 
@@ -172,14 +204,12 @@ class ApiService {
       final data = json.decode(response.body);
 
       if (response.statusCode == 200) {
-        String? fcmToken = await getAndStoreFcmToken();
-        if (fcmToken == null) {
-          print('Warning: FCM token could not be retrieved during registration. Proceeding without token update.');
-          fcmToken = '';
-        }
-
-        if (fcmToken.isNotEmpty) {
-          await updateFcmTokenInBackend(username, fcmToken);
+        // Store user data in SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('username', username);
+        await prefs.setString('role', role);
+        if (fcmToken != null) {
+          await prefs.setString('fcm_token', fcmToken);
         }
 
         return {
@@ -215,17 +245,19 @@ class ApiService {
     try {
       print('Attempting login for user: $username');
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/login'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode({
-          'username': username,
-          'password': password,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/login'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: json.encode({
+              'username': username,
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
 
       print('Login response status: ${response.statusCode}');
       print('Login response body: ${response.body}');
@@ -244,7 +276,8 @@ class ApiService {
         if (fcmToken != null && fcmToken.isNotEmpty) {
           await updateFcmTokenInBackend(username, fcmToken);
         } else {
-          print('Warning: FCM token could not be retrieved during login for user $username');
+          print(
+              'Warning: FCM token could not be retrieved during login for user $username');
         }
 
         return {
@@ -261,7 +294,8 @@ class ApiService {
       print('Login request timed out');
       return {
         'success': false,
-        'message': 'Connection timed out. Please check your internet connection.',
+        'message':
+            'Connection timed out. Please check your internet connection.',
       };
     } on SocketException {
       print('Network error during login');
@@ -402,14 +436,16 @@ class ApiService {
         'attachments': attachmentData,
       };
 
-      final response = await http.post(
+      final response = await http
+          .post(
         Uri.parse('$baseUrl/api/tasks'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: json.encode(taskData),
-      ).timeout(
+      )
+          .timeout(
         const Duration(seconds: 30),
         onTimeout: () {
           throw TimeoutException('Request timed out');
@@ -431,7 +467,8 @@ class ApiService {
             'title': title,
             'assigned_by': assignedBy,
           };
-          final notificationDataStr = notificationData.map((key, value) => MapEntry(key, value.toString()));
+          final notificationDataStr = notificationData
+              .map((key, value) => MapEntry(key, value.toString()));
           final result = await SendNotificationService.sendNotification(
             token: fcmToken,
             title: 'New Task Assigned',
@@ -441,20 +478,25 @@ class ApiService {
           if (result.success) {
             print('Notification sent to $assignedTo with FCM token: $fcmToken');
           } else {
-            print('Failed to send notification: ${result.message}, Error: ${result.errorDetails}');
+            print(
+                'Failed to send notification: ${result.message}, Error: ${result.errorDetails}');
           }
         } else {
-          print('Warning: Could not send notification - FCM token not found for user $assignedTo');
+          print(
+              'Warning: Could not send notification - FCM token not found for user $assignedTo');
         }
 
         return responseData['message'] ?? 'Task created successfully';
       } else {
-        throw Exception('Failed to create task: ${response.statusCode} - ${response.body}');
+        throw Exception(
+            'Failed to create task: ${response.statusCode} - ${response.body}');
       }
     } on TimeoutException {
-      throw Exception('Connection timed out. Please check your internet connection and try again.');
+      throw Exception(
+          'Connection timed out. Please check your internet connection and try again.');
     } on SocketException catch (e) {
-      throw Exception('Network error: ${e.message}. Please check your internet connection.');
+      throw Exception(
+          'Network error: ${e.message}. Please check your internet connection.');
     } catch (e) {
       throw Exception('Failed to create task: $e');
     }
@@ -480,7 +522,8 @@ class ApiService {
         print('ℹ️ [API] No voice notes found for task');
         return [];
       } else {
-        throw Exception('Failed to fetch voice notes: ${response.statusMessage}');
+        throw Exception(
+            'Failed to fetch voice notes: ${response.statusMessage}');
       }
     } catch (e) {
       print('❌ [API] Error getting task voice notes: $e');
@@ -496,7 +539,8 @@ class ApiService {
       }
 
       final tempDir = await getTemporaryDirectory();
-      final fileName = voiceNote.fileName.isNotEmpty ? voiceNote.fileName : 'voice_note.wav';
+      final fileName =
+          voiceNote.fileName.isNotEmpty ? voiceNote.fileName : 'voice_note.wav';
       final file = File('${tempDir.path}/$fileName');
 
       print('📝 [API] Saving voice note to: ${file.path}');
@@ -517,7 +561,9 @@ class ApiService {
       final response = await _dio.get('/tasks/$taskId/attachments');
       if (response.statusCode == 200) {
         final List<dynamic> attachments = response.data['attachments'];
-        return attachments.map((attachment) => Attachment.fromJson(attachment)).toList();
+        return attachments
+            .map((attachment) => Attachment.fromJson(attachment))
+            .toList();
       } else {
         throw Exception('Failed to fetch attachments');
       }
@@ -537,7 +583,11 @@ class ApiService {
       if (response.statusCode == 200) {
         final bytes = response.data as List<int>;
         final tempDir = await getTemporaryDirectory();
-        final fileName = response.headers.value('content-disposition')?.split('filename=').last ?? 'attachment_$attachmentId';
+        final fileName = response.headers
+                .value('content-disposition')
+                ?.split('filename=')
+                .last ??
+            'attachment_$attachmentId';
         final file = File('${tempDir.path}/$fileName');
         await file.writeAsBytes(bytes);
         return file.path;
@@ -627,7 +677,8 @@ class ApiService {
         },
       );
 
-      print('📥 [API] Task assignments response status: ${response.statusCode}');
+      print(
+          '📥 [API] Task assignments response status: ${response.statusCode}');
       print('📥 [API] Task assignments response body: ${response.body}');
 
       if (response.statusCode == 200) {
@@ -658,7 +709,8 @@ class ApiService {
     try {
       // Get current user from SharedPreferences to determine who is updating
       final prefs = await SharedPreferences.getInstance();
-      final updatedBy = prefs.getString('username') ?? assignedBy; // Fallback to assignedBy if not found
+      final updatedBy = prefs.getString('username') ??
+          assignedBy; // Fallback to assignedBy if not found
 
       final taskData = {
         'title': title,
@@ -722,18 +774,21 @@ class ApiService {
           // Assignee updated the task, notify assigner
           recipientUsername = assignedBy;
           notificationTitle = 'Task Updated by Assignee';
-          notificationBody = 'The task "$title" has been updated by $assignedTo';
+          notificationBody =
+              'The task "$title" has been updated by $assignedTo';
         } else if (updatedBy == assignedBy) {
           // Assigner updated the task, notify assignee
           recipientUsername = assignedTo;
           notificationTitle = 'Task Updated';
-          notificationBody = 'The task "$title" has been updated by $assignedBy';
+          notificationBody =
+              'The task "$title" has been updated by $assignedBy';
         }
 
         if (recipientUsername != null) {
           final fcmToken = await getUserFcmToken(recipientUsername);
           if (fcmToken != null && fcmToken.isNotEmpty) {
-            final notificationDataStr = notificationData.map((key, value) => MapEntry(key, value.toString()));
+            final notificationDataStr = notificationData
+                .map((key, value) => MapEntry(key, value.toString()));
             final result = await SendNotificationService.sendNotification(
               token: fcmToken,
               title: notificationTitle,
@@ -741,20 +796,25 @@ class ApiService {
               data: notificationDataStr,
             );
             if (result.success) {
-              print('Notification sent to $recipientUsername with FCM token: $fcmToken');
+              print(
+                  'Notification sent to $recipientUsername with FCM token: $fcmToken');
             } else {
-              print('Failed to send notification: ${result.message}, Error: ${result.errorDetails}');
+              print(
+                  'Failed to send notification: ${result.message}, Error: ${result.errorDetails}');
             }
           } else {
-            print('Warning: Could not send notification - FCM token not found for user $recipientUsername');
+            print(
+                'Warning: Could not send notification - FCM token not found for user $recipientUsername');
           }
         } else {
-          print('Warning: Could not determine notification recipient for task update');
+          print(
+              'Warning: Could not determine notification recipient for task update');
         }
 
         return responseData['message'] ?? 'Task updated successfully';
       } else {
-        throw Exception('Failed to update task: ${response.statusCode} - ${response.body}');
+        throw Exception(
+            'Failed to update task: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       throw Exception('Failed to update task: $e');
