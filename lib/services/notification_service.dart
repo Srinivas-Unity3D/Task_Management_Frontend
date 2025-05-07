@@ -246,8 +246,17 @@ class NotificationService {
   Future<void> playNotificationSound() async {
     try {
       await _audioPlayer.stop();
+      // Play the sound at a higher volume for alarm-like effect
+      await _audioPlayer.setVolume(1.0);
+      // Loop the sound a few times for alarm effect
+      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
       await _audioPlayer.setSource(AssetSource('sounds/notification.mp3'));
       await _audioPlayer.resume();
+      
+      // Stop the sound after 3 seconds
+      await Future.delayed(const Duration(seconds: 3));
+      await _audioPlayer.stop();
+      await _audioPlayer.setReleaseMode(ReleaseMode.release);
     } catch (e) {
       print('Error playing notification sound: $e');
     }
@@ -255,7 +264,12 @@ class NotificationService {
 
   Future<void> vibrate() async {
     try {
-      await HapticFeedback.vibrate();
+      // Use a stronger vibration pattern for alarms
+      await HapticFeedback.heavyImpact();
+      await Future.delayed(const Duration(milliseconds: 200));
+      await HapticFeedback.heavyImpact();
+      await Future.delayed(const Duration(milliseconds: 200));
+      await HapticFeedback.heavyImpact();
     } catch (e) {
       print('Error during vibration: $e');
     }

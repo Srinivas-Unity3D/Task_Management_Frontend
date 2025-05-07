@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/socket_service.dart';
+import 'services/notification_service.dart';
 
 import 'screens/sign_in_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -14,6 +15,14 @@ import 'theme/colors.dart';
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
+  
+  // Initialize notification service for sound
+  final notificationService = NotificationService();
+  await notificationService.initialize();
+  
+  // Play notification sound
+  await notificationService.handleNewNotification();
+  
   print('Handling a background message: ${message.messageId}');
 }
 
@@ -21,6 +30,23 @@ void main() async {  // Made async to properly handle initialization
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp();
+  
+  // Initialize notification service
+  final notificationService = NotificationService();
+  await notificationService.initialize();
+  
+  // Set up foreground message handler
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+    print('Got a message whilst in the foreground!');
+    print('Message data: ${message.data}');
+
+    if (message.notification != null) {
+      print('Message also contained a notification: ${message.notification}');
+      // Play notification sound for foreground messages
+      await notificationService.handleNewNotification();
+    }
+  });
+  
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   // Force portrait orientation
