@@ -18,6 +18,8 @@ import 'dart:math';
 import 'dart:async';
 import '../services/socket_service.dart';
 import 'package:open_file/open_file.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   final bool isEditMode;
@@ -317,22 +319,27 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<bool> _requestStoragePermission() async {
-    print('📱 [Permissions] Checking storage permissions...');
     try {
-      if (await Permission.photos.request().isGranted &&
-          await Permission.videos.request().isGranted &&
-          await Permission.audio.request().isGranted) {
-        print('✅ [Permissions] Media permissions granted');
-        return true;
-      }
-      final status = await Permission.storage.request();
-      if (status.isGranted) {
-        print('✅ [Permissions] Storage permission granted');
-        return true;
-      }
-      if (status.isPermanentlyDenied) {
+      if (Platform.isAndroid) {
+        // Request storage permission
+        final storage = await Permission.storage.request();
+        if (storage.isGranted) {
+          print('✅ [Permissions] Storage permission granted');
+          return true;
+        }
+
+        // If storage permission is denied, try media permissions
+        final photos = await Permission.photos.request();
+        final videos = await Permission.videos.request();
+        
+        if (photos.isGranted || videos.isGranted) {
+          print('✅ [Permissions] Media permissions granted');
+          return true;
+        }
+
+        // If all permissions are denied, show settings dialog
         if (mounted) {
-          showDialog(
+          final shouldOpenSettings = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
               backgroundColor: const Color(0xFF0F172A),
@@ -341,38 +348,48 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                 style: TextStyle(color: Colors.white),
               ),
               content: const Text(
-                'Storage permission is required to pick files. Please enable it in app settings.',
+                'Storage permission is required to pick files. Would you like to open settings?',
                 style: TextStyle(color: Color(0xFF94A3B8)),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(context, false),
                   child: const Text('Cancel', style: TextStyle(color: Colors.white)),
                 ),
                 TextButton(
-                  onPressed: () {
-                    openAppSettings();
-                    Navigator.pop(context);
-                  },
+                  onPressed: () => Navigator.pop(context, true),
                   child: const Text('Open Settings', style: TextStyle(color: Color(0xFF7DF9FF))),
                 ),
               ],
             ),
           );
+
+          if (shouldOpenSettings == true) {
+            await openAppSettings();
+          }
         }
-        return false;
+      } else {
+        // For iOS and other platforms
+        final storage = await Permission.storage.request();
+        if (storage.isGranted) {
+          print('✅ [Permissions] Storage permission granted');
+          return true;
+        }
       }
+
       print('❌ [Permissions] Storage permissions denied');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Storage permission is required to pick files'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Storage permission is required to pick files'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
       return false;
     } catch (e) {
-      print('❌ [Permissions] Error requesting storage permission: $e');
+      print('❌ [Permissions] Error requesting permissions: $e');
       return false;
     }
   }
@@ -383,45 +400,73 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('❌ [Files] Storage permission not granted');
         return;
       }
+      
       setState(() {
         _isUploadingFiles = true;
       });
+      
       print('📁 [Files] Opening file picker...');
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
+      
+      // Basic file picker configuration without event channel
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'jpg', 'jpeg', 'png'],
         allowMultiple: true,
-        withData: true,
-        onFileLoading: (FilePickerStatus status) => print('📁 [Files] Picker status: $status'),
+        // Remove withReadStream and onFileLoading to avoid event channel issues
       );
-      if (result != null) {
+
+      if (!mounted) return;
+
+      if (result != null && result.files.isNotEmpty) {
         print('📁 [Files] Files selected successfully');
+        final validFiles = result.files.where((file) => 
+          file.path != null && 
+          file.name.isNotEmpty && 
+          file.size > 0
+        ).toList();
+
+        if (validFiles.isEmpty) {
+          print('❌ [Files] No valid files selected');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No valid files selected'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
         setState(() {
-          _selectedFiles = result.files;
+          _selectedFiles = validFiles;
         });
-        for (PlatformFile file in result.files) {
+        
+        for (final file in validFiles) {
           print('📎 [Files] Selected file:');
           print('  - Name: ${file.name}');
           print('  - Size: ${(file.size / 1024).toStringAsFixed(2)} KB');
-          print('  - Extension: ${file.extension}');
-          print('  - Path: ${file.path}');
-          print('  - Has data: ${file.bytes != null}');
+          print('  - Extension: ${file.extension ?? "unknown"}');
+          print('  - Path: ${file.path ?? "unknown"}');
         }
       } else {
-        print('📁 [Files] No files selected');
+        print('📁 [Files] No files selected or picker was canceled');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ [Files] Error picking files: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error selecting files: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      print('❌ [Files] Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error selecting files: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
-      setState(() {
-        _isUploadingFiles = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isUploadingFiles = false;
+        });
+      }
     }
   }
 
