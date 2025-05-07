@@ -1224,25 +1224,91 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       try {
         await _stopPlayback();
         Map<String, dynamic>? audioNote;
-        if (_recordedFilePath != null && await File(_recordedFilePath!).exists()) {
-          final audioBytes = await File(_recordedFilePath!).readAsBytes();
-          final base64Audio = base64Encode(audioBytes);
-          final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
-          audioNote = {
-            'filename': filename,
-            'duration': _recordingDuration.inSeconds,
-            'audio_data': base64Audio,
-          };
-        }
-        List<File>? attachments;
-        if (_selectedFiles.isNotEmpty) {
-          attachments = _selectedFiles.map((file) {
-            if (file.path == null) {
-              throw Exception('File path is null');
+        
+        // Validate and process audio recording
+        if (_recordedFilePath != null) {
+          print('🎤 [Task] Processing audio recording...');
+          final audioFile = File(_recordedFilePath!);
+          if (await audioFile.exists()) {
+            final fileSize = await audioFile.length();
+            print('📊 [Task] Audio file size: ${(fileSize / 1024).toStringAsFixed(2)} KB');
+            
+            if (fileSize > 0) {
+              final audioBytes = await audioFile.readAsBytes();
+              final base64Audio = base64Encode(audioBytes);
+              final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
+              audioNote = {
+                'filename': filename,
+                'duration': _recordingDuration.inSeconds,
+                'audio_data': base64Audio,
+              };
+              print('✅ [Task] Audio note prepared successfully');
+            } else {
+              print('⚠️ [Task] Audio file is empty');
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Audio recording is empty')),
+              );
             }
-            return File(file.path!);
-          }).toList();
+          } else {
+            print('❌ [Task] Audio file not found at: $_recordedFilePath');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Audio recording file not found')),
+            );
+          }
         }
+
+        // Validate and process attachments
+        List<Map<String, dynamic>> attachmentData = [];
+        if (_selectedFiles.isNotEmpty) {
+          print('📎 [Task] Processing ${_selectedFiles.length} attachments...');
+          
+          for (final file in _selectedFiles) {
+            if (file.path == null) {
+              print('❌ [Task] File path is null for: ${file.name}');
+              continue;
+            }
+            
+            final attachmentFile = File(file.path!);
+            if (await attachmentFile.exists()) {
+              final fileSize = await attachmentFile.length();
+              print('📊 [Task] Attachment: ${file.name} (${(fileSize / 1024).toStringAsFixed(2)} KB)');
+              
+              if (fileSize > 0) {
+                final fileBytes = await attachmentFile.readAsBytes();
+                final base64File = base64Encode(fileBytes);
+                final fileType = file.extension ?? '';
+                
+                attachmentData.add({
+                  'file_name': file.name,
+                  'file_type': fileType,
+                  'file_data': base64File,
+                });
+                print('✅ [Task] Attachment prepared: ${file.name}');
+              } else {
+                print('⚠️ [Task] Empty file: ${file.name}');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('File is empty: ${file.name}')),
+                );
+              }
+            } else {
+              print('❌ [Task] File not found: ${file.path}');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('File not found: ${file.name}')),
+              );
+            }
+          }
+          
+          if (attachmentData.isEmpty) {
+            print('⚠️ [Task] No valid attachments to upload');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No valid attachments to upload')),
+            );
+          } else {
+            print('✅ [Task] ${attachmentData.length} valid attachments ready for upload');
+          }
+        }
+
+        // Process alarm settings
         Map<String, dynamic>? alarmSettings;
         if (_alarmStartDate != null && _alarmStartTime != null) {
           final alarmDateTime = DateTime(
@@ -1253,24 +1319,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             _alarmStartTime!.minute,
           );
           alarmSettings = {
-            'alarm_time': alarmDateTime.toIso8601String(),
-            'is_enabled': true,
+            'start_date': alarmDateTime.toIso8601String().split('T')[0],
+            'start_time': alarmDateTime.toIso8601String().split('T')[1].substring(0, 8),
+            'frequency': _alarmFrequency,
           };
         }
+
         String response;
         if (widget.isEditMode) {
           if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
             throw Exception('Assignee is missing');
           }
-          // Log initialAssigner for debugging
-          print('Debug: initialAssigner=${widget.initialAssigner}, taskId=${widget.taskId}');
-          // Use initialAssigner if valid, else fallback to _currentUsername
-          final assignedBy = (widget.initialAssigner != null && widget.initialAssigner!.isNotEmpty)
-              ? widget.initialAssigner!
-              : (_currentUsername ?? '');
-          if (widget.initialAssigner == null || widget.initialAssigner!.isEmpty) {
-            print('Warning: initialAssigner is missing or empty, using _currentUsername=$assignedBy');
-          }
+          print('📝 [Task] Updating existing task...');
           response = await _apiService.updateTask(
             taskId: widget.taskId!,
             title: _titleController.text,
@@ -1281,7 +1341,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             priority: _priority.toLowerCase(),
             status: _getStatusString(_status),
             audioNote: audioNote,
-            attachments: attachments,
+            attachments: attachmentData,
             alarmSettings: alarmSettings,
           );
         } else {
@@ -1291,6 +1351,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
             throw Exception('Assignee is missing');
           }
+          print('📝 [Task] Creating new task...');
           response = await _apiService.createTask(
             title: _titleController.text,
             description: _descriptionController.text,
@@ -1300,13 +1361,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             priority: _priority.toLowerCase(),
             status: 'pending',
             audioNote: audioNote,
-            attachments: attachments,
+            attachments: attachmentData,
             alarmSettings: alarmSettings,
           );
         }
+
+        print('✅ [Task] Task ${widget.isEditMode ? "updated" : "created"} successfully');
         setState(() {
           _isLoading = false;
         });
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -1333,12 +1397,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         );
         Navigator.pop(context, true);
       } catch (e) {
+        print('❌ [Task] Error ${widget.isEditMode ? "updating" : "creating"} task: $e');
         setState(() {
           _isLoading = false;
         });
-        print('Error ${widget.isEditMode ? "updating" : "creating"} task: $e');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error ${widget.isEditMode ? "updating" : "creating"} task: $e')),
+          SnackBar(
+            content: Text('Error ${widget.isEditMode ? "updating" : "creating"} task: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }

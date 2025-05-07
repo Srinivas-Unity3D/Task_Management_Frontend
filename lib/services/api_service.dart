@@ -438,28 +438,10 @@ class ApiService {
     required String priority,
     required String status,
     Map<String, dynamic>? audioNote,
-    List<File>? attachments,
+    List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
-      List<Map<String, dynamic>> attachmentData = [];
-      if (attachments != null) {
-        for (var file in attachments) {
-          if (await file.exists()) {
-            List<int> fileBytes = await file.readAsBytes();
-            String base64File = base64Encode(fileBytes);
-            String fileName = file.path.split('/').last;
-            String fileType = fileName.split('.').last;
-
-            attachmentData.add({
-              'file_name': fileName,
-              'file_type': fileType,
-              'file_data': base64File,
-            });
-          }
-        }
-      }
-
       final taskData = {
         'title': title,
         'description': description,
@@ -470,23 +452,16 @@ class ApiService {
         'status': status,
         'audio_note': audioNote,
         'alarm_settings': alarmSettings,
-        'attachments': attachmentData,
+        'attachments': attachments,
       };
 
-      final response = await http
-          .post(
+      final response = await http.post(
         Uri.parse('$baseUrl/tasks'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: json.encode(taskData),
-      )
-          .timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw TimeoutException('Request timed out');
-        },
       );
 
       print('Response status: ${response.statusCode}');
@@ -494,36 +469,7 @@ class ApiService {
 
       if (response.statusCode == 201) {
         final responseData = json.decode(response.body);
-        final taskId = responseData['task_id']?.toString() ?? 'unknown';
-
-        final fcmToken = await getUserFcmToken(assignedTo);
-        if (fcmToken != null && fcmToken.isNotEmpty) {
-          final notificationData = {
-            'type': 'task_created',
-            'task_id': taskId,
-            'title': title,
-            'assigned_by': assignedBy,
-          };
-          final notificationDataStr = notificationData
-              .map((key, value) => MapEntry(key, value.toString()));
-          final result = await SendNotificationService.sendNotification(
-            token: fcmToken,
-            title: 'New Task Assigned',
-            body: 'You have been assigned a new task: $title by $assignedBy',
-            data: notificationDataStr,
-          );
-          if (result.success) {
-            print('Notification sent to $assignedTo with FCM token: $fcmToken');
-          } else {
-            print(
-                'Failed to send notification: ${result.message}, Error: ${result.errorDetails}');
-          }
-        } else {
-          print(
-              'Warning: Could not send notification - FCM token not found for user $assignedTo');
-        }
-
-        return responseData['message'] ?? 'Task created successfully';
+        return responseData['task_id'];
       } else {
         throw Exception(
             'Failed to create task: ${response.statusCode} - ${response.body}');
@@ -542,7 +488,7 @@ class ApiService {
   Future<List<VoiceNote>> getTaskVoiceNotes(String taskId) async {
     try {
       print('📞 [API] Fetching voice notes for task: $taskId');
-      final response = await _dio.get('/api/tasks/$taskId/voice-notes');
+      final response = await _dio.get('/tasks/$taskId/audio');
 
       print('✅ [API] Voice notes response status: ${response.statusCode}');
       print('✅ [API] Voice notes response data: ${response.data}');
@@ -740,7 +686,7 @@ class ApiService {
     required String priority,
     required String status,
     Map<String, dynamic>? audioNote,
-    List<File>? attachments,
+    List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
@@ -760,26 +706,8 @@ class ApiService {
         'updated_by': updatedBy,
         'audio_note': audioNote,
         'alarm_settings': alarmSettings,
+        'attachments': attachments,
       };
-
-      if (attachments != null && attachments.isNotEmpty) {
-        List<Map<String, dynamic>> attachmentData = [];
-        for (var file in attachments) {
-          if (await file.exists()) {
-            List<int> fileBytes = await file.readAsBytes();
-            String base64File = base64Encode(fileBytes);
-            String fileName = file.path.split('/').last;
-            String fileType = fileName.split('.').last;
-
-            attachmentData.add({
-              'file_name': fileName,
-              'file_type': fileType,
-              'file_data': base64File,
-            });
-          }
-        }
-        taskData['attachments'] = attachmentData;
-      }
 
       final response = await http.put(
         Uri.parse('$baseUrl/tasks/$taskId'),
@@ -795,60 +723,7 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-
-        // Determine notification recipient and details
-        String? recipientUsername;
-        String notificationTitle = '';
-        String notificationBody = '';
-        final notificationData = {
-          'type': 'task_updated',
-          'task_id': taskId,
-          'title': title,
-          'updated_by': updatedBy,
-        };
-
-        if (updatedBy == assignedTo) {
-          // Assignee updated the task, notify assigner
-          recipientUsername = assignedBy;
-          notificationTitle = 'Task Updated by Assignee';
-          notificationBody =
-              'The task "$title" has been updated by $assignedTo';
-        } else if (updatedBy == assignedBy) {
-          // Assigner updated the task, notify assignee
-          recipientUsername = assignedTo;
-          notificationTitle = 'Task Updated';
-          notificationBody =
-              'The task "$title" has been updated by $assignedBy';
-        }
-
-        if (recipientUsername != null) {
-          final fcmToken = await getUserFcmToken(recipientUsername);
-          if (fcmToken != null && fcmToken.isNotEmpty) {
-            final notificationDataStr = notificationData
-                .map((key, value) => MapEntry(key, value.toString()));
-            final result = await SendNotificationService.sendNotification(
-              token: fcmToken,
-              title: notificationTitle,
-              body: notificationBody,
-              data: notificationDataStr,
-            );
-            if (result.success) {
-              print(
-                  'Notification sent to $recipientUsername with FCM token: $fcmToken');
-            } else {
-              print(
-                  'Failed to send notification: ${result.message}, Error: ${result.errorDetails}');
-            }
-          } else {
-            print(
-                'Warning: Could not send notification - FCM token not found for user $recipientUsername');
-          }
-        } else {
-          print(
-              'Warning: Could not determine notification recipient for task update');
-        }
-
-        return responseData['message'] ?? 'Task updated successfully';
+        return responseData['task_id'];
       } else {
         throw Exception(
             'Failed to update task: ${response.statusCode} - ${response.body}');
