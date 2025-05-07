@@ -5,20 +5,29 @@ import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import './api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
 
+  final ApiService _apiService = ApiService();
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInitialized = false;
+  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  int _notificationId = 0;
 
   NotificationService._internal();
 
   Future<void> initialize() async {
     if (_isInitialized) return;
-    await _audioPlayer.setSource(AssetSource('sounds/notification.mp3'));
-    _isInitialized = true;
+    try {
+      await _audioPlayer.setSource(AssetSource('sounds/notification.mp3'));
+      _isInitialized = true;
+    } catch (e) {
+      print('🔔 Error initializing notification service: $e');
+    }
   }
 
   Future<List<NotificationModel>> getNotifications() async {
@@ -245,43 +254,114 @@ class NotificationService {
 
   Future<void> playNotificationSound() async {
     try {
-      await _audioPlayer.stop();
-      // Play the sound at a higher volume for alarm-like effect
-      await _audioPlayer.setVolume(1.0);
-      // Loop the sound a few times for alarm effect
-      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
-      await _audioPlayer.setSource(AssetSource('sounds/notification.mp3'));
-      await _audioPlayer.resume();
+      print('🔔 Playing notification sound...');
+      if (!_isInitialized) {
+        await initialize();
+      }
       
-      // Stop the sound after 3 seconds
-      await Future.delayed(const Duration(seconds: 3));
+      // Stop any existing playback
       await _audioPlayer.stop();
+      
+      // Set volume and play
+      await _audioPlayer.setVolume(1.0);
       await _audioPlayer.setReleaseMode(ReleaseMode.release);
+      await _audioPlayer.play(AssetSource('sounds/notification.mp3'));
+      
+      print('🔔 Notification sound played successfully');
     } catch (e) {
-      print('Error playing notification sound: $e');
+      print('🔔 Error playing notification sound: $e');
+      // Try to reinitialize and play again
+      try {
+        _isInitialized = false;
+        await initialize();
+        await _audioPlayer.play(AssetSource('sounds/notification.mp3'));
+      } catch (e) {
+        print('🔔 Error during retry: $e');
+      }
     }
   }
 
   Future<void> vibrate() async {
+    print('📳 [Notification] Triggering vibration');
     try {
-      // Use a stronger vibration pattern for alarms
-      await HapticFeedback.heavyImpact();
-      await Future.delayed(const Duration(milliseconds: 200));
-      await HapticFeedback.heavyImpact();
-      await Future.delayed(const Duration(milliseconds: 200));
-      await HapticFeedback.heavyImpact();
+      await HapticFeedback.mediumImpact();
+      print('✅ [Notification] Vibration triggered successfully');
     } catch (e) {
-      print('Error during vibration: $e');
+      print('❌ [Notification] Error triggering vibration: $e');
     }
   }
 
   Future<void> handleNewNotification() async {
-    await playNotificationSound();
-    await vibrate();
+    try {
+      if (!_isInitialized) {
+        await initialize();
+      }
+      
+      if (_audioPlayer.state == PlayerState.disposed) {
+        print('🔔 AudioPlayer was disposed, reinitializing...');
+        await initialize();
+      }
+      
+      await _audioPlayer.resume();
+    } catch (e) {
+      print('🔔 Error playing notification sound: $e');
+    }
   }
 
   void dispose() {
-    _audioPlayer.dispose();
-    _isInitialized = false;
+    try {
+      if (_audioPlayer.state != PlayerState.disposed) {
+        _audioPlayer.dispose();
+      }
+      _isInitialized = false;
+    } catch (e) {
+      print('🔔 Error disposing notification service: $e');
+    }
+  }
+
+  Future<void> showNotification({
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    print('🔔 [Notification] Showing notification: $title');
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        'task_notifications',
+        'Task Notifications',
+        channelDescription: 'Notifications for task updates and assignments',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+        enableVibration: true,
+        enableLights: true,
+        color: Color(0xFF2196F3),
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound('notification'),
+        icon: '@mipmap/ic_launcher',
+      );
+
+      const notificationDetails = NotificationDetails(
+        android: androidDetails,
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          sound: 'notification.mp3',
+        ),
+      );
+
+      print('🔔 [Notification] Creating notification with ID: ${_notificationId}');
+      await _flutterLocalNotificationsPlugin.show(
+        _notificationId++,
+        title,
+        body,
+        notificationDetails,
+        payload: payload,
+      );
+      print('✅ [Notification] Notification displayed successfully');
+    } catch (e) {
+      print('❌ [Notification] Error showing notification: $e');
+    }
   }
 } 

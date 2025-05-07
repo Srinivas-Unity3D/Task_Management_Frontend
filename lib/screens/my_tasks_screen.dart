@@ -9,6 +9,7 @@ import '../widgets/common_app_bar.dart';
 import '../widgets/dashboard/side_panel.dart';
 import '../widgets/filter_panel.dart';
 import './create_task_screen.dart';
+import '../services/socket_service.dart';
 
 class MyTasksScreen extends StatefulWidget {
   const MyTasksScreen({Key? key}) : super(key: key);
@@ -19,6 +20,7 @@ class MyTasksScreen extends StatefulWidget {
 
 class _MyTasksScreenState extends State<MyTasksScreen> {
   final ApiService _apiService = ApiService();
+  final SocketService _socketService = SocketService();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Task> _tasks = [];
   List<Task> _filteredTasks = [];
@@ -32,11 +34,44 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   @override
   void initState() {
     super.initState();
+    print('📋 MyTasksScreen - Initializing...');
     _loadUserAndTasks();
+    _setupSocketListeners();
+  }
+
+  void _setupSocketListeners() {
+    print('📋 MyTasksScreen - Setting up socket listeners');
+    // Remove any existing listeners
+    _socketService.removeTaskNotificationListener(_handleTaskNotification);
+    _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
+
+    // Add new listeners
+    _socketService.listenToTaskNotifications(_handleTaskNotification);
+    _socketService.listenToDashboardUpdates(_handleDashboardUpdate);
+    print('📋 MyTasksScreen - Socket listeners setup complete');
+  }
+
+  void _handleTaskNotification(dynamic data) {
+    if (mounted) {
+      print('📋 MyTasksScreen - Received task notification');
+      // Refresh tasks list
+      _loadTasks();
+    }
+  }
+
+  void _handleDashboardUpdate(dynamic data) {
+    if (mounted) {
+      print('📋 MyTasksScreen - Received dashboard update');
+      // Refresh tasks list
+      _loadTasks();
+    }
   }
 
   @override
   void dispose() {
+    print('📋 MyTasksScreen - Disposing...');
+    _socketService.removeTaskNotificationListener(_handleTaskNotification);
+    _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
     _removeFilterPanel();
     super.dispose();
   }

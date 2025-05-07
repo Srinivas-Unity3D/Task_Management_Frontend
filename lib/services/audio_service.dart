@@ -2,83 +2,65 @@ import 'package:audioplayers/audioplayers.dart';
 
 class AudioService {
   static final AudioService _instance = AudioService._internal();
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  factory AudioService() => _instance;
+  AudioService._internal();
+
+  final AudioPlayer _player = AudioPlayer();
   bool _isInitialized = false;
-  bool _isPlaying = false;
-
-  factory AudioService() {
-    return _instance;
-  }
-
-  AudioService._internal() {
-    // Listen to player state changes
-    _audioPlayer.onPlayerStateChanged.listen((state) {
-      _isPlaying = state == PlayerState.playing;
-      print('🔊 AudioService - Player state changed: $state');
-    });
-
-    _audioPlayer.onPlayerComplete.listen((_) {
-      _isPlaying = false;
-      print('🔊 AudioService - Sound playback completed');
-    });
-  }
+  bool _isDisposed = false;
 
   Future<void> initialize() async {
+    if (_isInitialized || _isDisposed) return;
+    
     try {
-      if (!_isInitialized) {
-        print('🔊 AudioService - Initializing...');
-        await _audioPlayer.setReleaseMode(ReleaseMode.release);
-        await _audioPlayer.setPlayerMode(PlayerMode.lowLatency);
-        await _audioPlayer.setSourceAsset('sounds/notification.mp3');
-        _isInitialized = true;
-        print('🔊 AudioService - Initialized successfully');
-      }
+      print('🎵 [Audio] Initializing audio service...');
+      await _player.setSource(AssetSource('sounds/notification.mp3'));
+      _isInitialized = true;
+      print('🎵 [Audio] Audio service initialized successfully');
     } catch (e) {
-      print('🔊 AudioService - Error during initialization: $e');
+      print('❌ [Audio] Error initializing audio service: $e');
       _isInitialized = false;
     }
   }
 
   Future<void> playNotificationSound() async {
+    print('🎵 [Audio] Attempting to play notification sound...');
+    if (!_isInitialized || _isDisposed) {
+      print('🔄 [Audio] Service not initialized or disposed, reinitializing...');
+      await initialize();
+    }
+
     try {
-      print('🔊 AudioService - Attempting to play notification sound');
-      
-      if (!_isInitialized) {
-        print('🔊 AudioService - Not initialized, initializing now...');
-        await initialize();
-      }
-
-      // If sound is currently playing, stop it immediately
-      if (_isPlaying) {
-        print('🔊 AudioService - Stopping current playback');
-        await _audioPlayer.stop();
-        // Small delay to ensure clean playback
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
-
-      // Set volume and play
-      await _audioPlayer.setVolume(1.0);
-      print('🔊 AudioService - Playing new sound');
-      await _audioPlayer.play(AssetSource('sounds/notification.mp3'));
-      print('🔊 AudioService - Play command sent successfully');
+      print('🎵 [Audio] Seeking to start...');
+      await _player.seek(Duration.zero);
+      print('🎵 [Audio] Resuming playback...');
+      await _player.resume();
+      print('🎵 [Audio] Notification sound played successfully');
     } catch (e) {
-      print('🔊 AudioService - Error playing notification sound: $e');
-      _isInitialized = false;
+      print('❌ [Audio] Error playing notification sound: $e');
+      print('🔄 [Audio] Attempting to reinitialize...');
+      await initialize();
       try {
-        print('🔊 AudioService - Attempting to reinitialize...');
-        await initialize();
-        print('🔊 AudioService - Retrying playback...');
-        await _audioPlayer.play(AssetSource('sounds/notification.mp3'));
+        print('🎵 [Audio] Retrying playback...');
+        await _player.play(AssetSource('sounds/notification.mp3'));
+        print('🎵 [Audio] Retry successful');
       } catch (e) {
-        print('🔊 AudioService - Error during retry: $e');
+        print('❌ [Audio] Retry failed: $e');
       }
     }
   }
 
-  void dispose() {
-    print('🔊 AudioService - Disposing...');
-    _audioPlayer.dispose();
-    _isInitialized = false;
-    _isPlaying = false;
+  Future<void> dispose() async {
+    if (_isDisposed) return;
+    
+    try {
+      print('🎵 [Audio] Disposing audio service...');
+      _isDisposed = true;
+      await _player.stop();
+      await _player.dispose();
+      print('🎵 [Audio] Audio service disposed successfully');
+    } catch (e) {
+      print('❌ [Audio] Error disposing audio service: $e');
+    }
   }
 } 

@@ -68,6 +68,11 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
         Future.delayed(const Duration(milliseconds: 500), () {
           _fetchAssignments();
         });
+      } else if (data['type'] == 'task_assigned') {
+        print('🔄 AssignTasksScreen - Task assignment received, refreshing assignments...');
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _fetchAssignments();
+        });
       }
       setState(() {
         _hasUnreadNotifications = true;
