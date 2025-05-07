@@ -312,7 +312,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'Assign Tasks',
+                  'Assigned Tasks',
                   style: TextStyle(
                     color: AppColors.accentCyan,
                     fontSize: 24,
