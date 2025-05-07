@@ -762,4 +762,81 @@ class ApiService {
       };
     }
   }
+
+  Future<List<Map<String, dynamic>>> getNotifications() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+      final username = prefs.getString('username');
+      
+      print('🔔 [API] Fetching notifications for user: $userId, username: $username');
+
+      if (userId == null || username == null) {
+        print('❌ [API] User not logged in - missing userId or username');
+        throw Exception('User not logged in');
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/tasks/notifications?user_id=$userId&username=$username'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      print('🔔 [API] Notifications response status: ${response.statusCode}');
+      print('🔔 [API] Notifications response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        
+        // Check if response has notifications array
+        if (responseData['notifications'] != null) {
+          final List<dynamic> notifications = responseData['notifications'];
+          print('✅ [API] Received ${notifications.length} notifications from server');
+          
+          final processedNotifications = notifications.map((json) {
+            // Skip notifications where the current user is the updater
+            if ((json['updated_by'] != null && json['updated_by'] == username) ||
+                (json['assigned_by'] != null && json['assigned_by'] == username)) {
+              return null;
+            }
+            
+            return {
+              'id': json['id']?.toString() ?? '',
+              'title': json['title']?.toString() ?? '',
+              'message': json['description']?.toString() ?? '',
+              'timestamp': json['created_at']?.toString() ?? DateTime.now().toIso8601String(),
+              'type': json['type']?.toString() ?? json['priority']?.toString() ?? '',
+              'isRead': json['is_read'] == 1,
+              'taskId': json['task_id']?.toString(),
+              'updatedBy': json['updated_by']?.toString(),
+              'assignedBy': json['assigned_by']?.toString(),
+            };
+          })
+          .where((notification) => notification != null)
+          .cast<Map<String, dynamic>>()
+          .toList();
+
+          print('✅ [API] Processed ${processedNotifications.length} valid notifications');
+          return processedNotifications;
+        } else {
+          print('ℹ️ [API] No notifications found in response');
+          return [];
+        }
+      } else if (response.statusCode == 404) {
+        print('ℹ️ [API] No notifications found (404)');
+        return [];
+      } else {
+        print('❌ [API] Failed to load notifications. Status: ${response.statusCode}, Body: ${response.body}');
+        throw Exception('Failed to load notifications: ${response.statusCode}');
+      }
+    } on TimeoutException {
+      print('❌ [API] Timeout while fetching notifications');
+      throw Exception('Connection timed out. Please try again.');
+    } catch (e) {
+      print('❌ [API] Error fetching notifications: $e');
+      throw Exception('Failed to load notifications: $e');
+    }
+  }
 }

@@ -55,19 +55,25 @@ void main() async {  // Made async to properly handle initialization
     DeviceOrientation.portraitDown,
   ]);
 
+  // Initialize SharedPreferences
+  final prefs = await SharedPreferences.getInstance();
+  final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+
   // Initialize socket service
   final socketService = SocketService.instance;
-  socketService.init('http://134.209.149.12:5000');  // Updated to match your server IP
-  
-  // Get current user and register with socket
-  final prefs = await SharedPreferences.getInstance();
-  final username = prefs.getString('username');
-  if (username != null) {
-    socketService.connect(username);
+  try {
+    print('🔌 Initializing socket service...');
+    socketService.init('http://134.209.149.12:5000');  // Your server URL
+    
+    // Get current user and register with socket
+    final username = prefs.getString('username');
+    if (username != null) {
+      print('🔌 Connecting socket for user: $username');
+      socketService.connect(username);
+    }
+  } catch (e) {
+    print('❌ Error initializing socket service: $e');
   }
-
-  // Check if user is logged in
-  final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
 
   runApp(MyApp(isLoggedIn: isLoggedIn));
 }

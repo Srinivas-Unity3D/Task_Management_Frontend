@@ -109,6 +109,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _isLoadingAttachments = true;
   String? _currentlyPlayingNoteId;
 
+  List<Map<String, dynamic>> _notifications = [];
+  bool _showNotifications = false;
+
   @override
   void initState() {
     super.initState();
@@ -121,6 +124,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _initializeData();
     _initializeAudioPlayer();
     _fetchUsers();
+    _loadNotifications();
   }
 
   @override
@@ -558,6 +562,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildNotificationPanel(),
                 AbsorbPointer(
                   absorbing: widget.isEditMode,
                   child: Opacity(
@@ -1731,86 +1736,120 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<void> _playVoiceNote(VoiceNote voiceNote) async {
     try {
+      print('🎵 [VoiceNote] Attempting to play voice note: ${voiceNote.id}');
+      print('🎵 [VoiceNote] Task ID: ${widget.taskId}');
+      print('🎵 [VoiceNote] Has audio data: ${voiceNote.audioData != null}');
+      print('🎵 [VoiceNote] Has file path: ${voiceNote.filePath != null}');
+
       if (voiceNote.id == null) {
-        print('❌ Voice note ID is null');
-        _showErrorSnackBar('Invalid voice note data');
-        return;
+        print('❌ [VoiceNote] Voice note ID is null');
+        throw Exception('Invalid voice note: ID is null');
       }
-      final taskId = voiceNote.taskId ?? widget.taskId;
-      if (taskId == null) {
-        print('❌ Task ID is null');
-        _showErrorSnackBar('Cannot play voice note - missing task ID');
-        return;
+
+      if (widget.taskId == null) {
+        print('❌ [VoiceNote] Task ID is null');
+        throw Exception('Invalid task: Task ID is null');
       }
-      final playerState = await _audioPlayer.state;
-      if (playerState == PlayerState.playing) {
+
+      // Stop any current playback
+      if (_audioPlayer.state == PlayerState.playing) {
+        print('🎵 [VoiceNote] Stopping current playback');
         await _audioPlayer.stop();
       }
-      final apiUrl = '${ApiService.baseUrl}/tasks/$taskId/audio';
-      print('🎵 Playing voice note from URL: $apiUrl');
-      await _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
-      await _audioPlayer.setAudioContext(AudioContext(
-        android: AudioContextAndroid(
-          contentType: AndroidContentType.music,
-          usageType: AndroidUsageType.media,
-          audioFocus: AndroidAudioFocus.gain,
-        ),
-        iOS: AudioContextIOS(
-          category: AVAudioSessionCategory.playback,
-          options: [
-            AVAudioSessionOptions.defaultToSpeaker,
-            AVAudioSessionOptions.mixWithOthers,
-          ],
-        ),
-      ));
-      await _audioPlayer.setSourceUrl(apiUrl);
-      await _audioPlayer.resume();
-      setState(() {
-        _isPlaying = true;
-        _currentlyPlayingNoteId = voiceNote.id;
-      });
-      _audioPlayer.onPlayerComplete.listen((_) {
-        if (mounted) {
-          setState(() {
-            _isPlaying = false;
-            _currentlyPlayingNoteId = null;
-            _playbackPosition = Duration.zero;
-          });
-        }
-      });
+
+      String? filePath;
+      
+      // First check if we have audio data
+      if (voiceNote.audioData != null && voiceNote.audioData!.isNotEmpty) {
+        print('🎵 [VoiceNote] Creating file from audio data');
+        final tempDir = await getTemporaryDirectory();
+        filePath = '${tempDir.path}/voice_note_${voiceNote.id}.wav';
+        final file = File(filePath);
+        await file.writeAsBytes(base64Decode(voiceNote.audioData!));
+        print('✅ [VoiceNote] Created file from audio data: $filePath');
+      }
+      // Then check if we have a valid file path
+      else if (voiceNote.filePath != null && await File(voiceNote.filePath!).exists()) {
+        print('🎵 [VoiceNote] Using existing file path: ${voiceNote.filePath}');
+        filePath = voiceNote.filePath;
+      }
+      // Finally, try to download from API
+      else {
+        print('🎵 [VoiceNote] Attempting to download from API...');
+        final apiService = ApiService();
+        filePath = await apiService.downloadVoiceNote(voiceNote);
+        print('🎵 [VoiceNote] Download result: $filePath');
+      }
+
+      if (filePath == null) {
+        print('❌ [VoiceNote] No valid source found for voice note');
+        throw Exception('No valid audio source found for voice note');
+      }
+
+      // Verify file exists and has content
+      final file = File(filePath);
+      if (!await file.exists()) {
+        print('❌ [VoiceNote] File does not exist at path: $filePath');
+        throw Exception('Voice note file not found');
+      }
+
+      final fileSize = await file.length();
+      if (fileSize == 0) {
+        print('❌ [VoiceNote] File is empty at path: $filePath');
+        throw Exception('Voice note file is empty');
+      }
+
+      print('🎵 [VoiceNote] Playing from file: $filePath (size: $fileSize bytes)');
+      
+      // Configure player
+      await _audioPlayer.setReleaseMode(ReleaseMode.release);
+      await _audioPlayer.setVolume(1.0);
+      
+      // Play the audio
+      await _audioPlayer.play(DeviceFileSource(filePath));
+      print('✅ [VoiceNote] Playback started successfully');
+
     } catch (e) {
-      print('❌ Error playing voice note: $e');
-      _showErrorSnackBar('Failed to play voice note');
-      setState(() {
-        _isPlaying = false;
-        _currentlyPlayingNoteId = null;
-      });
+      print('❌ [VoiceNote] Error playing voice note: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to play voice note: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
   Future<String?> _getVoiceNoteFilePath(VoiceNote voiceNote) async {
     try {
-      final filePath = await _apiService.downloadVoiceNote(voiceNote);
-      if (filePath != null) {
-        print('✅ Voice note downloaded successfully: $filePath');
+      // First check if we have audio data
+      if (voiceNote.audioData != null && voiceNote.audioData!.isNotEmpty) {
+        print('🎵 [VoiceNote] Creating file from audio data');
+        final tempDir = await getTemporaryDirectory();
+        final filePath = '${tempDir.path}/voice_note_${voiceNote.id}.wav';
+        final file = File(filePath);
+        await file.writeAsBytes(base64Decode(voiceNote.audioData!));
+        print('✅ [VoiceNote] Created file from audio data: $filePath');
         return filePath;
       }
+      
+      // Then check if we have a valid file path
       if (voiceNote.filePath != null && await File(voiceNote.filePath!).exists()) {
-        print('✅ Using existing local voice note: ${voiceNote.filePath}');
+        print('🎵 [VoiceNote] Using existing file path: ${voiceNote.filePath}');
         return voiceNote.filePath;
       }
-      if (voiceNote.audioData != null) {
-        final tempDir = await getTemporaryDirectory();
-        final tempPath = '${tempDir.path}/voice_note_${voiceNote.id}.wav';
-        final file = File(tempPath);
-        await file.writeAsBytes(base64Decode(voiceNote.audioData!));
-        print('✅ Created voice note from audio data: $tempPath');
-        return tempPath;
-      }
-      print('❌ No valid source found for voice note');
-      return null;
+      
+      // Finally, try to download from API
+      print('🎵 [VoiceNote] Attempting to download from API...');
+      final apiService = ApiService();
+      final filePath = await apiService.downloadVoiceNote(voiceNote);
+      print('🎵 [VoiceNote] Download result: $filePath');
+      return filePath;
     } catch (e) {
-      print('❌ Error getting voice note file path: $e');
+      print('❌ [VoiceNote] Error getting voice note file path: $e');
       return null;
     }
   }
@@ -2028,5 +2067,136 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
     _audioPlayer.dispose();
+  }
+
+  Future<void> _loadNotifications() async {
+    try {
+      final notifications = await _apiService.getNotifications();
+      setState(() {
+        _notifications = notifications;
+      });
+    } catch (e) {
+      print('❌ Error loading notifications: $e');
+    }
+  }
+
+  Widget _buildNotificationPanel() {
+    if (!_showNotifications) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF7DF9FF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Notifications',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () {
+                  setState(() {
+                    _showNotifications = false;
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_notifications.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                'No notifications',
+                style: TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 14,
+                ),
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _notifications.length,
+              itemBuilder: (context, index) {
+                final notification = _notifications[index];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1526),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        notification['title'] ?? 'Notification',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        notification['message'] ?? '',
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (notification['timestamp'] != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatNotificationTime(notification['timestamp']),
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatNotificationTime(String timestamp) {
+    try {
+      final date = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(date);
+
+      if (difference.inDays > 0) {
+        return '${difference.inDays} days ago';
+      } else if (difference.inHours > 0) {
+        return '${difference.inHours} hours ago';
+      } else if (difference.inMinutes > 0) {
+        return '${difference.inMinutes} minutes ago';
+      } else {
+        return 'Just now';
+      }
+    } catch (e) {
+      return timestamp;
+    }
   }
 }

@@ -61,6 +61,28 @@ class SocketService {
     _setupSocketListeners();
     print('🔌 [Socket] Attempting to connect to socket server...');
     _socket!.connect();
+
+    // Add reconnection logic
+    _socket!.onReconnect((_) {
+      print('🔄 [Socket] Reconnected to server');
+      _isRegistered = true;
+      _notifyListeners('connection_status', {'status': 'connected'});
+      _registerUser();
+    });
+
+    _socket!.onReconnectAttempt((attempt) {
+      print('🔄 [Socket] Reconnection attempt $attempt');
+    });
+
+    _socket!.onReconnectError((error) {
+      print('❌ [Socket] Reconnection error: $error');
+    });
+
+    _socket!.onReconnectFailed((_) {
+      print('❌ [Socket] Reconnection failed after all attempts');
+      _isRegistered = false;
+      _notifyListeners('connection_status', {'status': 'disconnected'});
+    });
   }
 
   void _setupSocketListeners() {
@@ -77,6 +99,13 @@ class SocketService {
         print('❌ [Socket] Disconnected from server');
         _isRegistered = false;
         _notifyListeners('connection_status', {'status': 'disconnected'});
+        // Attempt to reconnect after a delay
+        Future.delayed(const Duration(seconds: 5), () {
+          if (_currentUsername != null && !_isRegistered) {
+            print('🔄 [Socket] Attempting to reconnect...');
+            reconnect();
+          }
+        });
       })
       ..onError((error) {
         print('❌ [Socket] Error: $error');
@@ -85,6 +114,13 @@ class SocketService {
       ..onConnectError((error) {
         print('❌ [Socket] Connection error: $error');
         _isRegistered = false;
+        // Attempt to reconnect after a delay
+        Future.delayed(const Duration(seconds: 5), () {
+          if (_currentUsername != null && !_isRegistered) {
+            print('🔄 [Socket] Attempting to reconnect after error...');
+            reconnect();
+          }
+        });
       })
       ..on('register_response', (data) {
         print('📝 [Socket] Registration response: $data');

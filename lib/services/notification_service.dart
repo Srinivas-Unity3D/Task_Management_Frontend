@@ -23,10 +23,45 @@ class NotificationService {
   Future<void> initialize() async {
     if (_isInitialized) return;
     try {
+      print('🔔 [Notification] Initializing notification service...');
+      
+      // Initialize audio player
       await _audioPlayer.setSource(AssetSource('sounds/notification.mp3'));
+      
+      // Initialize local notifications
+      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
+      
+      await _flutterLocalNotificationsPlugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (details) {
+          print('🔔 [Notification] Notification tapped: ${details.payload}');
+          // Handle notification tap
+          if (details.payload != null) {
+            try {
+              final data = json.decode(details.payload!);
+              // Handle notification data
+              print('🔔 [Notification] Notification data: $data');
+            } catch (e) {
+              print('❌ [Notification] Error parsing notification payload: $e');
+            }
+          }
+        },
+      );
+      
       _isInitialized = true;
+      print('✅ [Notification] Notification service initialized successfully');
     } catch (e) {
-      print('🔔 Error initializing notification service: $e');
+      print('❌ [Notification] Error initializing notification service: $e');
+      _isInitialized = false;
     }
   }
 
@@ -36,9 +71,10 @@ class NotificationService {
       final userId = prefs.getString('user_id');
       final username = prefs.getString('username');
       
-      print('Fetching notifications for user: $userId, username: $username');
+      print('🔔 [Notification] Fetching notifications for user: $userId, username: $username');
 
       if (userId == null || username == null) {
+        print('❌ [Notification] User not logged in');
         throw Exception('User not logged in');
       }
 
@@ -48,16 +84,16 @@ class NotificationService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-      );
+      ).timeout(const Duration(seconds: 10));
 
-      print('Notifications response status: ${response.statusCode}');
-      print('Notifications response body: ${response.body}');
+      print('🔔 [Notification] Response status: ${response.statusCode}');
+      print('🔔 [Notification] Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success'] == true && responseData['notifications'] != null) {
           final List<dynamic> notifications = responseData['notifications'];
-          print('Received ${notifications.length} notifications from server');
+          print('✅ [Notification] Received ${notifications.length} notifications');
           
           return notifications.map((json) {
             try {
@@ -78,8 +114,8 @@ class NotificationService {
                 isCompleted: json['is_read'] == 1,
               );
             } catch (e) {
-              print('Error parsing notification: $e');
-              print('Problematic JSON: $json');
+              print('❌ [Notification] Error parsing notification: $e');
+              print('❌ [Notification] Problematic JSON: $json');
               return null;
             }
           })
@@ -87,19 +123,15 @@ class NotificationService {
           .cast<NotificationModel>()
           .toList();
         } else {
-          print('Invalid response format: $responseData');
-          throw Exception('Invalid response format');
+          print('ℹ️ [Notification] No notifications found in response');
+          return [];
         }
-      } else if (response.statusCode == 404) {
-        print('User not found or no notifications available');
-        return [];
       } else {
-        print('Failed to load notifications. Status: ${response.statusCode}, Body: ${response.body}');
+        print('❌ [Notification] Failed to load notifications. Status: ${response.statusCode}');
         throw Exception('Failed to load notifications');
       }
     } catch (e) {
-      print('Error fetching notifications: $e');
-      // Return empty list instead of mock data
+      print('❌ [Notification] Error fetching notifications: $e');
       return [];
     }
   }
