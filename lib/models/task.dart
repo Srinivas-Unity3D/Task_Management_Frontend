@@ -1,7 +1,8 @@
 enum TaskPriority {
   low,
   medium,
-  high
+  high,
+  urgent
 }
 
 enum TaskStatus {
@@ -74,6 +75,8 @@ class Task {
         return TaskPriority.medium;
       case 'high':
         return TaskPriority.high;
+      case 'urgent':
+        return TaskPriority.urgent;
       default:
         return TaskPriority.medium;
     }

@@ -200,7 +200,31 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       _selectedAssignee = widget.initialAssignee;
       _priority = widget.initialPriority ?? 'Low';
       _dueDate = widget.initialDueDate;
-      _status = _parseStatus(widget.initialStatus ?? 'pending');
+      
+      // Properly initialize status from initialStatus
+      if (widget.initialStatus != null) {
+        print('📝 [Task] Initializing status from: ${widget.initialStatus}');
+        switch (widget.initialStatus!.toLowerCase()) {
+          case 'pending':
+            _status = TaskStatus.pending;
+            break;
+          case 'in_progress':
+            _status = TaskStatus.inProgress;
+            break;
+          case 'completed':
+            _status = TaskStatus.completed;
+            break;
+          case 'snoozed':
+            _status = TaskStatus.snoozed;
+            break;
+          default:
+            _status = TaskStatus.pending;
+        }
+        print('📝 [Task] Status initialized to: ${_status.toString().split('.').last}');
+      } else {
+        _status = TaskStatus.pending;
+      }
+      
       await _loadTaskVoiceNotes();
       await _loadTaskAttachments();
     }
@@ -1188,6 +1212,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     return Expanded(
       child: GestureDetector(
         onTap: () {
+          print('📝 [Task] Changing status from ${_status.toString().split('.').last} to ${status.toString().split('.').last}');
           setState(() {
             _status = status;
           });
@@ -1331,6 +1356,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             throw Exception('Assignee is missing');
           }
           print('📝 [Task] Updating existing task...');
+          print('📝 [Task] Priority: ${_priority.toLowerCase()}');
+          print('📝 [Task] Status: ${_getStatusString(_status)}');
           response = await _apiService.updateTask(
             taskId: widget.taskId!,
             title: _titleController.text,
@@ -1352,6 +1379,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             throw Exception('Assignee is missing');
           }
           print('📝 [Task] Creating new task...');
+          print('📝 [Task] Priority: ${_priority.toLowerCase()}');
           response = await _apiService.createTask(
             title: _titleController.text,
             description: _descriptionController.text,
