@@ -97,6 +97,7 @@ class NotificationCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               CircleAvatar(
                 radius: 12,
@@ -110,26 +111,34 @@ class NotificationCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    notification.senderName,
-                    style: const TextStyle(
-                      color: Color(0xFF00E5FF),
-                      fontSize: 14,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      notification.senderName,
+                      style: const TextStyle(
+                        color: Color(0xFF00E5FF),
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
-                  Text(
-                    notification.senderRole,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                      fontSize: 12,
+                    Text(
+                      notification.senderRole,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.5),
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const Spacer(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
               TextButton(
                 onPressed: onSnooze,
                 style: TextButton.styleFrom(
