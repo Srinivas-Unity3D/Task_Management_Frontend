@@ -292,6 +292,20 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
     }
   }
 
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return AppColors.pending;
+      case 'in_progress':
+      case 'inprogress':
+        return AppColors.inProgress;
+      case 'completed':
+        return AppColors.completed;
+      default:
+        return AppColors.textGrey;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -437,19 +451,6 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   }
 
   Widget _buildTaskAssignmentItem(TaskAssignment assignment) {
-    Color _getStatusColor(String status) {
-      switch (status.toLowerCase()) {
-        case 'pending':
-          return AppColors.pending;
-        case 'in_progress':
-          return AppColors.inProgress;
-        case 'completed':
-          return AppColors.completed;
-        default:
-          return AppColors.textGrey;
-      }
-    }
-
     String _formatDate(DateTime date) {
       return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     }

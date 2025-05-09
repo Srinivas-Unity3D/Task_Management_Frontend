@@ -214,6 +214,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             _status = TaskStatus.pending;
             break;
           case 'in_progress':
+          case 'inprogress':
             _status = TaskStatus.inProgress;
             break;
           case 'completed':
