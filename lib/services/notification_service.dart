@@ -67,17 +67,19 @@ class NotificationService {
 
   Future<List<NotificationModel>> getNotifications() async {
     try {
+      print('🔔 [NotificationService] Starting to fetch notifications');
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
       final username = prefs.getString('username');
       
-      print('🔔 [Notification] Fetching notifications for user: $userId, username: $username');
+      print('🔔 [NotificationService] Fetching notifications for user: $userId, username: $username');
 
       if (userId == null || username == null) {
-        print('❌ [Notification] User not logged in');
+        print('❌ [NotificationService] User not logged in');
         throw Exception('User not logged in');
       }
 
+      print('🔔 [NotificationService] Making API call to ${ApiService.baseUrl}/tasks/notifications');
       final response = await http.get(
         Uri.parse('${ApiService.baseUrl}/tasks/notifications?user_id=$userId&username=$username'),
         headers: {
@@ -86,20 +88,21 @@ class NotificationService {
         },
       ).timeout(const Duration(seconds: 10));
 
-      print('🔔 [Notification] Response status: ${response.statusCode}');
-      print('🔔 [Notification] Response body: ${response.body}');
+      print('🔔 [NotificationService] Response status: ${response.statusCode}');
+      print('🔔 [NotificationService] Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success'] == true && responseData['notifications'] != null) {
           final List<dynamic> notifications = responseData['notifications'];
-          print('✅ [Notification] Received ${notifications.length} notifications');
+          print('✅ [NotificationService] Received ${notifications.length} notifications');
           
-          return notifications.map((json) {
+          final processedNotifications = notifications.map((json) {
             try {
               // Skip notifications where the current user is the updater
               if ((json['updated_by'] != null && json['updated_by'] == username) ||
                   (json['assigned_by'] != null && json['assigned_by'] == username)) {
+                print('ℹ️ [NotificationService] Skipping notification from current user');
                 return null;
               }
               
@@ -109,37 +112,42 @@ class NotificationService {
                 description: json['description'] ?? '',
                 senderName: json['sender_name'] ?? '',
                 senderRole: json['sender_role'] ?? '',
-                timeAgo: _getTimeAgo(json['created_at'] ?? DateTime.now().toIso8601String()),
+                createdAt: json['created_at'] ?? DateTime.now().toIso8601String(),
                 type: _getNotificationType(json['type'] ?? json['priority'] ?? ''),
                 isCompleted: json['is_read'] == 1,
               );
             } catch (e) {
-              print('❌ [Notification] Error parsing notification: $e');
-              print('❌ [Notification] Problematic JSON: $json');
+              print('❌ [NotificationService] Error parsing notification: $e');
+              print('❌ [NotificationService] Problematic JSON: $json');
               return null;
             }
           })
           .where((notification) => notification != null)
           .cast<NotificationModel>()
           .toList();
+
+          print('✅ [NotificationService] Successfully processed ${processedNotifications.length} notifications');
+          return processedNotifications;
         } else {
-          print('ℹ️ [Notification] No notifications found in response');
+          print('ℹ️ [NotificationService] No notifications found in response');
           return [];
         }
       } else {
-        print('❌ [Notification] Failed to load notifications. Status: ${response.statusCode}');
+        print('❌ [NotificationService] Failed to load notifications. Status: ${response.statusCode}');
         throw Exception('Failed to load notifications');
       }
     } catch (e) {
-      print('❌ [Notification] Error fetching notifications: $e');
+      print('❌ [NotificationService] Error fetching notifications: $e');
       return [];
     }
   }
 
   String _getTimeAgo(String timestamp) {
     try {
-      final DateTime time = DateTime.parse(timestamp);
-      final Duration difference = DateTime.now().difference(time);
+      // Always treat backend timestamp as UTC, then convert to local
+      final DateTime utcTime = DateTime.parse(timestamp).toUtc();
+      final DateTime localTime = utcTime.toLocal();
+      final Duration difference = DateTime.now().difference(localTime);
       
       if (difference.inMinutes < 60) {
         return '${difference.inMinutes}m ago';

@@ -4,7 +4,7 @@ class NotificationModel {
   final String description;
   final String senderName;
   final String senderRole;
-  final String timeAgo;
+  final String createdAt;
   final String type;
   final bool isCompleted;
 
@@ -14,7 +14,7 @@ class NotificationModel {
     required this.description,
     required this.senderName,
     required this.senderRole,
-    required this.timeAgo,
+    required this.createdAt,
     required this.type,
     this.isCompleted = false,
   });
@@ -26,7 +26,7 @@ class NotificationModel {
       description: json['description'],
       senderName: json['sender_name'],
       senderRole: json['sender_role'],
-      timeAgo: json['time_ago'],
+      createdAt: json['created_at'] ?? '',
       type: json['type'],
       isCompleted: json['is_completed'] ?? false,
     );

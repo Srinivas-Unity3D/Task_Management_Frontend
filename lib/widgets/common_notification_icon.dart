@@ -48,7 +48,9 @@ class _CommonNotificationIconState extends State<CommonNotificationIcon> with Si
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
+        print('🔔 [NotificationIcon] Bell icon clicked');
         widget.onNotificationCleared?.call();
+        print('🔔 [NotificationIcon] Navigating to NotificationScreen');
         Navigator.push(
           context,
           MaterialPageRoute(

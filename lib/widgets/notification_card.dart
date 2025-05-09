@@ -28,6 +28,26 @@ class NotificationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    print('NotificationCard build called');
+    String timeAgo = '';
+    try {
+      // Treat backend time as UTC (even without 'Z'), convert to local
+      final utc = DateTime.parse(notification.createdAt + 'Z').toUtc();
+      final localTime = utc.toLocal();
+      final now = DateTime.now();
+      final difference = now.difference(localTime);
+      print('DEBUG: createdAt (UTC): $utc, localTime: $localTime, now: $now, difference: ${difference.inMinutes}m');
+      if (difference.inMinutes < 60) {
+        timeAgo = '${difference.inMinutes}m ago';
+      } else if (difference.inHours < 24) {
+        timeAgo = '${difference.inHours}h ago';
+      } else {
+        timeAgo = '${difference.inDays}d ago';
+      }
+    } catch (e) {
+      print('DEBUG: error: $e');
+      timeAgo = '';
+    }
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       padding: const EdgeInsets.all(16),
@@ -59,7 +79,7 @@ class NotificationCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                notification.timeAgo,
+                timeAgo,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.5),
                   fontSize: 12,
