@@ -1025,8 +1025,27 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'By: ${voiceNote.createdBy ?? "Unknown"}'
-                                    '${voiceNote.createdAt != null ? " • " + DateFormat("dd MMM yyyy, hh:mm a").format(voiceNote.createdAt!) : ""}',
+                                    (() {
+                                      if (voiceNote.createdAt != null) {
+                                        // Ensure the backend time is treated as UTC, then convert to local
+                                        final utcTime = DateTime.utc(
+                                          voiceNote.createdAt!.year,
+                                          voiceNote.createdAt!.month,
+                                          voiceNote.createdAt!.day,
+                                          voiceNote.createdAt!.hour,
+                                          voiceNote.createdAt!.minute,
+                                          voiceNote.createdAt!.second,
+                                          voiceNote.createdAt!.millisecond,
+                                          voiceNote.createdAt!.microsecond,
+                                        );
+                                        final localTime = utcTime.toLocal();
+                                        final formatted = DateFormat("dd MMM yyyy, hh:mm a").format(localTime);
+                                        final timezone = localTime.timeZoneName;
+                                        return 'By: ${voiceNote.createdBy ?? "Unknown"} • $formatted $timezone';
+                                      } else {
+                                        return 'By: ${voiceNote.createdBy ?? "Unknown"}';
+                                      }
+                                    })(),
                                     style: const TextStyle(
                                       color: Color(0xFF94A3B8),
                                       fontSize: 12,
