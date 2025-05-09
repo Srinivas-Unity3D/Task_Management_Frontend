@@ -197,7 +197,7 @@ class NotificationService {
     }
   }
 
-  Future<void> snoozeNotification(String notificationId, DateTime snoozeUntil, {String? reason, String? audioNote}) async {
+  Future<void> snoozeNotification(String notificationId, DateTime snoozeUntil, {String? reason, Map<String, dynamic>? audioNote}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
@@ -225,11 +225,6 @@ class NotificationService {
             orElse: () => throw Exception('Notification not found')
           );
 
-          final taskId = notification['task_id'];
-          if (taskId == null) {
-            throw Exception('Task ID not found in notification');
-          }
-
           // Snooze the notification
           final snoozeResponse = await http.post(
             Uri.parse('${ApiService.baseUrl}/notifications/snooze'),
@@ -241,7 +236,8 @@ class NotificationService {
               'notification_id': notificationId,
               'snooze_until': snoozeUntil.toIso8601String(),
               'reason': reason,
-              'audio_note': audioNote
+              'audio_note': audioNote,
+              'updated_by': username,
             }),
           );
 
@@ -251,25 +247,6 @@ class NotificationService {
           if (snoozeResponse.statusCode == 200) {
             // Mark the notification as read to clear it from the notification bar
             await markNotificationAsComplete(notificationId);
-            
-            // Update the task status to snoozed
-            final taskResponse = await http.put(
-              Uri.parse('${ApiService.baseUrl}/tasks/$taskId'),
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-              },
-              body: json.encode({
-                'status': 'snoozed',
-                'updated_by': username,
-                'snooze_until': snoozeUntil.toIso8601String(),
-                'snooze_reason': reason
-              }),
-            );
-
-            if (taskResponse.statusCode != 200) {
-              print('Failed to update task status to snoozed');
-            }
           } else {
             final errorBody = json.decode(snoozeResponse.body);
             final errorMessage = errorBody['message'] ?? 'Failed to snooze notification';

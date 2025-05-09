@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/notification_service.dart';
 import './audio_recorder.dart';
 import '../theme/colors.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
 
 class SnoozeDialog extends StatefulWidget {
   final String notificationId;
@@ -22,14 +25,41 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
   final TextEditingController _reasonController = TextEditingController();
   final NotificationService _notificationService = NotificationService();
   String? _audioData;
+  String? _audioFilePath;
+  int? _audioDuration;
   DateTime _selectedDate = DateTime.now().add(const Duration(hours: 1));
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _isPlaying = false;
 
   bool get _canSnooze => _reasonController.text.trim().isNotEmpty || _audioData != null;
 
   @override
   void dispose() {
     _reasonController.dispose();
+    _audioPlayer.dispose();
     super.dispose();
+  }
+
+  Future<void> _playAudio() async {
+    if (_isPlaying) {
+      await _audioPlayer.stop();
+      setState(() => _isPlaying = false);
+      return;
+    }
+    String? path = _audioFilePath;
+    if ((path == null || path.isEmpty) && _audioData != null) {
+      // Save base64 to temp file
+      final tempDir = await getTemporaryDirectory();
+      path = '${tempDir.path}/snooze_audio_preview.m4a';
+      final file = File(path);
+      await file.writeAsBytes(base64Decode(_audioData!));
+    }
+    if (path == null) return;
+    await _audioPlayer.play(DeviceFileSource(path));
+    setState(() => _isPlaying = true);
+    _audioPlayer.onPlayerComplete.listen((event) {
+      setState(() => _isPlaying = false);
+    });
   }
 
   Future<void> _handleSnooze() async {
@@ -46,12 +76,21 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
       return;
     }
 
+    Map<String, dynamic>? audioNote;
+    if (_audioData != null) {
+      audioNote = {
+        'audio_data': _audioData,
+        'filename': 'snooze_audio_${DateTime.now().millisecondsSinceEpoch}.m4a',
+        'duration': _audioDuration ?? 0,
+      };
+    }
+
     try {
       await _notificationService.snoozeNotification(
         widget.notificationId,
         _selectedDate,
         reason: _reasonController.text.trim(),
-        audioNote: _audioData,
+        audioNote: audioNote,
       );
       widget.onSnoozeComplete();
       if (mounted) {
@@ -174,10 +213,39 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
               ),
               const SizedBox(height: 16),
               VoiceRecorder(
-                onRecordingComplete: (String? base64Audio) {
-                  setState(() => _audioData = base64Audio);
+                key: ValueKey(_audioData),
+                onRecordingComplete: (String? base64Audio, {String? filePath, int? duration}) {
+                  setState(() {
+                    _audioData = base64Audio;
+                    _audioFilePath = filePath;
+                    _audioDuration = duration;
+                  });
                 },
               ),
+              if (_audioFilePath != null || _audioData != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: AppColors.accentCyan),
+                      onPressed: _playAudio,
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Preview Snooze Audio', style: TextStyle(color: AppColors.textGrey)),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () {
+                        setState(() {
+                          _audioData = null;
+                          _audioFilePath = null;
+                          _audioDuration = null;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 _reasonController.text.trim().isEmpty ? 'Required if no reason is provided' : '',

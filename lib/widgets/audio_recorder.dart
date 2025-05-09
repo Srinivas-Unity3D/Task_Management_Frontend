@@ -125,18 +125,6 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
                   color: AppColors.pending,
                   tooltip: 'Stop Recording',
                 ),
-              if (_hasRecording) ...[
-                Icon(
-                  Icons.check_circle,
-                  color: AppColors.accentCyan,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: _deleteRecording,
-                  color: AppColors.pending,
-                  tooltip: 'Delete Recording',
-                ),
-              ],
             ],
           ),
           if (_isRecording)

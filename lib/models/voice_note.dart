@@ -7,6 +7,7 @@ class VoiceNote {
   final DateTime? createdAt;
   final Duration duration;
   final String fileName;
+  final String? noteType;
 
   VoiceNote({
     this.id,
@@ -17,6 +18,7 @@ class VoiceNote {
     this.createdAt,
     required this.duration,
     required this.fileName,
+    this.noteType,
   });
 
   factory VoiceNote.fromJson(Map<String, dynamic> json, {String? parentTaskId}) {
@@ -32,6 +34,7 @@ class VoiceNote {
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
       duration: Duration(milliseconds: json['duration'] ?? 0),
       fileName: json['file_name'] ?? 'voice_note.wav',
+      noteType: json['note_type'],
     );
   }
 
@@ -45,6 +48,7 @@ class VoiceNote {
       'created_at': createdAt?.toIso8601String(),
       'duration': duration.inMilliseconds,
       'file_name': fileName,
+      'note_type': noteType,
     };
   }
 } 

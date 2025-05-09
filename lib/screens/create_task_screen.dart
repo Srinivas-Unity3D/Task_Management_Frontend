@@ -21,6 +21,7 @@ import 'package:open_file/open_file.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import '../widgets/snooze_dialog.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   final bool isEditMode;
@@ -1026,13 +1027,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    'Voice Note ${index + 1}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        voiceNote.noteType == 'snooze' ? 'Snooze' : 'Voice Note  ${index + 1}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
@@ -2241,5 +2246,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     } catch (e) {
       return timestamp;
     }
+  }
+
+  Future<void> _showSnoozeDialog(String notificationId) async {
+    await showDialog(
+      context: context,
+      builder: (context) => SnoozeDialog(
+        notificationId: notificationId,
+        onSnoozeComplete: () async {
+          await _loadTaskVoiceNotes();
+          setState(() {}); // Ensure UI updates
+        },
+      ),
+    );
   }
 }
