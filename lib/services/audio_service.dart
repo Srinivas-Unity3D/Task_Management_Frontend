@@ -25,20 +25,24 @@ class AudioService {
 
   Future<void> playNotificationSound() async {
     print('🎵 [Audio] Attempting to play notification sound...');
-    if (!_isInitialized || _isDisposed) {
-      print('🔄 [Audio] Service not initialized or disposed, reinitializing...');
-      await initialize();
-    }
-
+    
     try {
-      print('🎵 [Audio] Seeking to start...');
-      await _player.seek(Duration.zero);
-      print('🎵 [Audio] Resuming playback...');
-      await _player.resume();
+      // Stop any existing playback
+      await _player.stop();
+      
+      // Reset the player state
+      await _player.setReleaseMode(ReleaseMode.release);
+      await _player.setVolume(1.0);
+      
+      // Load and play the sound
+      await _player.play(AssetSource('sounds/notification.mp3'));
       print('🎵 [Audio] Notification sound played successfully');
     } catch (e) {
       print('❌ [Audio] Error playing notification sound: $e');
       print('🔄 [Audio] Attempting to reinitialize...');
+      
+      // Try to reinitialize and play again
+      _isInitialized = false;
       await initialize();
       try {
         print('🎵 [Audio] Retrying playback...');

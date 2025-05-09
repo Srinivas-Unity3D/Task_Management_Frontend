@@ -13,6 +13,7 @@ import '../widgets/dashboard/side_panel.dart';
 import '../widgets/filter_panel.dart';
 import './create_task_screen.dart';
 import '../services/socket_service.dart';
+import './notifications_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
   const MyTasksScreen({Key? key}) : super(key: key);
@@ -30,11 +31,11 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   List<Task> _tasks = [];
   List<Task> _filteredTasks = [];
   bool _isLoading = true;
-  bool _hasUnreadNotifications = false;
   String? _currentUserId;
   String? _currentRole;
   String? _currentUsername;
   OverlayEntry? _filterOverlay;
+  bool _hasUnreadNotifications = false;
 
   @override
   void initState() {
@@ -42,6 +43,28 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     print('📋 MyTasksScreen - Initializing...');
     _loadUserAndTasks();
     _setupSocketListeners();
+    _checkUnreadNotifications();
+  }
+
+  Future<void> _checkUnreadNotifications() async {
+    try {
+      final notifications = await _notificationService.getNotifications();
+      final hasUnread = notifications.any((n) => !n.isCompleted);
+      _notificationService.setUnreadState(hasUnread);
+      if (mounted) {
+        setState(() {
+          _hasUnreadNotifications = hasUnread;
+        });
+      }
+    } catch (e) {
+      print('❌ [MyTasks] Error checking unread notifications: $e');
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _checkUnreadNotifications();
   }
 
   void _setupSocketListeners() {
@@ -87,9 +110,12 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
       // Update task list and show notification badge
       print('🔄 [MyTasks] Updating task list and badge...');
-      setState(() {
-        _hasUnreadNotifications = true;
-      });
+      _notificationService.setUnreadState(true);
+      if (mounted) {
+        setState(() {
+          _hasUnreadNotifications = true;
+        });
+      }
       _loadTasks();
       print('✅ [MyTasks] Notification handling complete');
     } catch (e) {
@@ -483,7 +509,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           if (mounted) {
             Navigator.of(context).pushNamedAndRemoveUntil(
               '/',
-                  (route) => false,
+              (route) => false,
             );
           }
         },
@@ -502,10 +528,20 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           CommonAppBar(
             onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
             hasUnreadNotifications: _hasUnreadNotifications,
-            onNotificationCleared: () {
-              setState(() {
-                _hasUnreadNotifications = false;
-              });
+            onNotificationCleared: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationScreen(),
+                ),
+              );
+              
+              if (result == true && mounted) {
+                _notificationService.setUnreadState(false);
+                setState(() {
+                  _hasUnreadNotifications = false;
+                });
+              }
             },
           ),
           Padding(

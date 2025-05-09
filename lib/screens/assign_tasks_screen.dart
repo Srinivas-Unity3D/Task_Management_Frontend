@@ -11,6 +11,7 @@ import '../widgets/common_app_bar.dart';
 import '../widgets/dashboard/side_panel.dart';
 import '../widgets/filter_panel.dart';
 import './create_task_screen.dart';
+import './notifications_screen.dart';
 
 class AssignTasksScreen extends StatefulWidget {
   const AssignTasksScreen({Key? key}) : super(key: key);
@@ -42,6 +43,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
     print('🔔 AssignTasksScreen - initState');
     _initializeServices();
     _loadUserAndAssignments();
+    _checkUnreadNotifications();
   }
 
   Future<void> _initializeServices() async {
@@ -101,6 +103,27 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
     } catch (e) {
       print('❌ AssignTasksScreen - Error loading user and assignments: $e');
     }
+  }
+
+  Future<void> _checkUnreadNotifications() async {
+    try {
+      final notifications = await _notificationService.getNotifications();
+      final hasUnread = notifications.any((n) => !n.isCompleted);
+      _notificationService.setUnreadState(hasUnread);
+      if (mounted) {
+        setState(() {
+          _hasUnreadNotifications = hasUnread;
+        });
+      }
+    } catch (e) {
+      print('❌ [AssignTasks] Error checking unread notifications: $e');
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _checkUnreadNotifications();
   }
 
   void _showFilterPanel(BuildContext context, Offset buttonPosition) {
@@ -281,7 +304,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
           if (mounted) {
             Navigator.of(context).pushNamedAndRemoveUntil(
               '/',
-                  (route) => false,
+              (route) => false,
             );
           }
         },
@@ -299,11 +322,21 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
         children: [
           CommonAppBar(
             onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
-            hasUnreadNotifications: _hasUnreadNotifications,
-            onNotificationCleared: () {
-              setState(() {
-                _hasUnreadNotifications = false;
-              });
+            hasUnreadNotifications: _notificationService.getUnreadState(),
+            onNotificationCleared: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationScreen(),
+                ),
+              );
+              
+              if (result == true && mounted) {
+                _notificationService.setUnreadState(false);
+                setState(() {
+                  _hasUnreadNotifications = false;
+                });
+              }
             },
           ),
           Container(

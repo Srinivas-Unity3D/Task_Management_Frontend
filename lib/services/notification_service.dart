@@ -12,6 +12,9 @@ class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
 
+  // Add static variable to track unread notifications
+  static bool _hasUnreadNotifications = false;
+
   final ApiService _apiService = ApiService();
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInitialized = false;
@@ -19,6 +22,16 @@ class NotificationService {
   int _notificationId = 0;
 
   NotificationService._internal();
+
+  // Add method to update unread state
+  void setUnreadState(bool hasUnread) {
+    _hasUnreadNotifications = hasUnread;
+  }
+
+  // Add method to get unread state
+  bool getUnreadState() {
+    return _hasUnreadNotifications;
+  }
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -172,33 +185,15 @@ class NotificationService {
     }
   }
 
-  Future<void> markAsComplete(String notificationId) async {
+  Future<void> markNotificationAsComplete(String notificationId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getString('user_id');
-      final username = prefs.getString('username');
-
-      if (userId == null || username == null) {
-        throw Exception('User not logged in');
-      }
-
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/notifications/mark_read/$notificationId'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      );
-
-      print('Mark complete response status: ${response.statusCode}');
-      print('Mark complete response body: ${response.body}');
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to mark notification as complete');
+      final response = await _apiService.markNotificationAsComplete(notificationId);
+      if (!response['success']) {
+        throw Exception(response['message'] ?? 'Failed to mark notification as complete');
       }
     } catch (e) {
-      print('Error marking notification as complete: $e');
-      throw Exception('Failed to mark notification as complete');
+      print('❌ [NotificationService] Error marking notification as complete: $e');
+      rethrow;
     }
   }
 
@@ -255,7 +250,7 @@ class NotificationService {
 
           if (snoozeResponse.statusCode == 200) {
             // Mark the notification as read to clear it from the notification bar
-            await markAsComplete(notificationId);
+            await markNotificationAsComplete(notificationId);
             
             // Update the task status to snoozed
             final taskResponse = await http.put(
@@ -302,9 +297,11 @@ class NotificationService {
       // Stop any existing playback
       await _audioPlayer.stop();
       
-      // Set volume and play
+      // Reset the player state
+      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
       await _audioPlayer.setVolume(1.0);
-      await _audioPlayer.setReleaseMode(ReleaseMode.release);
+      
+      // Play the sound
       await _audioPlayer.play(AssetSource('sounds/notification.mp3'));
       
       print('🔔 Notification sound played successfully');
@@ -337,14 +334,25 @@ class NotificationService {
         await initialize();
       }
       
-      if (_audioPlayer.state == PlayerState.disposed) {
-        print('🔔 AudioPlayer was disposed, reinitializing...');
-        await initialize();
-      }
+      // Stop any existing playback
+      await _audioPlayer.stop();
       
-      await _audioPlayer.resume();
+      // Reset the player state
+      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
+      await _audioPlayer.setVolume(1.0);
+      
+      // Play the sound
+      await _audioPlayer.play(AssetSource('sounds/notification.mp3'));
     } catch (e) {
       print('🔔 Error playing notification sound: $e');
+      // Try to reinitialize and play again
+      try {
+        _isInitialized = false;
+        await initialize();
+        await _audioPlayer.play(AssetSource('sounds/notification.mp3'));
+      } catch (e) {
+        print('🔔 Error during retry: $e');
+      }
     }
   }
 

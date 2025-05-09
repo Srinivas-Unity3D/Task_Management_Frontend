@@ -19,6 +19,7 @@ import '../services/api_service.dart';
 import '../screens/create_task_screen.dart';
 import '../screens/assign_tasks_screen.dart';
 import '../screens/my_tasks_screen.dart';
+import '../screens/notifications_screen.dart';
 import '../services/socket_service.dart';
 import '../widgets/common_notification_icon.dart';
 import '../services/audio_service.dart';
@@ -51,19 +52,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    print('🔄 Dashboard - Initializing...');
-    print('🔄 Dashboard - Socket connected: ${_socketService.isConnected()}');
+    print('📊 DashboardScreen - Initializing...');
     _initializeServices();
-    
-    // Listen to socket connection status
-    _socketService.connected.addListener(_handleConnectionStatusChange);
-    
-    // Setup socket listeners immediately
-    _setupSocketListeners();
-    
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _setupNotificationService();
-    });
+    _checkUnreadNotifications();
+  }
+
+  Future<void> _checkUnreadNotifications() async {
+    try {
+      final notifications = await _notificationService.getNotifications();
+      final hasUnread = notifications.any((n) => !n.isCompleted);
+      _notificationService.setUnreadState(hasUnread);
+      if (mounted) {
+        setState(() {
+          _hasUnreadNotifications = hasUnread;
+        });
+      }
+    } catch (e) {
+      print('❌ [Dashboard] Error checking unread notifications: $e');
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _checkUnreadNotifications();
   }
 
   void _setupNotificationService() {
@@ -195,17 +207,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _handleTaskNotification(dynamic data) {
-    print('📬 [Dashboard] Processing task notification: $data');
-    print('📬 [Dashboard] Current user: ${_user?.username}');
-    print('📬 [Dashboard] Notification sender: ${data['task']?['updated_by'] ?? data['task']?['assigned_by']}');
-    print('📬 [Dashboard] Task data: ${data['task']}');
-    
     if (!mounted) {
       print('❌ [Dashboard] Widget not mounted, skipping notification');
       return;
     }
 
     try {
+      print('📊 [Dashboard] Processing task notification: $data');
+      print('📊 [Dashboard] Current user: ${_user?.username}');
+      print('📊 [Dashboard] Notification sender: ${data['task']?['updated_by'] ?? data['task']?['assigned_by']}');
+      print('📊 [Dashboard] Task data: ${data['task']}');
+
       // Only play sound and vibrate if the notification is from another user
       final sender = data['task']?['updated_by'] ?? data['task']?['assigned_by'];
       if (sender != _user?.username) {
@@ -225,9 +237,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       // Update task list and show notification badge
       print('🔄 [Dashboard] Updating task list and badge...');
-      setState(() {
-        _hasUnreadNotifications = true;
-      });
+      _notificationService.setUnreadState(true);
+      if (mounted) {
+        setState(() {
+          _hasUnreadNotifications = true;
+        });
+      }
       _loadTasks();
       print('✅ [Dashboard] Notification handling complete');
     } catch (e) {
@@ -486,7 +501,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
           CommonAppBar(
             onMenuPressed: _showSidePanel,
             hasUnreadNotifications: _hasUnreadNotifications,
-            onNotificationCleared: _clearNotifications,
+            onNotificationCleared: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationScreen(),
+                ),
+              );
+              
+              if (result == true && mounted) {
+                _notificationService.setUnreadState(false);
+                setState(() {
+                  _hasUnreadNotifications = false;
+                });
+              }
+            },
           ),
           Container(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),

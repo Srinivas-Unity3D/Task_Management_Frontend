@@ -3,11 +3,13 @@ import '../screens/notifications_screen.dart';
 
 class CommonNotificationIcon extends StatefulWidget {
   final bool hasUnreadNotifications;
+  final VoidCallback? onTap;
   final VoidCallback? onNotificationCleared;
 
   const CommonNotificationIcon({
     Key? key,
     required this.hasUnreadNotifications,
+    this.onTap,
     this.onNotificationCleared,
   }) : super(key: key);
 
@@ -16,48 +18,42 @@ class CommonNotificationIcon extends StatefulWidget {
 }
 
 class _CommonNotificationIconState extends State<CommonNotificationIcon> with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
+  late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 200),
       vsync: this,
     );
-
     _scaleAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeInOut,
-      ),
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
-
-    // Repeat the animation
-    _animationController.repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _controller.dispose();
     super.dispose();
+  }
+
+  void _handleTap() {
+    _controller.forward().then((_) => _controller.reverse());
+    print('🔔 [NotificationIcon] Bell icon clicked');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const NotificationScreen(),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        print('🔔 [NotificationIcon] Bell icon clicked');
-        widget.onNotificationCleared?.call();
-        print('🔔 [NotificationIcon] Navigating to NotificationScreen');
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const NotificationScreen(),
-          ),
-        );
-      },
+      onTap: _handleTap,
       child: Container(
         width: 48,
         height: 48,
@@ -79,22 +75,19 @@ class _CommonNotificationIconState extends State<CommonNotificationIcon> with Si
               Positioned(
                 top: 8,
                 right: 8,
-                child: ScaleTransition(
-                  scale: _scaleAnimation,
-                  child: Container(
-                    width: 12,
-                    height: 12,
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.red,
-                          blurRadius: 4,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.red,
+                        blurRadius: 4,
+                        spreadRadius: 1,
+                      ),
+                    ],
                   ),
                 ),
               ),

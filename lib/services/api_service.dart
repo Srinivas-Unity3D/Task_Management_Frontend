@@ -863,4 +863,37 @@ class ApiService {
       throw Exception('Failed to load notifications: $e');
     }
   }
+
+  Future<Map<String, dynamic>> markNotificationAsComplete(String notificationId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/notifications/mark_read/$notificationId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+
+      print('Mark complete response status: ${response.statusCode}');
+      print('Mark complete response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': 'Notification marked as complete',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to mark notification as complete',
+        };
+      }
+    } catch (e) {
+      print('❌ [ApiService] Error marking notification as complete: $e');
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
+  }
 }
