@@ -2198,9 +2198,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   String _formatNotificationTime(String timestamp) {
     try {
-      final date = DateTime.parse(timestamp);
+      // Always treat backend timestamp as UTC, then convert to local
+      final utcDate = DateTime.parse(timestamp).toUtc();
+      final localDate = utcDate.toLocal();
       final now = DateTime.now();
-      final difference = now.difference(date);
+      final difference = now.difference(localDate);
 
       if (difference.inDays > 0) {
         return '${difference.inDays} days ago';
