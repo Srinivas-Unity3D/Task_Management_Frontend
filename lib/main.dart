@@ -63,7 +63,7 @@ void main() async {  // Made async to properly handle initialization
   final socketService = SocketService.instance;
   try {
     print('🔌 Initializing socket service...');
-    socketService.init('http://134.209.149.12:5000');  // Your server URL
+    socketService.init('http://134.209.149.12:5001');  // Your server URL
     
     // Get current user and register with socket
     final username = prefs.getString('username');

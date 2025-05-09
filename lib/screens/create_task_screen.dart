@@ -1769,13 +1769,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('✅ [VoiceNote] Created file from audio data: $filePath');
       }
       // Then check if we have a valid file path
-      else if (voiceNote.filePath != null && await File(voiceNote.filePath!).exists()) {
-        print('🎵 [VoiceNote] Using existing file path: ${voiceNote.filePath}');
-        filePath = voiceNote.filePath;
-      }
-      // Finally, try to download from API
-      else {
-        print('🎵 [VoiceNote] Attempting to download from API...');
+      else if (voiceNote.filePath != null) {
+        print('🎵 [VoiceNote] Downloading from server path: ${voiceNote.filePath}');
         final apiService = ApiService();
         filePath = await apiService.downloadVoiceNote(voiceNote);
         print('🎵 [VoiceNote] Download result: $filePath');

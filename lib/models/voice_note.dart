@@ -19,10 +19,13 @@ class VoiceNote {
     required this.fileName,
   });
 
-  factory VoiceNote.fromJson(Map<String, dynamic> json) {
+  factory VoiceNote.fromJson(Map<String, dynamic> json, {String? parentTaskId}) {
+    final id = json['audio_id'] ?? json['id'];
+    final taskId = json['task_id'] ?? parentTaskId;
+    print('🛠 [VoiceNote.fromJson] id: $id, taskId: $taskId');
     return VoiceNote(
-      id: json['audio_id'] ?? json['id'],
-      taskId: json['task_id'],
+      id: id,
+      taskId: taskId,
       filePath: json['file_path'],
       audioData: json['audio_data'],
       createdBy: json['created_by'],
