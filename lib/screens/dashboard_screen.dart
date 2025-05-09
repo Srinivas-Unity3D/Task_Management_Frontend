@@ -52,7 +52,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     print('🔄 Dashboard - Initializing...');
+    print('🔄 Dashboard - Socket connected: ${_socketService.isConnected()}');
     _initializeServices();
+    
+    // Listen to socket connection status
+    _socketService.connected.addListener(_handleConnectionStatusChange);
     
     // Setup socket listeners immediately
     _setupSocketListeners();
@@ -67,29 +71,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
     notificationService.initialize();
   }
 
+  void _handleConnectionStatusChange() {
+    print('🔌 [Dashboard] Socket connection status changed: ${_socketService.connected.value}');
+    if (_socketService.connected.value) {
+      print('✅ [Dashboard] Socket connected, setting up listeners');
+      _setupSocketListeners();
+    } else {
+      print('❌ [Dashboard] Socket disconnected, attempting to reconnect...');
+      // Try to reconnect after a short delay
+      Future.delayed(Duration(seconds: 2), () {
+        if (mounted && !_socketService.connected.value) {
+          print('🔄 [Dashboard] Attempting to reconnect...');
+          _socketService.reconnect();
+        }
+      });
+    }
+  }
+
   void _setupSocketListeners() {
     print('🔄 [Dashboard] Setting up socket listeners');
+    print('🔌 [Dashboard] Socket connected before setup: ${_socketService.isConnected()}');
+    
     // Remove any existing listeners first
     _socketService.removeAllListeners();
     
     // Add new listeners
     print('🔄 [Dashboard] Adding task notification listener');
     _socketService.listenToTaskNotifications((data) {
-      print('📬 [Dashboard] Raw notification received: $data');
+      print('📬 [Dashboard] Raw notification received in listener callback: $data');
+      print('📬 [Dashboard] Current user: ${_user?.username}');
+      print('📬 [Dashboard] Widget mounted: $mounted');
       if (mounted) {
+        print('📬 [Dashboard] Widget is mounted, calling _handleTaskNotification');
         _handleTaskNotification(data);
+      } else {
+        print('❌ [Dashboard] Widget is not mounted, skipping notification');
       }
     });
     
     print('🔄 [Dashboard] Adding dashboard update listener');
     _socketService.listenToDashboardUpdates((data) {
-      print('📊 [Dashboard] Raw dashboard update received: $data');
+      print('📊 [Dashboard] Raw dashboard update received in listener callback: $data');
       if (mounted) {
+        print('📊 [Dashboard] Widget is mounted, calling _handleDashboardUpdate');
         _handleDashboardUpdate(data);
+      } else {
+        print('❌ [Dashboard] Widget is not mounted, skipping dashboard update');
       }
     });
     
     print('✅ [Dashboard] Socket listeners setup complete');
+    print('🔌 [Dashboard] Socket connected after setup: ${_socketService.isConnected()}');
   }
 
   @override
@@ -97,6 +129,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     print('🔄 Dashboard - Disposing...');
     // Remove socket listeners
     _socketService.removeAllListeners();
+    _socketService.connected.removeListener(_handleConnectionStatusChange);
     super.dispose();
   }
 
@@ -140,28 +173,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Connect socket with username
         _socketService.connect(username);
 
+        // Verify socket connection
+        print('🔌 Dashboard - Socket connected: ${_socketService.isConnected()}');
+        
         // Setup socket listeners
         print('🔄 Dashboard - Setting up socket listeners');
         _setupSocketListeners();
+
+        // Verify listeners are set up
+        print('📨 Dashboard - Verifying socket listeners...');
+        Future.delayed(Duration(seconds: 2), () {
+          print('🔌 Dashboard - Socket still connected: ${_socketService.isConnected()}');
+        });
+      } else {
+        print('❌ Dashboard - No username found in SharedPreferences');
       }
     } catch (e) {
       print('❌ Dashboard - Error loading user data: $e');
-    }
-  }
-
-  void _playNotificationSound() async {
-    try {
-      print('🔔 Dashboard - Playing notification sound...');
-      await _audioService.playNotificationSound();
-      await HapticFeedback.mediumImpact();
-      print('🔔 Dashboard - Notification sound and haptic feedback completed');
-    } catch (e) {
-      print('🔔 Dashboard - Error playing notification: $e');
+      print('❌ Dashboard - Error stack trace: ${StackTrace.current}');
     }
   }
 
   void _handleTaskNotification(dynamic data) {
     print('📬 [Dashboard] Processing task notification: $data');
+    print('📬 [Dashboard] Current user: ${_user?.username}');
+    print('📬 [Dashboard] Notification sender: ${data['task']?['updated_by'] ?? data['task']?['assigned_by']}');
+    print('📬 [Dashboard] Task data: ${data['task']}');
+    
     if (!mounted) {
       print('❌ [Dashboard] Widget not mounted, skipping notification');
       return;
@@ -169,17 +207,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     try {
       // Only play sound and vibrate if the notification is from another user
-      if (data['sender'] != _user?.username) {
+      final sender = data['task']?['updated_by'] ?? data['task']?['assigned_by'];
+      if (sender != _user?.username) {
         print('🔔 [Dashboard] Playing notification sound...');
-        _audioService.playNotificationSound();
-        print('📳 [Dashboard] Triggering vibration...');
-        _notificationService.vibrate();
+        _playNotificationSound();
         
         // Show notification in notification bar
         print('🔔 [Dashboard] Showing system notification...');
         _notificationService.showNotification(
-          title: 'New Task Update',
-          body: data['message'] ?? 'You have a new task update',
+          title: data['type'] == 'task_created' ? 'New Task Assigned' : 'Task Updated',
+          body: data['task']?['title'] ?? 'You have a new task update',
           payload: json.encode(data),
         );
       } else {
@@ -195,6 +232,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       print('✅ [Dashboard] Notification handling complete');
     } catch (e) {
       print('❌ [Dashboard] Error handling notification: $e');
+      print('❌ [Dashboard] Error stack trace: ${StackTrace.current}');
     }
   }
 
@@ -850,5 +888,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
+  }
+
+  void _playNotificationSound() async {
+    try {
+      print('🔔 Dashboard - Playing notification sound...');
+      await _audioService.playNotificationSound();
+      await HapticFeedback.mediumImpact();
+      print('🔔 Dashboard - Notification sound and haptic feedback completed');
+    } catch (e) {
+      print('🔔 Dashboard - Error playing notification: $e');
+      print('🔔 Dashboard - Error stack trace: ${StackTrace.current}');
+    }
   }
 }
