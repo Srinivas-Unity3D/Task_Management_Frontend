@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 import '../models/task.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
+import '../services/audio_service.dart';
 import '../theme/colors.dart';
 import '../widgets/common_app_bar.dart';
 import '../widgets/dashboard/side_panel.dart';
@@ -21,6 +24,8 @@ class MyTasksScreen extends StatefulWidget {
 class _MyTasksScreenState extends State<MyTasksScreen> {
   final ApiService _apiService = ApiService();
   final SocketService _socketService = SocketService();
+  final NotificationService _notificationService = NotificationService();
+  final AudioService _audioService = AudioService();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Task> _tasks = [];
   List<Task> _filteredTasks = [];
@@ -52,10 +57,44 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   }
 
   void _handleTaskNotification(dynamic data) {
-    if (mounted) {
-      print('📋 MyTasksScreen - Received task notification');
-      // Refresh tasks list
+    if (!mounted) {
+      print('❌ [MyTasks] Widget not mounted, skipping notification');
+      return;
+    }
+
+    try {
+      print('📋 [MyTasks] Processing task notification: $data');
+      print('📋 [MyTasks] Current user: $_currentUsername');
+      print('📋 [MyTasks] Notification sender: ${data['task']?['updated_by'] ?? data['task']?['assigned_by']}');
+      print('📋 [MyTasks] Task data: ${data['task']}');
+
+      // Only play sound and vibrate if the notification is from another user
+      final sender = data['task']?['updated_by'] ?? data['task']?['assigned_by'];
+      if (sender != _currentUsername) {
+        print('🔔 [MyTasks] Playing notification sound...');
+        _audioService.playNotificationSound();
+        
+        // Show notification in notification bar
+        print('🔔 [MyTasks] Showing system notification...');
+        _notificationService.showNotification(
+          title: data['type'] == 'task_created' ? 'New Task Assigned' : 'Task Updated',
+          body: data['task']?['title'] ?? 'You have a new task update',
+          payload: json.encode(data),
+        );
+      } else {
+        print('👤 [MyTasks] Skipping notification - from current user');
+      }
+
+      // Update task list and show notification badge
+      print('🔄 [MyTasks] Updating task list and badge...');
+      setState(() {
+        _hasUnreadNotifications = true;
+      });
       _loadTasks();
+      print('✅ [MyTasks] Notification handling complete');
+    } catch (e) {
+      print('❌ [MyTasks] Error handling notification: $e');
+      print('❌ [MyTasks] Error stack trace: ${StackTrace.current}');
     }
   }
 
