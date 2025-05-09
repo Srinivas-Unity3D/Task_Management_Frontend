@@ -109,6 +109,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _isLoadingVoiceNotes = true;
   bool _isLoadingAttachments = true;
   String? _currentlyPlayingNoteId;
+  bool _isPreparingAudio = false;
 
   List<Map<String, dynamic>> _notifications = [];
   bool _showNotifications = false;
@@ -993,10 +994,19 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                         child: Row(
                           children: [
                             IconButton(
-                              icon: Icon(
-                                isPlaying ? Icons.pause : Icons.play_arrow,
-                                color: const Color(0xFF7DF9FF),
-                              ),
+                              icon: _isPreparingAudio && _currentlyPlayingNoteId == voiceNote.id
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+                                      ),
+                                    )
+                                  : Icon(
+                                      isPlaying ? Icons.pause : Icons.play_arrow,
+                                      color: const Color(0xFF7DF9FF),
+                                    ),
                               onPressed: () async {
                                 if (isPlaying) {
                                   await _stopPlayback();
@@ -1773,6 +1783,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         throw Exception('Invalid task: Task ID is null');
       }
 
+      // Set loading state
+      setState(() {
+        _isPreparingAudio = true;
+      });
+
       // Stop any current playback
       if (_audioPlayer.state == PlayerState.playing) {
         print('🎵 [VoiceNote] Stopping current playback');
@@ -1826,8 +1841,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       await _audioPlayer.play(DeviceFileSource(filePath));
       print('✅ [VoiceNote] Playback started successfully');
 
+      // Clear loading state
+      setState(() {
+        _isPreparingAudio = false;
+      });
+
     } catch (e) {
       print('❌ [VoiceNote] Error playing voice note: $e');
+      // Clear loading state on error
+      setState(() {
+        _isPreparingAudio = false;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
