@@ -20,6 +20,7 @@ import '../services/socket_service.dart';
 import 'package:open_file/open_file.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   final bool isEditMode;
@@ -1024,7 +1025,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'By: ${voiceNote.createdBy}',
+                                    'By: ${voiceNote.createdBy ?? "Unknown"}'
+                                    '${voiceNote.createdAt != null ? " • " + DateFormat("dd MMM yyyy, hh:mm a").format(voiceNote.createdAt!) : ""}',
                                     style: const TextStyle(
                                       color: Color(0xFF94A3B8),
                                       fontSize: 12,
