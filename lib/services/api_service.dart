@@ -896,4 +896,65 @@ class ApiService {
       };
     }
   }
+
+  Future<Map<String, dynamic>> registerTaskAlarm({
+    required String taskId,
+    required String assignedTo,
+    required DateTime startDate,
+    required String startTime,
+    required String frequency,
+  }) async {
+    try {
+      print('⏰ [API] Registering task alarm with backend...');
+      print('⏰ [API] Task ID: $taskId');
+      print('⏰ [API] Assigned To: $assignedTo');
+      print('⏰ [API] Start Date: ${startDate.toIso8601String()}');
+      print('⏰ [API] Start Time: $startTime');
+      print('⏰ [API] Frequency: $frequency');
+      
+      final data = {
+        'task_id': taskId,
+        'assigned_to': assignedTo,
+        'start_date': startDate.toIso8601String().split('T')[0],
+        'start_time': startTime,
+        'frequency': frequency,
+      };
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/alarms/register'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode(data),
+      );
+      
+      print('⏰ [API] Register alarm response status: ${response.statusCode}');
+      print('⏰ [API] Register alarm response body: ${response.body}');
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body);
+        print('✅ [API] Alarm registered successfully');
+        return {
+          'success': true,
+          'message': responseData['message'] ?? 'Alarm registered successfully',
+          'alarm_id': responseData['alarm_id'],
+        };
+      } else {
+        print('❌ [API] Failed to register alarm');
+        return {
+          'success': false,
+          'message': 'Failed to register alarm',
+          'error': response.body,
+        };
+      }
+    } catch (e) {
+      print('❌ [API] Error registering task alarm: $e');
+      return {
+        'success': false,
+        'message': 'Error registering task alarm',
+        'error': e.toString(),
+      };
+    }
+  }
 }

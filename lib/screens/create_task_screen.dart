@@ -6,6 +6,7 @@ import '../models/attachment.dart';
 import '../models/voice_note.dart';
 import '../widgets/role_dropdown.dart';
 import '../services/api_service.dart';
+import '../services/alarm_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -59,6 +60,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   late final AudioRecorder _audioRecorder;
   final _socketService = SocketService.instance;
+  final _alarmService = AlarmService();
 
   String? _selectedAssignee;
   String _priority = 'Low';
@@ -1392,7 +1394,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           };
         }
 
-        String response;
+        String taskId;
+        String? taskTitle;
+        String? taskDescription;
+        String? taskAssignedTo;
+        
         if (widget.isEditMode) {
           if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
             throw Exception('Assignee is missing');
@@ -1400,7 +1406,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           print('📝 [Task] Updating existing task...');
           print('📝 [Task] Priority: ${_priority.toLowerCase()}');
           print('📝 [Task] Status: ${_getStatusString(_status)}');
-          response = await _apiService.updateTask(
+          await _apiService.updateTask(
             taskId: widget.taskId!,
             title: _titleController.text,
             description: _descriptionController.text,
@@ -1413,6 +1419,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             attachments: attachmentData,
             alarmSettings: alarmSettings,
           );
+          
+          taskId = widget.taskId!;
+          taskTitle = _titleController.text;
+          taskDescription = _descriptionController.text;
+          taskAssignedTo = _selectedAssignee;
         } else {
           if (_currentUsername == null || _currentUsername!.isEmpty) {
             throw Exception('Current user is not logged in');
@@ -1422,7 +1433,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           }
           print('📝 [Task] Creating new task...');
           print('📝 [Task] Priority: ${_priority.toLowerCase()}');
-          response = await _apiService.createTask(
+          taskId = await _apiService.createTask(
             title: _titleController.text,
             description: _descriptionController.text,
             assignedTo: _selectedAssignee!,
@@ -1434,9 +1445,30 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             attachments: attachmentData,
             alarmSettings: alarmSettings,
           );
+          
+          taskTitle = _titleController.text;
+          taskDescription = _descriptionController.text;
+          taskAssignedTo = _selectedAssignee;
         }
 
         print('✅ [Task] Task ${widget.isEditMode ? "updated" : "created"} successfully');
+        
+        // Register alarm with the backend if alarm settings are provided
+        if (alarmSettings != null) {
+          print('⏰ [Task] Registering alarm with the backend...');
+          
+          // Register alarm with backend service
+          await _apiService.registerTaskAlarm(
+            taskId: taskId,
+            assignedTo: taskAssignedTo!,
+            startDate: _alarmStartDate!,
+            startTime: alarmSettings['start_time'],
+            frequency: _alarmFrequency,
+          );
+          
+          print('✅ [Task] Alarm registered with backend successfully');
+        }
+        
         setState(() {
           _isLoading = false;
         });
@@ -1478,6 +1510,21 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ),
         );
       }
+    }
+  }
+  
+  TaskPriority _getPriorityEnum(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'low':
+        return TaskPriority.low;
+      case 'medium':
+        return TaskPriority.medium;
+      case 'high':
+        return TaskPriority.high;
+      case 'urgent':
+        return TaskPriority.urgent;
+      default:
+        return TaskPriority.medium;
     }
   }
 

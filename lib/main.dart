@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/socket_service.dart';
 import 'services/notification_service.dart';
+import 'services/alarm_service.dart';
 
 import 'screens/sign_in_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -20,6 +21,10 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final notificationService = NotificationService();
   await notificationService.initialize();
   
+  // Initialize alarm service
+  final alarmService = AlarmService();
+  await alarmService.initialize();
+  
   // Play notification sound
   await notificationService.handleNewNotification();
   
@@ -34,6 +39,10 @@ void main() async {  // Made async to properly handle initialization
   // Initialize notification service
   final notificationService = NotificationService();
   await notificationService.initialize();
+  
+  // Initialize alarm service
+  final alarmService = AlarmService();
+  await alarmService.initialize();
   
   // Set up foreground message handler
   FirebaseMessaging.onMessage.listen((RemoteMessage message) async {

@@ -9,6 +9,7 @@ class AudioService {
   final AudioPlayer _player = AudioPlayer();
   bool _isInitialized = false;
   bool _isDisposed = false;
+  bool _isAlarmPlaying = false;
 
   Future<void> initialize() async {
     if (_isInitialized || _isDisposed) return;
@@ -63,12 +64,13 @@ class AudioService {
       await _player.stop();
       
       // Reset the player state
-      await _player.setReleaseMode(ReleaseMode.release);
+      await _player.setReleaseMode(ReleaseMode.loop);
       await _player.setVolume(1.0);
       
       // Play directly from raw resource for Android
       print('🎵 [Audio] Playing alarm sound from raw resource');
       await _player.play(AssetSource('sounds/alarm.mp3'));
+      _isAlarmPlaying = true;
       print('🎵 [Audio] Alarm sound played successfully');
     } catch (e) {
       print('❌ [Audio] Error playing alarm sound: $e');
@@ -80,10 +82,24 @@ class AudioService {
       try {
         print('🎵 [Audio] Retrying alarm playback...');
         await _player.play(AssetSource('sounds/alarm.mp3'));
+        _isAlarmPlaying = true;
         print('🎵 [Audio] Retry successful');
       } catch (e) {
         print('❌ [Audio] Retry failed: $e');
       }
+    }
+  }
+
+  Future<void> stopAlarmSound() async {
+    if (!_isAlarmPlaying) return;
+    
+    try {
+      print('🎵 [Audio] Stopping alarm sound');
+      await _player.stop();
+      _isAlarmPlaying = false;
+      print('🎵 [Audio] Alarm sound stopped successfully');
+    } catch (e) {
+      print('❌ [Audio] Error stopping alarm sound: $e');
     }
   }
 
