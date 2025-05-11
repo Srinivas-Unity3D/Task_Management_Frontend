@@ -43,4 +43,6 @@ flutter:
   
   assets:
     - assets/sounds/
+    - assets/sounds/alarm.mp3
+    - assets/sounds/notification.mp3
     - assets/service-account-key.json

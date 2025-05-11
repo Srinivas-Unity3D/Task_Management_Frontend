@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 enum TaskPriority {
   low,
   medium,
@@ -23,6 +25,9 @@ class Task {
   final String assignedByRole;
   final String assignedTo;
   final DateTime? completedAt;
+  final DateTime? alarmStartDate;
+  final TimeOfDay? alarmStartTime;
+  final String? alarmFrequency;
 
   Task({
     required this.taskId,
@@ -35,9 +40,29 @@ class Task {
     required this.assignedByRole,
     required this.assignedTo,
     this.completedAt,
+    this.alarmStartDate,
+    this.alarmStartTime,
+    this.alarmFrequency,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
+    DateTime? parseAlarmStartDate;
+    TimeOfDay? parseAlarmStartTime;
+    
+    if (json['alarm_settings'] != null) {
+      final alarmSettings = json['alarm_settings'];
+      if (alarmSettings['start_date'] != null) {
+        parseAlarmStartDate = DateTime.parse(alarmSettings['start_date']);
+      }
+      if (alarmSettings['start_time'] != null) {
+        final timeParts = alarmSettings['start_time'].split(':');
+        parseAlarmStartTime = TimeOfDay(
+          hour: int.parse(timeParts[0]),
+          minute: int.parse(timeParts[1]),
+        );
+      }
+    }
+
     return Task(
       taskId: json['task_id'] ?? '',
       title: json['title'] ?? '',
@@ -49,10 +74,24 @@ class Task {
       assignedByRole: json['assigned_by_role'] ?? '',
       assignedTo: json['assigned_to'] ?? '',
       completedAt: json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,
+      alarmStartDate: parseAlarmStartDate,
+      alarmStartTime: parseAlarmStartTime,
+      alarmFrequency: json['alarm_settings']?['frequency'],
     );
   }
 
   Map<String, dynamic> toJson() {
+    final Map<String, dynamic> alarmSettings = {};
+    if (alarmStartDate != null) {
+      alarmSettings['start_date'] = alarmStartDate!.toIso8601String().split('T')[0];
+    }
+    if (alarmStartTime != null) {
+      alarmSettings['start_time'] = '${alarmStartTime!.hour.toString().padLeft(2, '0')}:${alarmStartTime!.minute.toString().padLeft(2, '0')}:00';
+    }
+    if (alarmFrequency != null) {
+      alarmSettings['frequency'] = alarmFrequency;
+    }
+
     return {
       'task_id': taskId,
       'title': title,
@@ -64,6 +103,7 @@ class Task {
       'assigned_by_role': assignedByRole,
       'assigned_to': assignedTo,
       'completed_at': completedAt?.toIso8601String(),
+      'alarm_settings': alarmSettings.isNotEmpty ? alarmSettings : null,
     };
   }
 

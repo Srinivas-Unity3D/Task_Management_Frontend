@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../widgets/notification_badge.dart';
 import '../services/socket_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'alarm_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -14,6 +15,12 @@ class _HomeScreenState extends State<HomeScreen> {
   final _socketService = SocketService.instance;
   String? _username;
   int _notificationCount = 0;
+  int _selectedIndex = 0;
+  
+  // Only include screens that actually exist
+  final List<Widget> _screens = [
+    const AlarmScreen(),
+  ];
 
   @override
   void initState() {
@@ -77,14 +84,21 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: Text(
-          'Welcome, ${_username ?? "User"}!',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 24,
+      body: _screens[0], // Always show the alarm screen
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = 0; // Always keep 0 selected
+          });
+        },
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.alarm),
+            label: 'Alarms',
           ),
-        ),
+        ],
       ),
     );
   }

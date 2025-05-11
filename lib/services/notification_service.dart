@@ -7,6 +7,8 @@ import './api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -18,8 +20,10 @@ class NotificationService {
   final ApiService _apiService = ApiService();
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInitialized = false;
+  bool _isPlaying = false;
   final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   int _notificationId = 0;
+  Function(Map<String, dynamic>)? onAlarmTriggered;
 
   NotificationService._internal();
 
@@ -35,46 +39,92 @@ class NotificationService {
 
   Future<void> initialize() async {
     if (_isInitialized) return;
+
     try {
-      print('🔔 [Notification] Initializing notification service...');
-      
       // Initialize audio player
-      await _audioPlayer.setSource(AssetSource('sounds/notification.mp3'));
-      
+      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
+      await _audioPlayer.setVolume(1.0);
+
       // Initialize local notifications
-      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-      const iosSettings = DarwinInitializationSettings(
-        requestAlertPermission: true,
-        requestBadgePermission: true,
+      const AndroidInitializationSettings initializationSettingsAndroid =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      final DarwinInitializationSettings initializationSettingsIOS =
+          DarwinInitializationSettings(
         requestSoundPermission: true,
+        requestBadgePermission: true,
+        requestAlertPermission: true,
       );
-      const initSettings = InitializationSettings(
-        android: androidSettings,
-        iOS: iosSettings,
+      final InitializationSettings initializationSettings = InitializationSettings(
+        android: initializationSettingsAndroid,
+        iOS: initializationSettingsIOS,
       );
-      
+
       await _flutterLocalNotificationsPlugin.initialize(
-        initSettings,
-        onDidReceiveNotificationResponse: (details) {
-          print('🔔 [Notification] Notification tapped: ${details.payload}');
+        initializationSettings,
+        onDidReceiveNotificationResponse: (NotificationResponse response) {
           // Handle notification tap
-          if (details.payload != null) {
-            try {
-              final data = json.decode(details.payload!);
-              // Handle notification data
-              print('🔔 [Notification] Notification data: $data');
-            } catch (e) {
-              print('❌ [Notification] Error parsing notification payload: $e');
-            }
+          if (response.payload != null) {
+            _handleNotificationTap(response);
           }
         },
       );
-      
+
+      // Create notification channel for alarms
+      const AndroidNotificationChannel channel = AndroidNotificationChannel(
+        'task_alarms',
+        'Task Alarms',
+        description: 'Notifications for task alarms',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+        enableLights: true,
+      );
+
+      await _flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+
       _isInitialized = true;
-      print('✅ [Notification] Notification service initialized successfully');
     } catch (e) {
-      print('❌ [Notification] Error initializing notification service: $e');
-      _isInitialized = false;
+      print('🔔 Error initializing notification service: $e');
+    }
+  }
+
+  Future<void> _handleAlarmNotification(Map<String, dynamic> alarmData) async {
+    try {
+      print('🔔 Handling alarm notification: $alarmData');
+      
+      // Show local notification with full screen intent
+      await showAlarmNotification(
+        title: 'Task Alarm',
+        body: 'Time to check your task: ${alarmData['task_title']}',
+        alarmData: alarmData,
+      );
+
+      // Play alarm sound
+      await playAlarmSound();
+
+      // Trigger alarm callback to show alarm screen
+      if (onAlarmTriggered != null) {
+        print('🔔 Triggering alarm callback');
+        onAlarmTriggered!(alarmData);
+      }
+    } catch (e) {
+      print('🔔 Error handling alarm notification: $e');
+    }
+  }
+
+  Future<void> _handleNotificationTap(dynamic response) async {
+    try {
+      Map<String, dynamic> data;
+      if (response is NotificationResponse && response.payload != null) {
+        data = json.decode(response.payload!);
+        if (data['type'] == 'alarm' && onAlarmTriggered != null) {
+          onAlarmTriggered!(data);
+        }
+      }
+    } catch (e) {
+      print('🔔 Error handling notification tap: $e');
     }
   }
 
@@ -264,9 +314,9 @@ class NotificationService {
     }
   }
 
-  Future<void> playNotificationSound() async {
+  Future<void> playAlarmSound() async {
     try {
-      print('🔔 Playing notification sound...');
+      print('🔔 Playing alarm sound...');
       if (!_isInitialized) {
         await initialize();
       }
@@ -278,17 +328,21 @@ class NotificationService {
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
       await _audioPlayer.setVolume(1.0);
       
-      // Play the sound
-      await _audioPlayer.play(AssetSource('sounds/notification.mp3'));
+      // Play the alarm sound
+      print('🔔 Setting alarm sound source');
+      await _audioPlayer.setSource(AssetSource('sounds/alarm.mp3'));
+      print('🔔 Playing alarm sound');
+      await _audioPlayer.resume();
       
-      print('🔔 Notification sound played successfully');
+      print('🔔 Alarm sound played successfully');
     } catch (e) {
-      print('🔔 Error playing notification sound: $e');
+      print('🔔 Error playing alarm sound: $e');
       // Try to reinitialize and play again
       try {
         _isInitialized = false;
         await initialize();
-        await _audioPlayer.play(AssetSource('sounds/notification.mp3'));
+        await _audioPlayer.setSource(AssetSource('sounds/alarm.mp3'));
+        await _audioPlayer.resume();
       } catch (e) {
         print('🔔 Error during retry: $e');
       }
@@ -352,28 +406,21 @@ class NotificationService {
     print('🔔 [Notification] Showing notification: $title');
     try {
       const androidDetails = AndroidNotificationDetails(
-        'task_notifications',
+        'task_channel',
         'Task Notifications',
-        channelDescription: 'Notifications for task updates and assignments',
+        channelDescription: 'Notifications for task updates',
         importance: Importance.high,
         priority: Priority.high,
-        showWhen: true,
-        enableVibration: true,
-        enableLights: true,
-        color: Color(0xFF2196F3),
-        playSound: true,
         sound: RawResourceAndroidNotificationSound('notification'),
-        icon: '@mipmap/ic_launcher',
       );
 
-      const notificationDetails = NotificationDetails(
+      const iosDetails = DarwinNotificationDetails(
+        sound: 'notification.mp3',
+      );
+
+      const details = NotificationDetails(
         android: androidDetails,
-        iOS: DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-          sound: 'notification.mp3',
-        ),
+        iOS: iosDetails,
       );
 
       print('🔔 [Notification] Creating notification with ID: ${_notificationId}');
@@ -381,12 +428,76 @@ class NotificationService {
         _notificationId++,
         title,
         body,
-        notificationDetails,
+        details,
         payload: payload,
       );
       print('✅ [Notification] Notification displayed successfully');
     } catch (e) {
       print('❌ [Notification] Error showing notification: $e');
     }
+  }
+
+  Future<void> showAlarmNotification({
+    required String title,
+    required String body,
+    required Map<String, dynamic> alarmData,
+  }) async {
+    print('🔔 Showing alarm notification');
+    try {
+      // Show notification with full screen intent
+      const androidDetails = AndroidNotificationDetails(
+        'alarm_channel',
+        'Alarm Notifications',
+        channelDescription: 'Notifications for task alarms',
+        importance: Importance.max,
+        priority: Priority.max,
+        sound: RawResourceAndroidNotificationSound('alarm'),
+        fullScreenIntent: true,
+        category: AndroidNotificationCategory.alarm,
+        visibility: NotificationVisibility.public,
+        showWhen: true,
+        enableVibration: true,
+        enableLights: true,
+        color: Color(0xFFE53935),
+      );
+
+      const iosDetails = DarwinNotificationDetails(
+        sound: 'alarm.mp3',
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      );
+
+      const details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      print('🔔 Creating alarm notification');
+      await _flutterLocalNotificationsPlugin.show(
+        DateTime.now().millisecondsSinceEpoch,
+        title,
+        body,
+        details,
+        payload: json.encode(alarmData),
+      );
+
+      print('🔔 Alarm notification shown successfully');
+    } catch (e) {
+      print('🔔 Error showing alarm notification: $e');
+    }
+  }
+}
+
+// Handle background messages
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  final notificationService = NotificationService();
+  await notificationService.initialize();
+  
+  if (message.data['type'] == 'alarm') {
+    await notificationService._handleAlarmNotification(message.data);
   }
 } 

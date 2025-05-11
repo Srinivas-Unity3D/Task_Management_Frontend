@@ -26,6 +26,10 @@ import '../services/audio_service.dart';
 import '../widgets/common_app_bar.dart';
 import '../services/notification_service.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:audioplayers/audioplayers.dart';
+import 'dart:async';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -48,6 +52,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Task> _userTasks = [];
 
   NotificationFirebaseService notificationService = NotificationFirebaseService();
+
+  // Global player to maintain the instance while dialog is shown
+  final AudioPlayer _alarmPlayer = AudioPlayer();
+  bool _isAlarmPlaying = false;
+  Timer? _vibrationTimer;
 
   @override
   void initState() {
@@ -142,6 +151,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Remove socket listeners
     _socketService.removeAllListeners();
     _socketService.connected.removeListener(_handleConnectionStatusChange);
+    
+    // Clean up alarm resources
+    _stopAlarm();
+    _alarmPlayer.dispose();
+    
     super.dispose();
   }
 
@@ -482,6 +496,164 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  void _stopAlarm() {
+    if (_isAlarmPlaying) {
+      _alarmPlayer.stop();
+      _isAlarmPlaying = false;
+      print('🔕 Alarm stopped');
+      
+      // Stop vibration pattern
+      if (_vibrationTimer != null) {
+        _vibrationTimer!.cancel();
+        _vibrationTimer = null;
+      }
+    }
+  }
+
+  void _startVibrationPattern() {
+    // Create a repeating vibration pattern
+    _vibrationTimer = Timer.periodic(Duration(milliseconds: 1500), (timer) {
+      HapticFeedback.heavyImpact();
+      Future.delayed(Duration(milliseconds: 500), () {
+        HapticFeedback.heavyImpact();
+      });
+    });
+  }
+
+  Future<void> _playRawAlarm() async {
+    try {
+      // Stop any previous alarm
+      _stopAlarm();
+      
+      // Play continuous alarm sound
+      print('🔔 Playing real alarm sound from raw directory...');
+      _isAlarmPlaying = true;
+      
+      // Set player to loop and higher volume
+      await _alarmPlayer.setReleaseMode(ReleaseMode.loop);
+      await _alarmPlayer.setVolume(1.0);
+      
+      // Android configuration for background playback
+      await _alarmPlayer.setPlayerMode(PlayerMode.mediaPlayer);
+      
+      bool success = false;
+      
+      try {
+        // Try using AudioService first (most reliable)
+        await _audioService.playAlarmSound();
+        success = true;
+        print('✅ Method 1: Played alarm using AudioService');
+      } catch (e1) {
+        print('❌ Method 1 failed: $e1');
+        
+        try {
+          // Try playing from Android raw resources
+          final rawSource = DeviceFileSource('android.resource://com.example.taskmanagement/raw/alarm');
+          await _alarmPlayer.setSource(rawSource);
+          await _alarmPlayer.resume();
+          success = true;
+          print('✅ Method 2: Played alarm from Android raw resources');
+        } catch (e2) {
+          print('❌ Method 2 failed: $e2');
+          
+          try {
+            // Try direct asset source
+            await _alarmPlayer.play(AssetSource('sounds/alarm.mp3'));
+            success = true;
+            print('✅ Method 3: Played alarm from asset source');
+          } catch (e3) {
+            print('❌ Method 3 failed: $e3');
+            throw Exception('All playback methods failed');
+          }
+        }
+      }
+      
+      if (!success) {
+        throw Exception('Failed to play alarm sound');
+      }
+      
+      // Start vibration pattern
+      _startVibrationPattern();
+    } catch (e) {
+      print('❌ Error in _playRawAlarm: $e');
+      throw e;
+    }
+  }
+
+  Widget _buildTestAlarmButton() {
+    return ElevatedButton(
+      onPressed: () async {
+        try {
+          // Play the alarm
+          await _playRawAlarm();
+          
+          // Show confirmation dialog - when closed will stop alarm
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => WillPopScope(
+              onWillPop: () async => false, // Prevent back button from dismissing
+              child: AlertDialog(
+                backgroundColor: Colors.red[900],
+                title: const Text(
+                  'ALARM TEST',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 24,
+                  ),
+                ),
+                content: const Text(
+                  'This is a test alarm. Stop the alarm?',
+                  style: TextStyle(color: Colors.white),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      // Stop the alarm
+                      _stopAlarm();
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Alarm sound test successful!')),
+                      );
+                    },
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                    child: const Text('STOP ALARM', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ).then((_) {
+            // Ensure alarm is stopped if dialog is dismissed
+            _stopAlarm();
+          });
+        } catch (e) {
+          _stopAlarm();
+          print('❌ Error playing alarm: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.orange,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.alarm, color: Colors.white),
+          SizedBox(width: 8),
+          Text('Test Alarm', style: TextStyle(color: Colors.white)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_user == null || _isLoading) {
@@ -530,6 +702,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                _buildTestAlarmButton(),
               ],
             ),
           ),
