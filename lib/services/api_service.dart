@@ -16,7 +16,7 @@ import '../models/voice_note.dart';
 import 'send_notification_service.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://134.209.149.12:5001';
+  static const String baseUrl = 'https://134.209.149.12';
   // static const String baseUrl = 'http://10.20.0.248:5000';
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,

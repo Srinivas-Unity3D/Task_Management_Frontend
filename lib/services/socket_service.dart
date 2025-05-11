@@ -1,6 +1,16 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
+import 'dart:io';
 import 'notification_service.dart';
+
+// Add this class to handle self-signed certificates
+class DevHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  }
+}
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
@@ -43,6 +53,13 @@ class SocketService {
     if (_serverUrl == null) {
       print('❌ [Socket] Error: Server URL not initialized');
       return;
+    }
+
+    // Configure SSL security for development
+    if (!kReleaseMode) {
+      // Set up the HTTP/HTTPS client to accept self-signed certificates
+      HttpOverrides.global = DevHttpOverrides();
+      print('🔒 [Socket] SSL certificate validation disabled for development');
     }
 
     print('🔌 [Socket] Creating socket connection to: $_serverUrl');

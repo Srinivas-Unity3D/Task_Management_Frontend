@@ -20,6 +20,9 @@ class AlarmService {
   bool _isAlarmActive = false;
   String? _currentAlarmTaskId;
   
+  // Define callback for alarm triggering
+  Function(Map<String, dynamic>)? onAlarmTriggered;
+  
   // Initialize the service
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -186,7 +189,7 @@ class AlarmService {
   Future<void> _acknowledgeAlarm(String taskId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final baseUrl = 'http://134.209.149.12:5001'; // Get this from your API service
+      final baseUrl = 'https://134.209.149.12'; // Updated to HTTPS
       
       final response = await http.post(
         Uri.parse('$baseUrl/alarms/acknowledge'),
@@ -208,6 +211,53 @@ class AlarmService {
       }
     } catch (e) {
       print('⏰ [AlarmService] Error acknowledging alarm: $e');
+    }
+  }
+
+  /// Trigger alarm from FCM notification data
+  Future<void> triggerAlarm(Map<String, dynamic> data) async {
+    try {
+      print('⏰ AlarmService - Triggering alarm from FCM notification');
+      print('⏰ AlarmService - FCM data: $data');
+      
+      // Extract task info from notification data
+      String? taskId = data['task_id'];
+      String? taskTitle = data['title'];
+      String? alarmId = data['alarm_id'];
+      
+      if (taskId == null) {
+        print('❌ AlarmService - Invalid alarm data: missing task_id');
+        return;
+      }
+      
+      print('⏰ AlarmService - Playing alarm sound for task: $taskTitle (ID: $taskId)');
+      
+      // Play alarm sound persistently
+      await _audioService.playAlarmSound();
+      
+      // Show high priority notification
+      _showAlarmNotification(
+        taskId,
+        taskTitle ?? 'Task reminder',
+        'Time to check your task',
+      );
+      
+      // Add to active alarms
+      _currentAlarmTaskId = taskId;
+      _isAlarmActive = true;
+      
+      // Trigger callback if registered
+      if (onAlarmTriggered != null) {
+        onAlarmTriggered!({
+          'task_id': taskId,
+          'alarm_id': alarmId,
+          'title': taskTitle,
+        });
+      }
+      
+      print('⏰ AlarmService - Alarm triggered successfully');
+    } catch (e) {
+      print('❌ AlarmService - Error triggering alarm from FCM: $e');
     }
   }
 } 

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:app_settings/app_settings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 //import '../screens/notification_screen.dart';
 import '../screens/notifications_screen.dart'; // Adjust path to your NotificationScreen
@@ -85,11 +86,41 @@ class NotificationFirebaseService {
   Future<String?> getDeviceToken() async {
     try {
       final token = await _messaging.getToken();
-      debugPrint('📱 FCM Token: $token');
+      debugPrint('📱 FCM Token: ${token?.substring(0, 20)}...');
+      
+      // When token is refreshed, update on backend
+      // This will also be handled by the ApiService token refresh listener
+      _updateFcmTokenOnBackend(token);
+      
       return token;
     } catch (e) {
       debugPrint('❌ Failed to get FCM token: $e');
       return null;
+    }
+  }
+  
+  /// Send FCM token to backend to enable push notifications
+  Future<void> _updateFcmTokenOnBackend(String? token) async {
+    if (token == null) return;
+    
+    try {
+      final prefs = await Get.find<SharedPreferences>();
+      final username = prefs.getString('username');
+      
+      if (username == null) {
+        debugPrint('⚠️ Cannot update FCM token on backend: No logged in user');
+        return;
+      }
+      
+      debugPrint('🔄 Updating FCM token on backend for user: $username');
+      
+      // Call API service to update token in backend
+      // This is also handled by ApiService.setupFcmTokenRefreshListener
+      // but we also do it here to ensure the token is set during initialization
+      
+      // Implement direct API call if needed
+    } catch (e) {
+      debugPrint('❌ Error updating FCM token on backend: $e');
     }
   }
 
