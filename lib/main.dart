@@ -11,6 +11,7 @@ import 'services/socket_service.dart';
 import 'services/notification_service.dart';
 import 'services/alarm_service.dart';
 import 'firebase_options.dart';
+import 'dart:convert';
 
 import 'screens/sign_in_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -84,16 +85,38 @@ Future<void> _initializeFirebase() async {
   }
 }
 
+Future<void> ensureUserDataFromToken(SharedPreferences prefs) async {
+  final token = prefs.getString('token') ?? prefs.getString('access_token');
+  if (token == null) return;
+
+  // Decode JWT (header.payload.signature)
+  try {
+    final parts = token.split('.');
+    if (parts.length != 3) return;
+    final payload = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+    final payloadMap = json.decode(payload);
+    final userId = payloadMap['sub'] ?? payloadMap['user_id'];
+    final username = payloadMap['username'];
+    final role = payloadMap['role'];
+    if ((prefs.getString('user_id') == null) && userId != null) {
+      await prefs.setString('user_id', userId.toString());
+      print('✅ Patched user_id from token: $userId');
+    }
+    if ((prefs.getString('username') == null) && username != null) {
+      await prefs.setString('username', username);
+      print('✅ Patched username from token: $username');
+    }
+    if ((prefs.getString('role') == null) && role != null) {
+      await prefs.setString('role', role);
+      print('✅ Patched role from token: $role');
+    }
+  } catch (e) {
+    print('❌ Failed to decode user data from token: $e');
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  //await Firebase.initializeApp();
-
-  final NotificationFirebaseService nfbs = NotificationFirebaseService();
-
-
-
-
 
   try {
     // Set up certificate bypass for development
@@ -107,6 +130,9 @@ void main() async {
     Get.put(prefs); // Register SharedPreferences with Get
     print('✅ SharedPreferences initialized');
 
+    // Patch user_id and username from token if missing
+    await ensureUserDataFromToken(prefs);
+
     // Initialize Firebase
     await _initializeFirebase();
 
@@ -116,6 +142,11 @@ void main() async {
       final notificationService = NotificationService();
       await notificationService.initialize();
       print('✅ Notification service initialized');
+
+      // Initialize Firebase notification service
+      final nfbs = NotificationFirebaseService();
+      await nfbs.initialize();
+      print('✅ Firebase notification service initialized');
 
       // Initialize alarm service
       final alarmService = AlarmService();
@@ -198,16 +229,7 @@ void main() async {
   } catch (e, stackTrace) {
     print('❌ Error during initialization: $e');
     print('❌ Stack trace: $stackTrace');
-    runApp(MyApp(isLoggedIn: false));
   }
-
-  //Initialize Firebase notification
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
-    await nfbs.initialize();
-  });
-
-
-
 }
 
 class MyApp extends StatefulWidget {

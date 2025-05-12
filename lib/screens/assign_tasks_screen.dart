@@ -83,25 +83,29 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
   }
 
   Future<void> _loadUserAndAssignments() async {
-    try {
-      print('🔄 AssignTasksScreen - Loading user data and assignments...');
-      final prefs = await SharedPreferences.getInstance();
-      _currentUserId = prefs.getString('user_id');
-      _currentRole = prefs.getString('role');
-      _currentUsername = prefs.getString('username');
-      final username = _currentUsername;
-      if (username != null && username.isNotEmpty) {
-        print('🔄 AssignTasksScreen - Connecting socket for user: $username');
-        _socketService.connect(username);
-        _socketService.removeTaskNotificationListener(_handleNewNotification);
-        print('🔄 AssignTasksScreen - Setting up socket listeners');
-        _socketService.listenToTaskNotifications(_handleNewNotification);
+    print('🔄 AssignTasksScreen - Loading user data and assignments...');
+    final prefs = await SharedPreferences.getInstance();
+    _currentUserId = prefs.getString('user_id');
+    _currentRole = prefs.getString('role');
+    _currentUsername = prefs.getString('username');
+
+    if (_currentUserId != null && _currentUsername != null) {
+      print('✅ AssignTasksScreen - User data loaded: ID=$_currentUserId, Username=$_currentUsername, Role=$_currentRole');
+      // Connect socket
+      print('🔄 AssignTasksScreen - Connecting socket for user: $_currentUsername');
+      _socketService.connect(_currentUsername!);
+      _socketService.removeTaskNotificationListener(_handleNewNotification);
+      print('🔄 AssignTasksScreen - Setting up socket listeners');
+      _socketService.listenToTaskNotifications(_handleNewNotification);
+      // Fetch assignments
+      await _fetchAssignments();
+    } else {
+      print('⚠️ AssignTasksScreen - User data missing, not fetching assignments');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
-      if (_currentUserId != null) {
-        await _fetchAssignments();
-      }
-    } catch (e) {
-      print('❌ AssignTasksScreen - Error loading user and assignments: $e');
     }
   }
 
@@ -220,20 +224,30 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
         _isLoading = true;
       });
       print('🔄 AssignTasksScreen - Fetching assignments...');
+      
+      // Check if we have the required user data
+      if (_currentUserId == null) {
+        print('❌ AssignTasksScreen - Current user ID is null');
+        throw Exception('User not logged in');
+      }
+
       int retryCount = 0;
       const maxRetries = 3;
       List<TaskAssignment>? assignments;
+      
       while (retryCount < maxRetries && assignments == null) {
         try {
           assignments = await _apiService.getTaskAssignments(_currentUserId!);
+          print('DEBUG: Raw assignments from API: ' + assignments.toString());
+          print('DEBUG: Current username: ' + (_currentUsername ?? 'null'));
           if (assignments != null && _currentUsername != null) {
             if (!_isAdmin) {
               assignments = assignments
                   .where((assignment) =>
-              assignment.assignerName == _currentUsername &&
-                  assignment.assigneeName != _currentUsername)
+                      assignment.assignerName == _currentUsername)
                   .toList();
-              print('🔄 AssignTasksScreen - Filtered ${assignments.length} tasks assigned by $_currentUsername to others');
+              print('DEBUG: Filtered assignments: ' + assignments.toString());
+              print('🔄 AssignTasksScreen - Filtered ${assignments.length} tasks assigned by $_currentUsername');
             } else {
               print('🔄 AssignTasksScreen - Showing all ${assignments.length} tasks for admin user');
             }
@@ -246,6 +260,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
           }
         }
       }
+
       if (assignments != null) {
         if (mounted) {
           setState(() {
@@ -266,7 +281,7 @@ class _AssignTasksScreenState extends State<AssignTasksScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error fetching assignments. Pull to refresh to try again.'),
+            content: Text('Error fetching assignments: ${e.toString()}'),
             action: SnackBarAction(
               label: 'RETRY',
               onPressed: _fetchAssignments,
