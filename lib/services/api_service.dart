@@ -482,9 +482,16 @@ class ApiService {
 
       if (response.statusCode == 200) {
         // Store user data in SharedPreferences
-        await prefs.setString('user_id', data['user_id'].toString());
-        await prefs.setString('username', data['username']);
-        await prefs.setString('role', data['role']);
+        final prefs = await SharedPreferences.getInstance();
+        if (data['user_id'] != null) {
+          await prefs.setString('user_id', data['user_id'].toString());
+        }
+        if (data['username'] != null) {
+          await prefs.setString('username', data['username']);
+        }
+        if (data['role'] != null) {
+          await prefs.setString('role', data['role']);
+        }
         
         // Store JWT tokens
         if (data['access_token'] != null) {

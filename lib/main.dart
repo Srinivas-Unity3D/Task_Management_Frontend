@@ -53,29 +53,18 @@ Future<void> _initializeFirebase() async {
     return;
   }
 
-  if (_isInitializing) {
-    print('⏳ Firebase initialization in progress, waiting...');
-    // Wait for initialization to complete
-    while (_isInitializing) {
-      await Future.delayed(Duration(milliseconds: 100));
-    }
-    return;
-  }
-
   try {
     _isInitializing = true;
     print('🔄 Initializing Firebase...');
     
-    // First, try to get existing apps
-    final apps = Firebase.apps;
-    if (apps.isNotEmpty) {
-      print('ℹ️ Found existing Firebase apps: ${apps.length}');
+    // Check if Firebase is already initialized
+    if (Firebase.apps.isNotEmpty) {
+      print('ℹ️ Firebase already initialized (found existing apps)');
       _isFirebaseInitialized = true;
-      _isInitializing = false;
       return;
     }
     
-    // If no apps exist, initialize
+    // Initialize Firebase if not already initialized
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform
     );
