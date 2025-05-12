@@ -1418,6 +1418,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             audioNote: audioNote,
             attachments: attachmentData,
             alarmSettings: alarmSettings,
+            currentUser : _currentUsername!
           );
           
           taskId = widget.taskId!;

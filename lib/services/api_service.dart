@@ -902,6 +902,7 @@ class ApiService {
     required DateTime deadline,
     required String priority,
     required String status,
+    required String currentUser,
     Map<String, dynamic>? audioNote,
     List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
@@ -924,6 +925,7 @@ class ApiService {
         'audio_note': audioNote,
         'alarm_settings': alarmSettings,
         'attachments': attachments,
+        'currentUser' : currentUser
       };
 
       final response = await http.put(

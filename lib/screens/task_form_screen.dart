@@ -265,6 +265,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             priority: priority,
             status: status,
             alarmSettings: alarmSettings,
+            currentUser: "Some user"
           );
         } else {
           await _apiService.createTask(

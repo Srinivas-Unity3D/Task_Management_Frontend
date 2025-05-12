@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:get/get.dart';
+import 'package:taskmanagement/services/notification_firebase_service.dart';
 import 'dart:io';
 import 'services/socket_service.dart';
 import 'services/notification_service.dart';
@@ -26,20 +27,21 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     if (!_isFirebaseInitialized && !_isInitializing) {
       _isInitializing = true;
-      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform);
       _isFirebaseInitialized = true;
       _isInitializing = false;
     }
-    
+
     print('📱 Handling a background message: ${message.messageId}');
     print('📱 Message data: ${message.data}');
-    
+
     final notificationService = NotificationService();
     await notificationService.initialize();
-    
+
     final alarmService = AlarmService();
     await alarmService.initialize();
-    
+
     await notificationService.handleNewNotification();
   } catch (e) {
     print('❌ Error in background handler: $e');
@@ -56,18 +58,17 @@ Future<void> _initializeFirebase() async {
   try {
     _isInitializing = true;
     print('🔄 Initializing Firebase...');
-    
+
     // Check if Firebase is already initialized
     if (Firebase.apps.isNotEmpty) {
       print('ℹ️ Firebase already initialized (found existing apps)');
       _isFirebaseInitialized = true;
       return;
     }
-    
+
     // Initialize Firebase if not already initialized
     await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform
-    );
+        options: DefaultFirebaseOptions.currentPlatform);
     _isFirebaseInitialized = true;
     print('✅ Firebase initialized successfully');
   } catch (e) {
@@ -86,33 +87,41 @@ Future<void> _initializeFirebase() async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  //await Firebase.initializeApp();
+
+  final NotificationFirebaseService nfbs = NotificationFirebaseService();
+
+
+
+
+
   try {
     // Set up certificate bypass for development
     if (!kReleaseMode) {
       HttpOverrides.global = DevHttpOverrides();
       print('🔒 SSL certificate validation disabled for development');
     }
-    
+
     // Initialize SharedPreferences first
     final prefs = await SharedPreferences.getInstance();
     Get.put(prefs); // Register SharedPreferences with Get
     print('✅ SharedPreferences initialized');
-    
+
     // Initialize Firebase
     await _initializeFirebase();
-    
+
     // Initialize other services only if Firebase is initialized
     if (_isFirebaseInitialized) {
       // Initialize notification service
       final notificationService = NotificationService();
       await notificationService.initialize();
       print('✅ Notification service initialized');
-      
+
       // Initialize alarm service
       final alarmService = AlarmService();
       await alarmService.initialize();
       print('✅ Alarm service initialized');
-      
+
       // Request FCM permissions
       await FirebaseMessaging.instance.requestPermission(
         alert: true,
@@ -121,41 +130,44 @@ void main() async {
         criticalAlert: true,
       );
       print('✅ FCM permissions requested');
-      
+
       // Set FCM foreground notification options
-      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+      await FirebaseMessaging.instance
+          .setForegroundNotificationPresentationOptions(
         alert: true,
         badge: true,
         sound: true,
       );
       print('✅ FCM foreground notification options set');
-      
+
       // Set up foreground message handler
       FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
         print('📱 Received foreground message');
         print('📱 Message data: ${message.data}');
-        
+
         if (message.notification != null) {
           print('📱 Message notification: ${message.notification?.title}');
           await notificationService.handleNewNotification();
         }
-        
+
         if (message.data['type'] == 'task_alarm') {
           print('⏰ Received task alarm notification');
           await alarmService.triggerAlarm(message.data);
         }
       });
-      
+
       // Set up background message handler
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(
+          _firebaseMessagingBackgroundHandler);
       print('✅ Firebase background message handler set');
     } else {
-      print('⚠️ Skipping Firebase-dependent services due to initialization failure');
+      print(
+          '⚠️ Skipping Firebase-dependent services due to initialization failure');
     }
-    
+
     final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
     print('✅ Login status: $isLoggedIn');
-    
+
     // Initialize socket service
     final socketService = SocketService.instance;
     try {
@@ -163,7 +175,7 @@ void main() async {
       const serverUrl = 'https://134.209.149.12';
       const wsUrl = 'wss://134.209.149.12';
       socketService.init(wsUrl);
-      
+
       final username = prefs.getString('username');
       if (username != null) {
         print('🔌 Connecting socket for user: $username');
@@ -174,13 +186,13 @@ void main() async {
       print('❌ Error initializing socket service: $e');
       print('❌ Error stack trace: ${StackTrace.current}');
     }
-    
+
     // Force portrait orientation
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
-    
+
     runApp(MyApp(isLoggedIn: isLoggedIn));
     print('✅ App started successfully');
   } catch (e, stackTrace) {
@@ -188,11 +200,19 @@ void main() async {
     print('❌ Stack trace: $stackTrace');
     runApp(MyApp(isLoggedIn: false));
   }
+
+  //Initialize Firebase notification
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await nfbs.initialize();
+  });
+
+
+
 }
 
 class MyApp extends StatefulWidget {
   final bool isLoggedIn;
-  
+
   const MyApp({Key? key, this.isLoggedIn = false}) : super(key: key);
 
   @override
@@ -273,24 +293,30 @@ class _MyAppState extends State<MyApp> {
           ),
         ),
       ),
-      
-      home: _isLoggedIn ? const DashboardScreen() : SignInScreen(onLogin: () => _updateLoginState(true)),
+      home: _isLoggedIn
+          ? const DashboardScreen()
+          : SignInScreen(onLogin: () => _updateLoginState(true)),
       onGenerateRoute: (settings) {
         if (!_isLoggedIn) {
           return MaterialPageRoute(
-            builder: (context) => SignInScreen(onLogin: () => _updateLoginState(true)),
+            builder: (context) =>
+                SignInScreen(onLogin: () => _updateLoginState(true)),
           );
         }
-        
+
         switch (settings.name) {
           case '/':
-            return MaterialPageRoute(builder: (context) => const DashboardScreen());
+            return MaterialPageRoute(
+                builder: (context) => const DashboardScreen());
           case '/my-tasks':
-            return MaterialPageRoute(builder: (context) => const MyTasksScreen());
+            return MaterialPageRoute(
+                builder: (context) => const MyTasksScreen());
           case '/assign-tasks':
-            return MaterialPageRoute(builder: (context) => const AssignTasksScreen());
+            return MaterialPageRoute(
+                builder: (context) => const AssignTasksScreen());
           default:
-            return MaterialPageRoute(builder: (context) => const DashboardScreen());
+            return MaterialPageRoute(
+                builder: (context) => const DashboardScreen());
         }
       },
     );
