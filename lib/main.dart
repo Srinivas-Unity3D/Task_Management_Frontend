@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:get/get.dart';
 import 'dart:io';
 import 'services/socket_service.dart';
 import 'services/notification_service.dart';
@@ -16,27 +17,84 @@ import 'screens/my_tasks_screen.dart';
 import 'screens/assign_tasks_screen.dart';
 import 'theme/colors.dart';
 
+// Global variables for initialization state
+bool _isFirebaseInitialized = false;
+bool _isInitializing = false;
+
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Ensure Firebase is initialized
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  
-  print('📱 Handling a background message: ${message.messageId}');
-  print('📱 Message data: ${message.data}');
-  
-  // Initialize notification service for sound
-  final notificationService = NotificationService();
-  await notificationService.initialize();
-  
-  // Initialize alarm service
-  final alarmService = AlarmService();
-  await alarmService.initialize();
-  
-  // Play notification sound
-  await notificationService.handleNewNotification();
+  try {
+    if (!_isFirebaseInitialized && !_isInitializing) {
+      _isInitializing = true;
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      _isFirebaseInitialized = true;
+      _isInitializing = false;
+    }
+    
+    print('📱 Handling a background message: ${message.messageId}');
+    print('📱 Message data: ${message.data}');
+    
+    final notificationService = NotificationService();
+    await notificationService.initialize();
+    
+    final alarmService = AlarmService();
+    await alarmService.initialize();
+    
+    await notificationService.handleNewNotification();
+  } catch (e) {
+    print('❌ Error in background handler: $e');
+    _isInitializing = false;
+  }
 }
 
-void main() async {  // Made async to properly handle initialization
+Future<void> _initializeFirebase() async {
+  if (_isFirebaseInitialized) {
+    print('ℹ️ Firebase already initialized');
+    return;
+  }
+
+  if (_isInitializing) {
+    print('⏳ Firebase initialization in progress, waiting...');
+    // Wait for initialization to complete
+    while (_isInitializing) {
+      await Future.delayed(Duration(milliseconds: 100));
+    }
+    return;
+  }
+
+  try {
+    _isInitializing = true;
+    print('🔄 Initializing Firebase...');
+    
+    // First, try to get existing apps
+    final apps = Firebase.apps;
+    if (apps.isNotEmpty) {
+      print('ℹ️ Found existing Firebase apps: ${apps.length}');
+      _isFirebaseInitialized = true;
+      _isInitializing = false;
+      return;
+    }
+    
+    // If no apps exist, initialize
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform
+    );
+    _isFirebaseInitialized = true;
+    print('✅ Firebase initialized successfully');
+  } catch (e) {
+    print('❌ Error initializing Firebase: $e');
+    print('❌ Error stack trace: ${StackTrace.current}');
+    // If we get a duplicate app error, consider it initialized
+    if (e.toString().contains('duplicate-app')) {
+      _isFirebaseInitialized = true;
+      print('ℹ️ Firebase already initialized (duplicate app detected)');
+    }
+  } finally {
+    _isInitializing = false;
+  }
+}
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
@@ -46,74 +104,77 @@ void main() async {  // Made async to properly handle initialization
       print('🔒 SSL certificate validation disabled for development');
     }
     
-    print('🔄 Initializing Firebase...');
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform
-    );
-    print('✅ Firebase initialized successfully');
-    
-    // Initialize notification service
-    final notificationService = NotificationService();
-    await notificationService.initialize();
-    print('✅ Notification service initialized');
-    
-    // Initialize alarm service
-    final alarmService = AlarmService();
-    await alarmService.initialize();
-    print('✅ Alarm service initialized');
-    
-    // Request FCM permissions
-    await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      criticalAlert: true,  // Used for high priority notifications like alarms
-    );
-    print('✅ FCM permissions requested');
-    
-    // Set FCM foreground notification options
-    await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-    print('✅ FCM foreground notification options set');
-    
-    // Set up foreground message handler
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      print('📱 Received foreground message');
-      print('📱 Message data: ${message.data}');
-      
-      if (message.notification != null) {
-        print('📱 Message notification: ${message.notification?.title}');
-        // Play notification sound for foreground messages
-        await notificationService.handleNewNotification();
-      }
-      
-      // Special handling for alarm notifications
-      if (message.data['type'] == 'task_alarm') {
-        print('⏰ Received task alarm notification');
-        await alarmService.triggerAlarm(message.data);
-      }
-    });
-    
-    // Set up background message handler
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-    print('✅ Firebase background message handler set');
-    
-    // Initialize shared preferences
+    // Initialize SharedPreferences first
     final prefs = await SharedPreferences.getInstance();
+    Get.put(prefs); // Register SharedPreferences with Get
+    print('✅ SharedPreferences initialized');
+    
+    // Initialize Firebase
+    await _initializeFirebase();
+    
+    // Initialize other services only if Firebase is initialized
+    if (_isFirebaseInitialized) {
+      // Initialize notification service
+      final notificationService = NotificationService();
+      await notificationService.initialize();
+      print('✅ Notification service initialized');
+      
+      // Initialize alarm service
+      final alarmService = AlarmService();
+      await alarmService.initialize();
+      print('✅ Alarm service initialized');
+      
+      // Request FCM permissions
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        criticalAlert: true,
+      );
+      print('✅ FCM permissions requested');
+      
+      // Set FCM foreground notification options
+      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      print('✅ FCM foreground notification options set');
+      
+      // Set up foreground message handler
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+        print('📱 Received foreground message');
+        print('📱 Message data: ${message.data}');
+        
+        if (message.notification != null) {
+          print('📱 Message notification: ${message.notification?.title}');
+          await notificationService.handleNewNotification();
+        }
+        
+        if (message.data['type'] == 'task_alarm') {
+          print('⏰ Received task alarm notification');
+          await alarmService.triggerAlarm(message.data);
+        }
+      });
+      
+      // Set up background message handler
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      print('✅ Firebase background message handler set');
+    } else {
+      print('⚠️ Skipping Firebase-dependent services due to initialization failure');
+    }
+    
     final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-    print('✅ SharedPreferences initialized, isLoggedIn: $isLoggedIn');
+    print('✅ Login status: $isLoggedIn');
     
     // Initialize socket service
     final socketService = SocketService.instance;
     try {
       print('🔌 Initializing socket service...');
-      // Use secure WebSocket with SSL
-      socketService.init('wss://134.209.149.12'); // Changed from http to wss
+      const serverUrl = 'https://134.209.149.12';
+      const wsUrl = 'wss://134.209.149.12';
+      socketService.init(wsUrl);
       
-      // Get current user and register with socket
       final username = prefs.getString('username');
       if (username != null) {
         print('🔌 Connecting socket for user: $username');
@@ -122,6 +183,7 @@ void main() async {  // Made async to properly handle initialization
       print('✅ Socket service initialized');
     } catch (e) {
       print('❌ Error initializing socket service: $e');
+      print('❌ Error stack trace: ${StackTrace.current}');
     }
     
     // Force portrait orientation
@@ -135,7 +197,6 @@ void main() async {  // Made async to properly handle initialization
   } catch (e, stackTrace) {
     print('❌ Error during initialization: $e');
     print('❌ Stack trace: $stackTrace');
-    // Still try to run the app even if initialization failed
     runApp(MyApp(isLoggedIn: false));
   }
 }

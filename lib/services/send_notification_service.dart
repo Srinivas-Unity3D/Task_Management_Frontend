@@ -81,7 +81,7 @@ class NotificationResult {
 /// using the HTTP v1 API. Supports single-device and topic-based notifications.
 class SendNotificationService {
   // FCM HTTP v1 API endpoint
-  static const String _fcmUrl = 'https://fcm.googleapis.com/v1/projects/task-man-srinivas-2/messages:send';
+  static const String _fcmUrl = 'https://fcm.googleapis.com/v1/projects/TaskManagement/messages:send';
   static const int _timeoutSeconds = 30; // HTTP request timeout
   static const int _maxRetries = 2; // Maximum retry attempts for transient errors
 

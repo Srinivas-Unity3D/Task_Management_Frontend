@@ -1,7 +1,11 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
 import 'dart:io';
+import 'dart:math';
 import 'notification_service.dart';
+import 'dart:async';
+import 'auth_service.dart';
+import 'api_service.dart';
 
 // Add this class to handle self-signed certificates
 class DevHttpOverrides extends HttpOverrides {
@@ -25,7 +29,11 @@ class SocketService {
   final List<Function(dynamic)> _taskNotificationListeners = [];
   final List<Function(dynamic)> _dashboardUpdateListeners = [];
   final _notificationService = NotificationService();
+  final _apiService = ApiService();
   bool _isRegistered = false;
+  bool _isConnecting = false;
+  Timer? _heartbeatTimer;
+  Timer? _tokenRefreshTimer;
 
   // Private constructor
   SocketService._internal();
@@ -37,21 +45,102 @@ class SocketService {
 
   void init(String serverUrl) async {
     print('🔌 Initializing socket service with URL: $serverUrl');
-    _serverUrl = serverUrl;
+    // Convert http:// to ws:// and https:// to wss://
+    if (serverUrl.startsWith('http://')) {
+      _serverUrl = serverUrl.replaceFirst('http://', 'ws://');
+    } else if (serverUrl.startsWith('https://')) {
+      _serverUrl = serverUrl.replaceFirst('https://', 'wss://');
+    } else {
+      _serverUrl = serverUrl;
+    }
+    print('🔌 Converted socket URL: $_serverUrl');
     await _notificationService.initialize();
+    _startTokenRefreshTimer();
   }
 
-  void connect(String username) {
+  void _startTokenRefreshTimer() {
+    _tokenRefreshTimer?.cancel();
+    // Check token every 5 minutes
+    _tokenRefreshTimer = Timer.periodic(Duration(minutes: 5), (timer) async {
+      if (_socket?.connected ?? false) {
+        final authService = AuthService();
+        if (!(await authService.isLoggedIn())) {
+          print('🔑 [Socket] Token expired, refreshing...');
+          if (await _apiService.refreshToken()) {
+            print('🔑 [Socket] Token refreshed, reconnecting socket...');
+            reconnect();
+          } else {
+            print('❌ [Socket] Token refresh failed, disconnecting...');
+            disconnect();
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> connect(String username) async {
+    if (_isConnecting) {
+      print('🔌 [Socket] Already attempting to connect, skipping...');
+      return;
+    }
+
     print('🔌 [Socket] Connecting socket for user: $username');
     print('🔌 [Socket] Current connection status: ${_socket?.connected ?? false}');
+    print('🔌 [Socket] Server URL: $_serverUrl');
+    
+    // Check if already connected with same username
+    if (_socket != null && _socket!.connected && _currentUsername == username) {
+      final authService = AuthService();
+      if (await authService.isLoggedIn()) {
+        print('✅ [Socket] Already connected with valid token, reusing connection');
+        _isRegistered = true;
+        connected.value = true;
+        _notifyListeners('connection_status', {'status': 'connected'});
+        _registerUser();
+        return;
+      } else {
+        print('🔑 [Socket] Token expired, refreshing connection...');
+        disconnect();
+      }
+    }
+    
     // Disconnect existing socket if any
     disconnect();
 
     _currentUsername = username;
     _isRegistered = false;
+    _isConnecting = true;
     
     if (_serverUrl == null) {
       print('❌ [Socket] Error: Server URL not initialized');
+      _isConnecting = false;
+      return;
+    }
+
+    // Get the JWT token
+    String? token;
+    try {
+      final authService = AuthService();
+      token = await authService.getToken();
+      
+      // If token is null or expired, try to refresh it
+      if (token == null || !(await authService.isLoggedIn())) {
+        print('🔑 [Socket] Token invalid or expired, attempting refresh...');
+        if (await _apiService.refreshToken()) {
+          token = await authService.getToken();
+        }
+      }
+      
+      if (token == null) {
+        print('❌ [Socket] No valid token available after refresh attempt');
+        _isConnecting = false;
+        return;
+      }
+      
+      print('🔑 [Socket] Using token: ${token.substring(0, min(10, token.length))}...');
+    } catch (e) {
+      print('❌ [Socket] Error getting auth token: $e');
+      _isConnecting = false;
       return;
     }
 
@@ -62,41 +151,78 @@ class SocketService {
       print('🔒 [Socket] SSL certificate validation disabled for development');
     }
 
-    print('🔌 [Socket] Creating socket connection to: $_serverUrl');
-    _socket = IO.io(
-      _serverUrl!,
-      IO.OptionBuilder()
-        .setTransports(['websocket', 'polling'])
-        .enableReconnection()
-        .setReconnectionAttempts(5)
-        .setReconnectionDelay(3000)
-        .setReconnectionDelayMax(5000)
-        .setTimeout(20000)
-        .enableAutoConnect()
-        .setQuery({'username': username})
+    try {
+      print('🔌 [Socket] Creating socket connection to: $_serverUrl');
+      print('🔌 [Socket] Connection options: transports=websocket, auth enabled');
+      
+      final options = IO.OptionBuilder()
+        .setTransports(['websocket'])
+        .disableAutoConnect()
         .setExtraHeaders({
-          'username': username,
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
           'Content-Type': 'application/json',
         })
-        .build()
-    );
+        .enableForceNew()
+        .enableReconnection()
+        .setReconnectionAttempts(10)
+        .setReconnectionDelay(1000)
+        .setReconnectionDelayMax(5000)
+        .setTimeout(20000)
+        .setPath('/socket.io')  // Add explicit path
+        .build();
 
-    _setupSocketListeners();
-    print('🔌 [Socket] Attempting to connect to socket server...');
-    _socket!.connect();
+      print('🔌 [Socket] Options configured: ${options.toString()}');
+      
+      _socket = IO.io(_serverUrl!, options);
 
-    // Verify connection after a short delay
-    Future.delayed(Duration(seconds: 2), () {
-      print('🔌 [Socket] Connection status after 2 seconds: ${_socket?.connected ?? false}');
-      print('🔌 [Socket] Is registered: $_isRegistered');
-      if (_socket?.connected ?? false) {
-        print('✅ [Socket] Connection verified, registering user...');
-        _registerUser();
-      } else {
-        print('🔄 [Socket] Connection failed, attempting to reconnect...');
-        reconnect();
-      }
-    });
+      print('🔌 [Socket] Socket instance created, setting up listeners...');
+      _setupSocketListeners();
+      print('🔌 [Socket] Attempting to connect...');
+      _socket!.connect();
+      
+      // Verify connection after a short delay
+      Future.delayed(Duration(seconds: 2), () {
+        final isConnected = _socket?.connected ?? false;
+        print('🔌 [Socket] Connection status after 2 seconds: $isConnected');
+        print('🔌 [Socket] Socket ID: ${_socket?.id}');
+        print('🔌 [Socket] Is registered: $_isRegistered');
+        print('🔌 [Socket] Socket engine state: ${_socket?.io.engine?.readyState}');
+        
+        if (isConnected) {
+          print('✅ [Socket] Connection verified, registering user...');
+          _registerUser();
+        } else {
+          print('🔄 [Socket] Connection failed, attempting to reconnect...');
+          // Try a second approach before giving up
+          _socket!.connect();
+          
+          // Check again after a short delay
+          Future.delayed(Duration(seconds: 2), () {
+            final secondAttemptConnected = _socket?.connected ?? false;
+            print('🔌 [Socket] Second attempt connection status: $secondAttemptConnected');
+            print('🔌 [Socket] Socket engine state: ${_socket?.io.engine?.readyState}');
+            if (!secondAttemptConnected) {
+              print('🔄 [Socket] Second connection attempt failed, recreating socket...');
+              reconnect();
+            }
+          });
+        }
+        _isConnecting = false;
+      });
+    } catch (e, stackTrace) {
+      print('❌ [Socket] Error creating socket connection: $e');
+      print('❌ [Socket] Error stack trace: $stackTrace');
+      _isConnecting = false;
+      // Attempt to reconnect after a delay
+      Future.delayed(Duration(seconds: 5), () {
+        if (_currentUsername != null && !_isRegistered) {
+          print('🔄 [Socket] Attempting to reconnect after error...');
+          _isConnecting = false; // Reset flag to allow reconnection
+          reconnect();
+        }
+      });
+    }
   }
 
   void _setupSocketListeners() {
@@ -105,93 +231,119 @@ class SocketService {
     print('🔌 [Socket] Current task notification listeners: ${_taskNotificationListeners.length}');
     print('🔌 [Socket] Current dashboard update listeners: ${_dashboardUpdateListeners.length}');
     
-    _socket!
-      ..onConnect((_) {
-        print('✅ [Socket] Connected to server successfully');
-        print('✅ [Socket] Socket ID: ${_socket?.id}');
-        _isRegistered = true;
-        _notifyListeners('connection_status', {'status': 'connected'});
-        // Register user after connection
-        _registerUser();
-      })
-      ..onDisconnect((_) {
-        print('❌ [Socket] Disconnected from server');
-        _isRegistered = false;
-        _notifyListeners('connection_status', {'status': 'disconnected'});
-        // Attempt to reconnect after a delay
-        Future.delayed(const Duration(seconds: 5), () {
-          if (_currentUsername != null && !_isRegistered) {
-            print('🔄 [Socket] Attempting to reconnect...');
-            reconnect();
+    if (_socket == null) {
+      print('❌ [Socket] Cannot setup listeners: socket is null');
+      return;
+    }
+
+    try {
+      _socket!
+        ..onConnect((_) {
+          print('✅ [Socket] Connected to server successfully');
+          print('✅ [Socket] Socket ID: ${_socket?.id}');
+          _isRegistered = true;
+          connected.value = true;
+          _notifyListeners('connection_status', {'status': 'connected'});
+          // Register user after connection
+          _registerUser();
+          // Start heartbeat after successful connection
+          _startHeartbeat();
+        })
+        ..onDisconnect((_) {
+          print('❌ [Socket] Disconnected from server');
+          _isRegistered = false;
+          connected.value = false;
+          _notifyListeners('connection_status', {'status': 'disconnected'});
+          // Stop heartbeat on disconnect
+          _stopHeartbeat();
+          // Attempt to reconnect after a delay
+          Future.delayed(const Duration(seconds: 5), () {
+            if (_currentUsername != null && !_isRegistered) {
+              print('🔄 [Socket] Attempting to reconnect...');
+              reconnect();
+            }
+          });
+        })
+        ..onError((error) {
+          print('❌ [Socket] Error: $error');
+          print('❌ [Socket] Error stack trace: ${StackTrace.current}');
+          connected.value = false;
+          _notifyListeners('error', error);
+        })
+        ..onConnectError((error) {
+          print('❌ [Socket] Connection error: $error');
+          print('❌ [Socket] Connection error stack trace: ${StackTrace.current}');
+          _isRegistered = false;
+          connected.value = false;
+          // Attempt to reconnect after a delay
+          Future.delayed(const Duration(seconds: 5), () {
+            if (_currentUsername != null && !_isRegistered) {
+              print('🔄 [Socket] Attempting to reconnect after error...');
+              reconnect();
+            }
+          });
+        })
+        ..on('connect_error', (error) {
+          print('❌ [Socket] Connection error event: $error');
+          print('❌ [Socket] Connection error stack trace: ${StackTrace.current}');
+          connected.value = false;
+        })
+        ..on('connect_timeout', (error) {
+          print('❌ [Socket] Connection timeout: $error');
+          connected.value = false;
+        })
+        ..on('error', (error) {
+          print('❌ [Socket] Socket error event: $error');
+          connected.value = false;
+        })
+        ..on('reconnect', (attempt) {
+          print('🔄 [Socket] Reconnected after $attempt attempts');
+          _isRegistered = true;
+          connected.value = true;
+          _notifyListeners('connection_status', {'status': 'connected'});
+          _registerUser();
+        })
+        ..on('reconnect_attempt', (attempt) {
+          print('🔄 [Socket] Reconnection attempt $attempt');
+        })
+        ..on('reconnect_error', (error) {
+          print('❌ [Socket] Reconnection error: $error');
+          connected.value = false;
+        })
+        ..on('reconnect_failed', (error) {
+          print('❌ [Socket] Reconnection failed after all attempts: $error');
+          _isRegistered = false;
+          connected.value = false;
+          _notifyListeners('connection_status', {'status': 'disconnected'});
+        })
+        ..on('register_response', (data) {
+          print('📝 [Socket] Registration response: $data');
+          _isRegistered = data['status'] == 'registered';
+          if (_isRegistered) {
+            print('✅ [Socket] User registered successfully');
+            connected.value = true;
+          } else {
+            print('❌ [Socket] User registration failed');
+            connected.value = false;
           }
+        })
+        ..on('task_notification', (data) {
+          print('📬 [Socket] Received task notification: $data');
+          print('📬 [Socket] Current username: $_currentUsername');
+          print('📬 [Socket] Number of task notification listeners: ${_taskNotificationListeners.length}');
+          // Notify listeners
+          _notifyListeners('task_notification', data);
+        })
+        ..on('dashboard_update', (data) {
+          print('📊 [Socket] Received dashboard update: $data');
+          print('📊 [Socket] Number of dashboard update listeners: ${_dashboardUpdateListeners.length}');
+          _notifyListeners('dashboard_update', data);
         });
-      })
-      ..onError((error) {
-        print('❌ [Socket] Error: $error');
-        print('❌ [Socket] Error stack trace: ${StackTrace.current}');
-        _notifyListeners('error', error);
-      })
-      ..onConnectError((error) {
-        print('❌ [Socket] Connection error: $error');
-        print('❌ [Socket] Connection error stack trace: ${StackTrace.current}');
-        _isRegistered = false;
-        // Attempt to reconnect after a delay
-        Future.delayed(const Duration(seconds: 5), () {
-          if (_currentUsername != null && !_isRegistered) {
-            print('🔄 [Socket] Attempting to reconnect after error...');
-            reconnect();
-          }
-        });
-      })
-      ..on('connect_error', (error) {
-        print('❌ [Socket] Connection error event: $error');
-        print('❌ [Socket] Connection error stack trace: ${StackTrace.current}');
-      })
-      ..on('connect_timeout', (error) {
-        print('❌ [Socket] Connection timeout: $error');
-      })
-      ..on('error', (error) {
-        print('❌ [Socket] Socket error event: $error');
-      })
-      ..on('reconnect', (attempt) {
-        print('🔄 [Socket] Reconnected after $attempt attempts');
-        _isRegistered = true;
-        _notifyListeners('connection_status', {'status': 'connected'});
-        _registerUser();
-      })
-      ..on('reconnect_attempt', (attempt) {
-        print('🔄 [Socket] Reconnection attempt $attempt');
-      })
-      ..on('reconnect_error', (error) {
-        print('❌ [Socket] Reconnection error: $error');
-      })
-      ..on('reconnect_failed', (error) {
-        print('❌ [Socket] Reconnection failed after all attempts: $error');
-        _isRegistered = false;
-        _notifyListeners('connection_status', {'status': 'disconnected'});
-      })
-      ..on('register_response', (data) {
-        print('📝 [Socket] Registration response: $data');
-        _isRegistered = data['status'] == 'registered';
-        if (_isRegistered) {
-          print('✅ [Socket] User registered successfully');
-        } else {
-          print('❌ [Socket] User registration failed');
-        }
-      })
-      ..on('task_notification', (data) {
-        print('📬 [Socket] Received task notification: $data');
-        print('📬 [Socket] Current username: $_currentUsername');
-        print('📬 [Socket] Number of task notification listeners: ${_taskNotificationListeners.length}');
-        // Notify listeners
-        _notifyListeners('task_notification', data);
-      })
-      ..on('dashboard_update', (data) {
-        print('📊 [Socket] Received dashboard update: $data');
-        print('📊 [Socket] Number of dashboard update listeners: ${_dashboardUpdateListeners.length}');
-        _notifyListeners('dashboard_update', data);
-      });
-    print('✅ [Socket] Socket listeners setup complete');
+      print('✅ [Socket] Socket listeners setup complete');
+    } catch (e) {
+      print('❌ [Socket] Error setting up socket listeners: $e');
+      print('❌ [Socket] Error stack trace: ${StackTrace.current}');
+    }
   }
 
   void _registerUser() {
@@ -226,10 +378,12 @@ class SocketService {
     if (_socket != null) {
       print('🔌 Disconnecting socket');
       removeAllListeners();
+      _stopHeartbeat();
       _socket!.disconnect();
       _socket!.dispose();
       _socket = null;
       _isRegistered = false;
+      _isConnecting = false;
     }
   }
 
@@ -274,22 +428,97 @@ class SocketService {
   }
 
   void reconnect() {
-    if (_socket != null && !_socket!.connected && _currentUsername != null) {
+    if (_socket != null && !_socket!.connected && _currentUsername != null && !_isConnecting) {
       print('🔌 Manually attempting to reconnect...');
-      print('🔌 [Socket] Current connection status: ${_socket?.connected ?? false}');
-      print('🔌 [Socket] Current username: $_currentUsername');
+      _isConnecting = true; // Set flag to prevent concurrent reconnection attempts
       
-      // Try to reconnect with a new socket instance
-      disconnect();
-      connect(_currentUsername!);
+      try {
+        print('🔌 [Socket] Current connection status: ${_socket?.connected ?? false}');
+        print('🔌 [Socket] Current username: $_currentUsername');
+        
+        // Check if the socket engine is completely closed
+        if (_socket!.connected == false && _socket!.io.engine != null && 
+            (_socket!.io.engine!.readyState != "open" && _socket!.io.engine!.readyState != "opening")) {
+          print('🔌 Socket engine not open, creating new connection');
+          disconnect();
+          connect(_currentUsername!);
+        } else {
+          print('🔌 Socket engine still potentially viable, trying internal reconnect');
+          _socket!.connect(); // Try to use socket.io's reconnect mechanism
+          
+          // Check reconnection status after a delay
+          Future.delayed(Duration(seconds: 2), () {
+            if (!(_socket?.connected ?? false)) {
+              print('🔌 Internal reconnect failed, creating new connection');
+              disconnect();
+              connect(_currentUsername!);
+            }
+            _isConnecting = false;
+          });
+        }
+      } catch (e) {
+        print('❌ Error during reconnection: $e');
+        print('❌ Error stack trace: ${StackTrace.current}');
+        _isConnecting = false;
+        
+        // Safe fallback - create a new connection after a delay
+        Future.delayed(Duration(seconds: 3), () {
+          disconnect();
+          if (_currentUsername != null) {
+            connect(_currentUsername!);
+          }
+        });
+      }
     } else {
-      print('🔌 Cannot reconnect: socket=${_socket != null}, connected=${_socket?.connected}, username=$_currentUsername');
+      print('🔌 Cannot reconnect: socket=${_socket != null}, connected=${_socket?.connected}, username=$_currentUsername, isConnecting=$_isConnecting');
+      
+      // Reset connecting flag if it's stuck
+      if (_isConnecting && (_socket == null || _currentUsername == null)) {
+        _isConnecting = false;
+      }
     }
   }
 
   void dispose() {
     print('🔌 Disposing socket service');
+    _stopHeartbeat();
     disconnect();
+  }
+
+  // Start sending heartbeats to server
+  void _startHeartbeat() {
+    // Stop any existing heartbeat
+    _stopHeartbeat();
+    
+    print('💓 [Socket] Starting heartbeat mechanism');
+    // Send heartbeat every 30 seconds
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (_socket != null && _socket!.connected) {
+        print('💓 [Socket] Sending heartbeat');
+        try {
+          _socket!.emit('heartbeat', {});
+        } catch (e) {
+          print('❌ [Socket] Error sending heartbeat: $e');
+        }
+      } else {
+        print('❌ [Socket] Cannot send heartbeat: socket=${_socket != null}, connected=${_socket?.connected}');
+        // If socket is disconnected, stop the heartbeat and try to reconnect
+        if (_socket != null && !_socket!.connected && _currentUsername != null) {
+          print('🔄 [Socket] Lost connection, attempting to reconnect...');
+          _stopHeartbeat();
+          reconnect();
+        }
+      }
+    });
+  }
+  
+  // Stop sending heartbeats
+  void _stopHeartbeat() {
+    if (_heartbeatTimer != null) {
+      print('💓 [Socket] Stopping heartbeat mechanism');
+      _heartbeatTimer!.cancel();
+      _heartbeatTimer = null;
+    }
   }
 
   void _notifyListeners(String event, dynamic data) {

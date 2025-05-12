@@ -44,25 +44,25 @@ class DefaultFirebaseOptions {
     apiKey: 'AIzaSyAtz-hN3zcp3bzJDHtCKOZhUYh_kYcWNQs',
     appId: '1:626056020363:web:44b6aaa9c6c81c7f356f8e',
     messagingSenderId: '626056020363',
-    projectId: 'task-man-srinivas-2',
-    authDomain: 'task-man-srinivas-2.firebaseapp.com',
-    storageBucket: 'task-man-srinivas-2.firebasestorage.app',
+    projectId: 'TaskManagement',
+    authDomain: 'TaskManagement.firebaseapp.com',
+    storageBucket: 'TaskManagement.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyB1JaNGCZut6PuP97BNSjMNRAeAyESJ2ys',
     appId: '1:626056020363:android:a3ca9657cad27462356f8e',
     messagingSenderId: '626056020363',
-    projectId: 'task-man-srinivas-2',
-    storageBucket: 'task-man-srinivas-2.firebasestorage.app',
+    projectId: 'TaskManagement',
+    storageBucket: 'TaskManagement.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAuYay2LS6Rrn93q3LIUflGkwNoJjfH-bU',
     appId: '1:626056020363:ios:4ab659297dd6cc99356f8e',
     messagingSenderId: '626056020363',
-    projectId: 'task-man-srinivas-2',
-    storageBucket: 'task-man-srinivas-2.firebasestorage.app',
+    projectId: 'TaskManagement',
+    storageBucket: 'TaskManagement.firebasestorage.app',
     iosBundleId: 'sunrack.com.taskmanagement',
   );
 
@@ -70,8 +70,8 @@ class DefaultFirebaseOptions {
     apiKey: 'AIzaSyAuYay2LS6Rrn93q3LIUflGkwNoJjfH-bU',
     appId: '1:626056020363:ios:4ab659297dd6cc99356f8e',
     messagingSenderId: '626056020363',
-    projectId: 'task-man-srinivas-2',
-    storageBucket: 'task-man-srinivas-2.firebasestorage.app',
+    projectId: 'TaskManagement',
+    storageBucket: 'TaskManagement.firebasestorage.app',
     iosBundleId: 'sunrack.com.taskmanagement',
   );
 
@@ -79,8 +79,8 @@ class DefaultFirebaseOptions {
     apiKey: 'AIzaSyAtz-hN3zcp3bzJDHtCKOZhUYh_kYcWNQs',
     appId: '1:626056020363:web:6cd56f0d1c3d341d356f8e',
     messagingSenderId: '626056020363',
-    projectId: 'task-man-srinivas-2',
-    authDomain: 'task-man-srinivas-2.firebaseapp.com',
-    storageBucket: 'task-man-srinivas-2.firebasestorage.app',
+    projectId: 'TaskManagement',
+    authDomain: 'TaskManagement.firebaseapp.com',
+    storageBucket: 'TaskManagement.firebasestorage.app',
   );
 }

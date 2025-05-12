@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taskmanagement/services/notification_firebase_service.dart';
 import 'package:uuid/uuid.dart';
+import 'auth_service.dart';
 
 import '../models/attachment.dart';
 import '../models/task_assignment.dart';
@@ -18,19 +19,196 @@ import 'send_notification_service.dart';
 class ApiService {
   static const String baseUrl = 'https://134.209.149.12';
   // static const String baseUrl = 'http://10.20.0.248:5000';
-  final Dio _dio = Dio(BaseOptions(
-    baseUrl: baseUrl,
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    validateStatus: (status) => true,
-  ));
-
+  late Dio _dio;
+  String? _accessToken;
+  String? _refreshToken;
+  bool _isRefreshing = false;
+  Completer<bool>? _refreshTokenCompleter;
+  final _authService = AuthService();
+  
   ApiService() {
+    _initDio();
     setupFcmTokenRefreshListener();
+    _loadTokensFromStorage();
+  }
+  
+  void _initDio() {
+    _dio = Dio(BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 10),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      validateStatus: (status) => true,
+    ));
+    
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        // Check token validity before making request
+        if (_accessToken != null && !await _authService.isLoggedIn()) {
+          print('🔑 [API] Token expired, attempting refresh before request');
+          final refreshed = await refreshToken();
+          if (!refreshed) {
+            return handler.reject(
+              DioException(
+                requestOptions: options,
+                error: 'Token refresh failed',
+                type: DioExceptionType.unknown,
+              ),
+            );
+          }
+        }
+        
+        if (_accessToken != null) {
+          options.headers['Authorization'] = 'Bearer $_accessToken';
+        }
+        return handler.next(options);
+      },
+      onError: (DioException error, handler) async {
+        if (error.response?.statusCode == 401) {
+          // If we're already refreshing, wait for that to complete
+          if (_isRefreshing && _refreshTokenCompleter != null) {
+            try {
+              final refreshed = await _refreshTokenCompleter!.future;
+              if (refreshed) {
+                return handler.resolve(await _retry(error.requestOptions));
+              }
+            } catch (e) {
+              print('❌ [API] Error waiting for token refresh: $e');
+            }
+          } else {
+            try {
+              final refreshed = await refreshToken();
+              if (refreshed) {
+                return handler.resolve(await _retry(error.requestOptions));
+              }
+            } catch (e) {
+              print('❌ [API] Error refreshing token: $e');
+            }
+          }
+          
+          // If we get here, token refresh failed
+          await clearTokens();
+          return handler.reject(error);
+        }
+        return handler.next(error);
+      },
+    ));
+  }
+  
+  Future<Response<dynamic>> _retry(RequestOptions requestOptions) async {
+    final options = Options(
+      method: requestOptions.method,
+      headers: requestOptions.headers,
+    );
+    
+    if (_accessToken != null) {
+      options.headers?['Authorization'] = 'Bearer $_accessToken';
+    }
+    
+    return _dio.request<dynamic>(
+      requestOptions.path,
+      data: requestOptions.data,
+      queryParameters: requestOptions.queryParameters,
+      options: options,
+    );
+  }
+  
+  Future<void> _loadTokensFromStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _accessToken = prefs.getString('access_token');
+      _refreshToken = prefs.getString('refresh_token');
+      
+      // Validate loaded tokens
+      if (_accessToken != null && !await _authService.isLoggedIn()) {
+        print('🔑 [API] Loaded token is expired, attempting refresh');
+        if (!await refreshToken()) {
+          await clearTokens();
+        }
+      }
+    } catch (e) {
+      print('❌ [API] Error loading tokens from storage: $e');
+      await clearTokens();
+    }
+  }
+  
+  Future<void> _saveTokensToStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_accessToken != null) {
+        await prefs.setString('access_token', _accessToken!);
+        await _authService.setToken(_accessToken!);
+      }
+      if (_refreshToken != null) {
+        await prefs.setString('refresh_token', _refreshToken!);
+      }
+    } catch (e) {
+      print('❌ [API] Error saving tokens to storage: $e');
+    }
+  }
+  
+  Future<void> clearTokens() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('access_token');
+      await prefs.remove('refresh_token');
+      await _authService.clearToken();
+      _accessToken = null;
+      _refreshToken = null;
+    } catch (e) {
+      print('❌ [API] Error clearing tokens: $e');
+    }
+  }
+
+  Future<bool> refreshToken() async {
+    if (_isRefreshing) {
+      return _refreshTokenCompleter?.future ?? Future.value(false);
+    }
+    
+    _isRefreshing = true;
+    _refreshTokenCompleter = Completer<bool>();
+
+    try {
+      if (_refreshToken == null) {
+        print('❌ [API] Cannot refresh token: No refresh token available');
+        _refreshTokenCompleter?.complete(false);
+        return false;
+      }
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/refresh_token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_refreshToken',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        _accessToken = data['access_token'];
+        _refreshToken = data['refresh_token'];
+        await _saveTokensToStorage();
+        print('✅ [API] Tokens refreshed successfully');
+        _refreshTokenCompleter?.complete(true);
+        return true;
+      } else {
+        print('❌ [API] Failed to refresh token: ${response.statusCode}');
+        await clearTokens();
+        _refreshTokenCompleter?.complete(false);
+        return false;
+      }
+    } catch (e) {
+      print('❌ [API] Error refreshing token: $e');
+      await clearTokens();
+      _refreshTokenCompleter?.complete(false);
+      return false;
+    } finally {
+      _isRefreshing = false;
+      _refreshTokenCompleter = null;
+    }
   }
 
   void setupFcmTokenRefreshListener() {
@@ -307,6 +485,14 @@ class ApiService {
         await prefs.setString('user_id', data['user_id'].toString());
         await prefs.setString('username', data['username']);
         await prefs.setString('role', data['role']);
+        
+        // Store JWT tokens
+        if (data['access_token'] != null) {
+          _accessToken = data['access_token'];
+          _refreshToken = data['refresh_token'];
+          await _saveTokensToStorage();
+          print('JWT tokens stored successfully');
+        }
 
         // Always update FCM token in backend after successful login
         if (freshFcmToken != null && freshFcmToken.isNotEmpty) {
@@ -956,5 +1142,106 @@ class ApiService {
         'error': e.toString(),
       };
     }
+  }
+
+  // Add a logout method
+  Future<bool> logout() async {
+    try {
+      await clearTokens();
+      
+      // Clear user data
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_id');
+      await prefs.remove('username');
+      await prefs.remove('role');
+      
+      print('User logged out successfully');
+      return true;
+    } catch (e) {
+      print('Error during logout: $e');
+      return false;
+    }
+  }
+
+  // Add HTTP Request helper with auth header
+  Future<http.Response> _authenticatedRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    Map<String, String>? queryParams,
+  }) async {
+    final uri = Uri.parse('$baseUrl$path').replace(
+      queryParameters: queryParams,
+    );
+    
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    
+    // Add auth header if we have a token
+    if (_accessToken != null) {
+      headers['Authorization'] = 'Bearer $_accessToken';
+    }
+    
+    http.Response response;
+    
+    switch (method.toUpperCase()) {
+      case 'GET':
+        response = await http.get(uri, headers: headers);
+        break;
+      case 'POST':
+        response = await http.post(
+          uri,
+          headers: headers,
+          body: body != null ? json.encode(body) : null,
+        );
+        break;
+      case 'PUT':
+        response = await http.put(
+          uri,
+          headers: headers,
+          body: body != null ? json.encode(body) : null,
+        );
+        break;
+      case 'DELETE':
+        response = await http.delete(uri, headers: headers);
+        break;
+      default:
+        throw Exception('Unsupported method: $method');
+    }
+    
+    // Handle 401 responses manually (can't use interceptor with http package)
+    if (response.statusCode == 401 && _refreshToken != null) {
+      final refreshed = await refreshToken();
+      if (refreshed) {
+        // Update the headers with new token
+        headers['Authorization'] = 'Bearer $_accessToken';
+        
+        // Retry the request
+        switch (method.toUpperCase()) {
+          case 'GET':
+            return await http.get(uri, headers: headers);
+          case 'POST':
+            return await http.post(
+              uri,
+              headers: headers,
+              body: body != null ? json.encode(body) : null,
+            );
+          case 'PUT':
+            return await http.put(
+              uri,
+              headers: headers,
+              body: body != null ? json.encode(body) : null,
+            );
+          case 'DELETE':
+            return await http.delete(uri, headers: headers);
+          default:
+            throw Exception('Unsupported method: $method');
+        }
+      }
+    }
+    
+    return response;
   }
 }

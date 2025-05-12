@@ -6,6 +6,7 @@ import '../widgets/custom_button.dart';
 import '../services/api_service.dart';
 import 'registration_screen.dart';
 import 'dashboard_screen.dart';
+import '../services/auth_service.dart';
 
 class SignInScreen extends StatefulWidget {
   final VoidCallback onLogin;
@@ -91,7 +92,10 @@ class _SignInScreenState extends State<SignInScreen> {
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('username', _usernameController.text);
             await prefs.setString('role', response['data']['role'] ?? 'Developer');
-            
+            // Save JWT token for API and socket authentication
+            if (response['data'] != null && response['data']['access_token'] != null) {
+              await AuthService().setToken(response['data']['access_token']);
+            }
             if (_rememberMe) {
               await prefs.setBool('isLoggedIn', true);
               await prefs.setString('password', _passwordController.text);
