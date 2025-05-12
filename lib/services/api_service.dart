@@ -1253,4 +1253,28 @@ class ApiService {
     
     return response;
   }
+
+  Future<List<Map<String, dynamic>>?> uploadFile(FormData formData) async {
+    try {
+      final response = await _dio.post(
+        '/upload',
+        data: formData,
+        options: Options(
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return List<Map<String, dynamic>>.from(response.data['files']);
+      } else {
+        print('❌ [API] File upload failed: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ [API] Error uploading file: $e');
+      return null;
+    }
+  }
 }

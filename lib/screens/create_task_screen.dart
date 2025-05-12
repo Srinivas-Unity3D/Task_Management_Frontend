@@ -23,6 +23,8 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../widgets/snooze_dialog.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/http.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   final bool isEditMode;
@@ -1293,8 +1295,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       try {
         await _stopPlayback();
         Map<String, dynamic>? audioNote;
+        List<Map<String, dynamic>> attachmentData = [];
         
-        // Validate and process audio recording
+        // First upload audio file if exists
         if (_recordedFilePath != null) {
           print('🎤 [Task] Processing audio recording...');
           final audioFile = File(_recordedFilePath!);
@@ -1303,39 +1306,34 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             print('📊 [Task] Audio file size: ${(fileSize / 1024).toStringAsFixed(2)} KB');
             
             if (fileSize > 0) {
-              final audioBytes = await audioFile.readAsBytes();
-              final base64Audio = base64Encode(audioBytes);
-              final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
-              audioNote = {
-                'filename': filename,
-                'duration': _recordingDuration.inSeconds,
-                'audio_data': base64Audio,
-              };
-              print('✅ [Task] Audio note prepared successfully');
-            } else {
-              print('⚠️ [Task] Audio file is empty');
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Audio recording is empty')),
-              );
+              // Upload audio file first
+              final formData = FormData.fromMap({
+                'files[]': await MultipartFile.fromFile(
+                  audioFile.path,
+                  filename: 'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
+                ),
+                'type': 'audio',
+              });
+              
+              final response = await _apiService.uploadFile(formData);
+              if (response != null && response.isNotEmpty) {
+                audioNote = {
+                  'file_id': response[0]['file_id'],
+                  'filename': response[0]['file_name'],
+                  'duration': _recordingDuration.inSeconds,
+                };
+                print('✅ [Task] Audio note uploaded successfully');
+              }
             }
-          } else {
-            print('❌ [Task] Audio file not found at: $_recordedFilePath');
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Audio recording file not found')),
-            );
           }
         }
 
-        // Validate and process attachments
-        List<Map<String, dynamic>> attachmentData = [];
+        // Then upload attachments if any
         if (_selectedFiles.isNotEmpty) {
           print('📎 [Task] Processing ${_selectedFiles.length} attachments...');
           
           for (final file in _selectedFiles) {
-            if (file.path == null) {
-              print('❌ [Task] File path is null for: ${file.name}');
-              continue;
-            }
+            if (file.path == null) continue;
             
             final attachmentFile = File(file.path!);
             if (await attachmentFile.exists()) {
@@ -1343,37 +1341,26 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               print('📊 [Task] Attachment: ${file.name} (${(fileSize / 1024).toStringAsFixed(2)} KB)');
               
               if (fileSize > 0) {
-                final fileBytes = await attachmentFile.readAsBytes();
-                final base64File = base64Encode(fileBytes);
-                final fileType = file.extension ?? '';
-                
-                attachmentData.add({
-                  'file_name': file.name,
-                  'file_type': fileType,
-                  'file_data': base64File,
+                // Upload each attachment
+                final formData = FormData.fromMap({
+                  'files[]': await MultipartFile.fromFile(
+                    attachmentFile.path,
+                    filename: file.name,
+                  ),
+                  'type': 'attachment',
                 });
-                print('✅ [Task] Attachment prepared: ${file.name}');
-              } else {
-                print('⚠️ [Task] Empty file: ${file.name}');
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('File is empty: ${file.name}')),
-                );
+                
+                final response = await _apiService.uploadFile(formData);
+                if (response != null && response.isNotEmpty) {
+                  attachmentData.add({
+                    'file_id': response[0]['file_id'],
+                    'file_name': response[0]['file_name'],
+                    'file_type': response[0]['file_type'],
+                  });
+                  print('✅ [Task] Attachment uploaded: ${file.name}');
+                }
               }
-            } else {
-              print('❌ [Task] File not found: ${file.path}');
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('File not found: ${file.name}')),
-              );
             }
-          }
-          
-          if (attachmentData.isEmpty) {
-            print('⚠️ [Task] No valid attachments to upload');
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No valid attachments to upload')),
-            );
-          } else {
-            print('✅ [Task] ${attachmentData.length} valid attachments ready for upload');
           }
         }
 
@@ -1394,11 +1381,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           };
         }
 
+        // Create task with file IDs instead of base64 data
         String taskId;
-        String? taskTitle;
-        String? taskDescription;
-        String? taskAssignedTo;
-        
         if (widget.isEditMode) {
           if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
             throw Exception('Assignee is missing');
@@ -1418,13 +1402,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             audioNote: audioNote,
             attachments: attachmentData,
             alarmSettings: alarmSettings,
-            currentUser : _currentUsername!
+            currentUser: _currentUsername!
           );
-          
           taskId = widget.taskId!;
-          taskTitle = _titleController.text;
-          taskDescription = _descriptionController.text;
-          taskAssignedTo = _selectedAssignee;
         } else {
           if (_currentUsername == null || _currentUsername!.isEmpty) {
             throw Exception('Current user is not logged in');
@@ -1446,70 +1426,24 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             attachments: attachmentData,
             alarmSettings: alarmSettings,
           );
-          
-          taskTitle = _titleController.text;
-          taskDescription = _descriptionController.text;
-          taskAssignedTo = _selectedAssignee;
         }
 
-        print('✅ [Task] Task ${widget.isEditMode ? "updated" : "created"} successfully');
-        
-        // Register alarm with the backend if alarm settings are provided
-        if (alarmSettings != null) {
-          print('⏰ [Task] Registering alarm with the backend...');
-          
-          // Register alarm with backend service
-          await _apiService.registerTaskAlarm(
-            taskId: taskId,
-            assignedTo: taskAssignedTo!,
-            startDate: _alarmStartDate!,
-            startTime: alarmSettings['start_time'],
-            frequency: _alarmFrequency,
-          );
-          
-          print('✅ [Task] Alarm registered with backend successfully');
+        if (mounted) {
+          Navigator.pop(context, true);
         }
-        
-        setState(() {
-          _isLoading = false;
-        });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              widget.isEditMode ? 'Task updated successfully' : 'Task created successfully',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: const Color(0xFF1E293B),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: const BorderSide(
-                color: Color(0xFF7DF9FF),
-                width: 1,
-              ),
-            ),
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        Navigator.pop(context, true);
       } catch (e) {
-        print('❌ [Task] Error ${widget.isEditMode ? "updating" : "creating"} task: $e');
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error ${widget.isEditMode ? "updating" : "creating"} task: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        print('❌ [Task] Error creating task: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error creating task: $e')),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       }
     }
   }

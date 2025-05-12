@@ -92,13 +92,20 @@ class _SignInScreenState extends State<SignInScreen> {
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('username', _usernameController.text);
             await prefs.setString('role', response['data']['role'] ?? 'Developer');
+            
             // Save JWT token for API and socket authentication
             if (response['data'] != null && response['data']['access_token'] != null) {
               await AuthService().setToken(response['data']['access_token']);
             }
+
+            // Save credentials if remember me is checked
             if (_rememberMe) {
               await prefs.setBool('isLoggedIn', true);
               await prefs.setString('password', _passwordController.text);
+            } else {
+              // Clear saved credentials if remember me is not checked
+              await prefs.remove('password');
+              await prefs.remove('isLoggedIn');
             }
 
             widget.onLogin(); // Call the onLogin callback
