@@ -24,7 +24,8 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../widgets/snooze_dialog.dart';
 import 'package:http/http.dart' as http;
-import 'package:http/http.dart';
+import 'package:dio/dio.dart' hide MultipartFile;
+import 'package:dio/dio.dart' as dio show MultipartFile;
 
 class CreateTaskScreen extends StatefulWidget {
   final bool isEditMode;
@@ -1308,7 +1309,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             if (fileSize > 0) {
               // Upload audio file first
               final formData = FormData.fromMap({
-                'files[]': await MultipartFile.fromFile(
+                'files[]': await dio.MultipartFile.fromFile(
                   audioFile.path,
                   filename: 'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
                 ),
@@ -1343,7 +1344,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               if (fileSize > 0) {
                 // Upload each attachment
                 final formData = FormData.fromMap({
-                  'files[]': await MultipartFile.fromFile(
+                  'files[]': await dio.MultipartFile.fromFile(
                     attachmentFile.path,
                     filename: file.name,
                   ),
