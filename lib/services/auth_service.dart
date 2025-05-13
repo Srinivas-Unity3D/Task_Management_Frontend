@@ -90,4 +90,17 @@ class AuthService {
       return false;
     }
   }
+
+  // Add this function to log the token when debugging
+  Future<String> getTokenForDebugging() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+      print('🔑 [Auth] DEBUG - Current token: ${token?.substring(0, 20)}... (length: ${token?.length})');
+      return token ?? '';
+    } catch (e) {
+      print('❌ [Auth] Error getting token for debugging: $e');
+      return '';
+    }
+  }
 } 

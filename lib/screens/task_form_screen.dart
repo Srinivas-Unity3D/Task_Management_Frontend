@@ -255,7 +255,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
         }
 
         if (widget.task != null) {
-          await _apiService.updateTask(
+          final response = await _apiService.updateTask(
             taskId: widget.task!.taskId,
             title: title,
             description: description,
@@ -267,8 +267,13 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             alarmSettings: alarmSettings,
             currentUser: "Some user"
           );
+          
+          if (!response['success']) {
+            throw Exception(response['message'] ?? 'Failed to update task');
+          }
+          
         } else {
-          await _apiService.createTask(
+          final response = await _apiService.createTask(
             title: title,
             description: description,
             assignedTo: assignedTo,
@@ -278,6 +283,10 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             status: status,
             alarmSettings: alarmSettings,
           );
+          
+          if (!response['success']) {
+            throw Exception(response['message'] ?? 'Failed to create task');
+          }
         }
 
         if (mounted) {

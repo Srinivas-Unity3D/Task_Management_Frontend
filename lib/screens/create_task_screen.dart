@@ -24,8 +24,10 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../widgets/snooze_dialog.dart';
 import 'package:http/http.dart' as http;
-import 'package:dio/dio.dart' hide MultipartFile;
-import 'package:dio/dio.dart' as dio show MultipartFile;
+import 'package:dio/dio.dart';
+import 'package:mime/mime.dart';
+import 'package:http_parser/http_parser.dart';
+import '../services/auth_service.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   final bool isEditMode;
@@ -37,6 +39,7 @@ class CreateTaskScreen extends StatefulWidget {
   final String? initialPriority;
   final DateTime? initialDueDate;
   final String? initialStatus;
+  final VoidCallback? onTaskCreated;
 
   const CreateTaskScreen({
     Key? key,
@@ -49,6 +52,7 @@ class CreateTaskScreen extends StatefulWidget {
     this.initialPriority,
     this.initialDueDate,
     this.initialStatus,
+    this.onTaskCreated,
   }) : super(key: key);
 
   @override
@@ -60,7 +64,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _apiService = ApiService();
+  final AuthService _authService = AuthService();
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final _notesController = TextEditingController();
+  final _deadlineDateController = TextEditingController();
   late final AudioRecorder _audioRecorder;
   final _socketService = SocketService.instance;
   final _alarmService = AlarmService();
@@ -79,8 +86,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _isLoadingUsers = true;
   String? _currentUsername;
   bool _isLoading = false;
+  bool _isSubmitting = false;
   List<VoiceNote> _voiceNotes = [];
   List<Attachment> _existingAttachments = [];
+  
+  // New fields for updated functionality
+  bool _audioRecorded = false;
+  String? _audioFilePath;
+  String? _selectedPriority;
+  String? _selectedDepartment;
+  String? _selectedSubject;
+  List<Map<String, dynamic>> _selectedAssignees = [];
+  double? _uploadProgress;
 
   final List<String> _frequencyOptions = const [
     '30 minutes',
@@ -238,6 +255,71 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         _status = TaskStatus.pending;
       }
       
+      // Fetch the full task details from backend to get alarm_settings
+      if (widget.taskId != null) {
+        try {
+          final task = await _apiService.getTaskById(widget.taskId!);
+          if (task != null) {
+            final alarmSettings = task['alarm_settings'];
+            if (alarmSettings != null) {
+              // Parse and set alarm start date
+              if (alarmSettings['start_date'] != null && alarmSettings['start_date'].toString().isNotEmpty) {
+                final dateStr = alarmSettings['start_date'];
+                // Try parsing as yyyy-MM-dd
+                _alarmStartDate = DateTime.tryParse(dateStr);
+                // If null, try RFC 1123/HTTP date format
+                if (_alarmStartDate == null && dateStr.contains(',')) {
+                  try {
+                    _alarmStartDate = DateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'").parseUtc(dateStr).toLocal();
+                  } catch (e) {
+                    print('⚠️ [EditTask] Could not parse RFC1123 date: $dateStr');
+                  }
+                }
+                // If null, try dd/MM/yyyy
+                if (_alarmStartDate == null && dateStr.contains('/')) {
+                  final parts = dateStr.split('/');
+                  if (parts.length == 3) {
+                    _alarmStartDate = DateTime(
+                      int.parse(parts[2]), // year
+                      int.parse(parts[1]), // month
+                      int.parse(parts[0]), // day
+                    );
+                  }
+                }
+                // If still null, try MM/dd/yyyy
+                if (_alarmStartDate == null && dateStr.contains('/')) {
+                  final parts = dateStr.split('/');
+                  if (parts.length == 3) {
+                    _alarmStartDate = DateTime(
+                      int.parse(parts[2]), // year
+                      int.parse(parts[0]), // month
+                      int.parse(parts[1]), // day
+                    );
+                  }
+                }
+                if (_alarmStartDate == null) {
+                  print('⚠️ [EditTask] Could not parse alarm start date: $dateStr');
+                }
+              }
+              // Parse and set alarm start time
+              if (alarmSettings['start_time'] != null && alarmSettings['start_time'].toString().isNotEmpty) {
+                final timeParts = alarmSettings['start_time'].split(":");
+                if (timeParts.length >= 2) {
+                  _alarmStartTime = TimeOfDay(hour: int.parse(timeParts[0]), minute: int.parse(timeParts[1]));
+                }
+              }
+              // Set frequency
+              if (alarmSettings['frequency'] != null && alarmSettings['frequency'].toString().isNotEmpty) {
+                _alarmFrequency = alarmSettings['frequency'];
+              }
+              setState(() {}); // Ensure UI updates after setting alarm values
+            }
+          }
+        } catch (e) {
+          print('⚠️ [EditTask] Failed to fetch alarm settings: $e');
+        }
+      }
+      
       await _loadTaskVoiceNotes();
       await _loadTaskAttachments();
     }
@@ -358,62 +440,66 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Future<bool> _requestStoragePermission() async {
     try {
       if (Platform.isAndroid) {
-        // Request storage permission
-        final storage = await Permission.storage.request();
-        if (storage.isGranted) {
+        // Check current status
+        var status = await Permission.storage.status;
+        if (status.isGranted) {
           print('✅ [Permissions] Storage permission granted');
           return true;
         }
-
-        // If storage permission is denied, try media permissions
+        // Request permission if not granted
+        status = await Permission.storage.request();
+        if (status.isGranted) {
+          print('✅ [Permissions] Storage permission granted after request');
+          return true;
+        }
+        // If permanently denied, show dialog to open settings
+        if (status.isPermanentlyDenied) {
+          if (mounted) {
+            final shouldOpenSettings = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                backgroundColor: const Color(0xFF0F172A),
+                title: const Text(
+                  'Storage Permission Required',
+                  style: TextStyle(color: Colors.white),
+                ),
+                content: const Text(
+                  'Storage permission is required to pick files. Please enable it in app settings.',
+                  style: TextStyle(color: Color(0xFF94A3B8)),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel', style: TextStyle(color: Colors.white)),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      openAppSettings();
+                      Navigator.pop(context, true);
+                    },
+                    child: const Text('Open Settings', style: TextStyle(color: Color(0xFF7DF9FF))),
+                  ),
+                ],
+              ),
+            );
+            return false;
+          }
+        }
+        // Try media permissions as fallback
         final photos = await Permission.photos.request();
         final videos = await Permission.videos.request();
-        
         if (photos.isGranted || videos.isGranted) {
           print('✅ [Permissions] Media permissions granted');
           return true;
         }
-
-        // If all permissions are denied, show settings dialog
-        if (mounted) {
-          final shouldOpenSettings = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              backgroundColor: const Color(0xFF0F172A),
-              title: const Text(
-                'Storage Permission Required',
-                style: TextStyle(color: Colors.white),
-              ),
-              content: const Text(
-                'Storage permission is required to pick files. Would you like to open settings?',
-                style: TextStyle(color: Color(0xFF94A3B8)),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel', style: TextStyle(color: Colors.white)),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Open Settings', style: TextStyle(color: Color(0xFF7DF9FF))),
-                ),
-              ],
-            ),
-          );
-
-          if (shouldOpenSettings == true) {
-            await openAppSettings();
-          }
-        }
       } else {
         // For iOS and other platforms
-        final storage = await Permission.storage.request();
-        if (storage.isGranted) {
+        final status = await Permission.storage.request();
+        if (status.isGranted) {
           print('✅ [Permissions] Storage permission granted');
           return true;
         }
       }
-
       print('❌ [Permissions] Storage permissions denied');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -433,29 +519,29 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<void> _pickFiles() async {
     try {
-      if (!await _requestStoragePermission()) {
-        print('❌ [Files] Storage permission not granted');
-        return;
-      }
+      print('📁 [Files] Opening file picker...');
       
+      // Modern approach - don't check for storage permission directly
+      // as FilePicker will handle the required permissions itself
       setState(() {
         _isUploadingFiles = true;
       });
       
-      print('📁 [Files] Opening file picker...');
-      
-      // Basic file picker configuration without event channel
+      // Use FilePicker with simpler configuration
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'jpg', 'jpeg', 'png'],
         allowMultiple: true,
-        // Remove withReadStream and onFileLoading to avoid event channel issues
+        withData: false, // Don't load file data into memory
+        onFileLoading: (FilePickerStatus status) {
+          print('📁 [Files] Picker status: $status');
+        },
       );
 
       if (!mounted) return;
 
       if (result != null && result.files.isNotEmpty) {
-        print('📁 [Files] Files selected successfully');
+        print('📁 [Files] Files selected successfully: ${result.files.length} files');
         final validFiles = result.files.where((file) => 
           file.path != null && 
           file.name.isNotEmpty && 
@@ -768,9 +854,13 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                       },
                     );
                     if (date != null) {
+                      print('📅 [DatePicker] Date selected: $date');
                       setState(() {
                         _alarmStartDate = date;
                       });
+                      print('📅 [DatePicker] _alarmStartDate set to: $_alarmStartDate');
+                    } else {
+                      print('📅 [DatePicker] No date selected');
                     }
                   },
                   child: Container(
@@ -816,9 +906,13 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                       },
                     );
                     if (time != null) {
+                      print('⏰ [TimePicker] Time selected: $time');
                       setState(() {
                         _alarmStartTime = time;
                       });
+                      print('⏰ [TimePicker] _alarmStartTime set to: $_alarmStartTime');
+                    } else {
+                      print('⏰ [TimePicker] No time selected');
                     }
                   },
                   child: Container(
@@ -852,9 +946,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                   items: _frequencyOptions,
                   value: _alarmFrequency,
                   onChanged: (value) {
+                    print('⏱️ [Frequency] New value selected: $value');
                     setState(() {
                       _alarmFrequency = value ?? '30 minutes';
                     });
+                    print('⏱️ [Frequency] _alarmFrequency set to: $_alarmFrequency');
                   },
                 ),
                 const SizedBox(height: 16),
@@ -1289,166 +1385,196 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<void> _handleCreateTask() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
-      try {
-        await _stopPlayback();
-        Map<String, dynamic>? audioNote;
-        List<Map<String, dynamic>> attachmentData = [];
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      await _stopPlayback();
+      Map<String, dynamic>? audioNote;
+      List<Map<String, dynamic>> attachmentData = [];
+      
+      // Debug: Get current token
+      await _authService.getTokenForDebugging();
+      
+      // First upload audio file if exists
+      if (_recordedFilePath != null) {
+        print('🎤 [Task] Processing audio recording...');
+        final audioFile = File(_recordedFilePath!);
+        if (await audioFile.exists()) {
+          final fileSize = await audioFile.length();
+          print('📊 [Task] Audio file size: ${(fileSize / 1024).toStringAsFixed(2)} KB');
+          
+          if (fileSize > 0) {
+            // Upload audio file first
+            final formData = FormData.fromMap({
+              'files[]': await MultipartFile.fromFile(
+                audioFile.path,
+                filename: 'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
+              ),
+              'type': 'audio',
+            });
+            
+            final response = await _apiService.uploadFile(formData);
+            if (response != null && response['files'] != null && response['files'].isNotEmpty) {
+              audioNote = {
+                'file_id': response['files'][0]['file_id'],
+                'filename': response['files'][0]['file_name'],
+                'duration': _recordingDuration.inSeconds,
+              };
+              print('✅ [Task] Audio note uploaded successfully');
+            }
+          }
+        }
+      }
+
+      // Then upload attachments if any
+      if (_selectedFiles.isNotEmpty) {
+        print('📎 [Task] Processing ${_selectedFiles.length} attachments...');
         
-        // First upload audio file if exists
-        if (_recordedFilePath != null) {
-          print('🎤 [Task] Processing audio recording...');
-          final audioFile = File(_recordedFilePath!);
-          if (await audioFile.exists()) {
-            final fileSize = await audioFile.length();
-            print('📊 [Task] Audio file size: ${(fileSize / 1024).toStringAsFixed(2)} KB');
+        for (final file in _selectedFiles) {
+          if (file.path == null) continue;
+          
+          final attachmentFile = File(file.path!);
+          if (await attachmentFile.exists()) {
+            final fileSize = await attachmentFile.length();
+            print('📊 [Task] Attachment: ${file.name} (${(fileSize / 1024).toStringAsFixed(2)} KB)');
             
             if (fileSize > 0) {
-              // Upload audio file first
+              // Upload each attachment
               final formData = FormData.fromMap({
-                'files[]': await dio.MultipartFile.fromFile(
-                  audioFile.path,
-                  filename: 'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
+                'files[]': await MultipartFile.fromFile(
+                  attachmentFile.path,
+                  filename: file.name,
                 ),
-                'type': 'audio',
+                'type': 'attachment',
               });
               
               final response = await _apiService.uploadFile(formData);
-              if (response != null && response.isNotEmpty) {
-                audioNote = {
-                  'file_id': response[0]['file_id'],
-                  'filename': response[0]['file_name'],
-                  'duration': _recordingDuration.inSeconds,
-                };
-                print('✅ [Task] Audio note uploaded successfully');
-              }
-            }
-          }
-        }
-
-        // Then upload attachments if any
-        if (_selectedFiles.isNotEmpty) {
-          print('📎 [Task] Processing ${_selectedFiles.length} attachments...');
-          
-          for (final file in _selectedFiles) {
-            if (file.path == null) continue;
-            
-            final attachmentFile = File(file.path!);
-            if (await attachmentFile.exists()) {
-              final fileSize = await attachmentFile.length();
-              print('📊 [Task] Attachment: ${file.name} (${(fileSize / 1024).toStringAsFixed(2)} KB)');
-              
-              if (fileSize > 0) {
-                // Upload each attachment
-                final formData = FormData.fromMap({
-                  'files[]': await dio.MultipartFile.fromFile(
-                    attachmentFile.path,
-                    filename: file.name,
-                  ),
-                  'type': 'attachment',
+              if (response != null && response['files'] != null && response['files'].isNotEmpty) {
+                attachmentData.add({
+                  'file_id': response['files'][0]['file_id'],
+                  'file_name': response['files'][0]['file_name'],
+                  'file_type': response['files'][0]['file_type'],
                 });
-                
-                final response = await _apiService.uploadFile(formData);
-                if (response != null && response.isNotEmpty) {
-                  attachmentData.add({
-                    'file_id': response[0]['file_id'],
-                    'file_name': response[0]['file_name'],
-                    'file_type': response[0]['file_type'],
-                  });
-                  print('✅ [Task] Attachment uploaded: ${file.name}');
-                }
+                print('✅ [Task] Attachment uploaded: ${file.name}');
               }
             }
           }
         }
+      }
 
-        // Process alarm settings
-        Map<String, dynamic>? alarmSettings;
-        if (_alarmStartDate != null && _alarmStartTime != null) {
-          final alarmDateTime = DateTime(
-            _alarmStartDate!.year,
-            _alarmStartDate!.month,
-            _alarmStartDate!.day,
-            _alarmStartTime!.hour,
-            _alarmStartTime!.minute,
-          );
-          alarmSettings = {
-            'start_date': alarmDateTime.toIso8601String().split('T')[0],
-            'start_time': alarmDateTime.toIso8601String().split('T')[1].substring(0, 8),
-            'frequency': _alarmFrequency,
-          };
-        }
+      // Process alarm settings
+      Map<String, dynamic>? alarmSettings;
+      if (_alarmStartDate != null && _alarmStartTime != null) {
+        print('🕒 [Alarm] Processing alarm settings...');
+        print('🕒 [Alarm] Start Date: $_alarmStartDate');
+        print('🕒 [Alarm] Start Time: $_alarmStartTime');
+        print('🕒 [Alarm] Frequency: $_alarmFrequency');
+        
+        final alarmDateTime = DateTime(
+          _alarmStartDate!.year,
+          _alarmStartDate!.month,
+          _alarmStartDate!.day,
+          _alarmStartTime!.hour,
+          _alarmStartTime!.minute,
+        );
+        
+        alarmSettings = {
+          'start_date': alarmDateTime.toIso8601String().split('T')[0],
+          'start_time': '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}:00',
+          'frequency': _alarmFrequency ?? '30 min', // Default to 1 hour if not specified
+        };
+        
+        print('🕒 [Alarm] Formatted settings:');
+        print('  - Start Date: ${alarmSettings['start_date']}');
+        print('  - Start Time: ${alarmSettings['start_time']}');
+        print('  - Frequency: ${alarmSettings['frequency']}');
+      } else {
+        print('🕒 [Alarm] No alarm settings provided');
+        print('  - Start Date: $_alarmStartDate');
+        print('  - Start Time: $_alarmStartTime');
+        print('  - Frequency: $_alarmFrequency');
+      }
 
-        // Create task with file IDs instead of base64 data
-        String taskId;
-        if (widget.isEditMode) {
-          if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
-            throw Exception('Assignee is missing');
-          }
-          print('📝 [Task] Updating existing task...');
-          print('📝 [Task] Priority: ${_priority.toLowerCase()}');
-          print('📝 [Task] Status: ${_getStatusString(_status)}');
-          await _apiService.updateTask(
-            taskId: widget.taskId!,
-            title: _titleController.text,
-            description: _descriptionController.text,
-            assignedTo: _selectedAssignee!,
-            assignedBy: widget.initialAssigner.toString(),
-            deadline: _dueDate ?? DateTime.now(),
-            priority: _priority.toLowerCase(),
-            status: _getStatusString(_status),
-            audioNote: audioNote,
-            attachments: attachmentData,
-            alarmSettings: alarmSettings,
-            currentUser: _currentUsername!
-          );
-          taskId = widget.taskId!;
-        } else {
-          if (_currentUsername == null || _currentUsername!.isEmpty) {
-            throw Exception('Current user is not logged in');
-          }
-          if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
-            throw Exception('Assignee is missing');
-          }
-          print('📝 [Task] Creating new task...');
-          print('📝 [Task] Priority: ${_priority.toLowerCase()}');
-          taskId = await _apiService.createTask(
-            title: _titleController.text,
-            description: _descriptionController.text,
-            assignedTo: _selectedAssignee!,
-            assignedBy: _currentUsername!,
-            deadline: _dueDate ?? DateTime.now(),
-            priority: _priority.toLowerCase(),
-            status: 'pending',
-            audioNote: audioNote,
-            attachments: attachmentData,
-            alarmSettings: alarmSettings,
-          );
+      // Create task with file IDs instead of base64 data
+      String taskId;
+      if (widget.isEditMode) {
+        if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
+          throw Exception('Assignee is missing');
         }
+        print('📝 [Task] Updating existing task...');
+        print('📝 [Task] Priority: ${_priority.toLowerCase()}');
+        print('📝 [Task] Status: ${_getStatusString(_status)}');
+        await _apiService.updateTask(
+          taskId: widget.taskId!,
+          title: _titleController.text,
+          description: _descriptionController.text,
+          assignedTo: _selectedAssignee!,
+          assignedBy: widget.initialAssigner.toString(),
+          deadline: _dueDate ?? DateTime.now(),
+          priority: _priority.toLowerCase(),
+          status: _getStatusString(_status),
+          audioNote: audioNote,
+          attachments: attachmentData,
+          alarmSettings: alarmSettings,
+          currentUser: _currentUsername!
+        );
+        taskId = widget.taskId!;
+      } else {
+        if (_currentUsername == null || _currentUsername!.isEmpty) {
+          throw Exception('Current user is not logged in');
+        }
+        if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
+          throw Exception('Assignee is missing');
+        }
+        print('📝 [Task] Creating new task...');
+        print('📝 [Task] Priority: ${_priority.toLowerCase()}');
+        final response = await _apiService.createTask(
+          title: _titleController.text,
+          description: _descriptionController.text,
+          assignedTo: _selectedAssignee!,
+          assignedBy: _currentUsername!,
+          deadline: _dueDate ?? DateTime.now(),
+          priority: _priority.toLowerCase(),
+          status: 'pending',
+          audioNote: audioNote,
+          attachments: attachmentData,
+          alarmSettings: alarmSettings,
+        );
+        
+        if (!response['success']) {
+          throw Exception(response['message'] ?? 'Failed to create task');
+        }
+        
+        taskId = response['task_id'];
+        print('✅ [Task] Task created successfully with ID: $taskId');
+      }
 
-        if (mounted) {
-          Navigator.pop(context, true);
-        }
-      } catch (e) {
-        print('❌ [Task] Error creating task: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error creating task: $e')),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+      if (mounted) {
+        widget.onTaskCreated?.call();
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      print('❌ [Task] Error creating task: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error creating task: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
       }
     }
   }
-  
+
   TaskPriority _getPriorityEnum(String priority) {
     switch (priority.toLowerCase()) {
       case 'low':
@@ -2242,5 +2368,90 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         },
       ),
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _uploadFiles() async {
+    final uploadedFiles = <Map<String, dynamic>>[];
+    try {
+      if (_selectedFiles.isEmpty) {
+        print('ℹ️ [Upload] No files to upload');
+        return [];
+      }
+
+      setState(() {
+        _uploadProgress = 0.0;
+        _isUploadingFiles = true;
+      });
+
+      final totalFiles = _selectedFiles.length;
+      print('📤 [Upload] Starting upload of $totalFiles files');
+      
+      double progressIncrement = 1.0 / totalFiles;
+      
+      for (int i = 0; i < _selectedFiles.length; i++) {
+        final file = _selectedFiles[i];
+        if (file.path == null) {
+          print('⚠️ [Upload] Skipping file with null path: ${file.name}');
+          continue;
+        }
+        
+        try {
+          print('📤 [Upload] Uploading file ${i + 1}/$totalFiles: ${file.name}');
+          final fileBytes = await File(file.path!).readAsBytes();
+          
+          final formData = FormData.fromMap({
+            'files[]': await MultipartFile.fromFile(
+              file.path!,
+              filename: file.name
+            ),
+            'type': 'attachment'
+          });
+          
+          print('📤 [Upload] Sending file: ${file.name} (${(fileBytes.length / 1024).toStringAsFixed(2)} KB)');
+          final response = await _apiService.uploadFile(formData);
+          
+          if (response != null && response['success'] == true && response['files'] != null) {
+            final fileInfo = {
+              'file_id': response['files'][0]['file_id'],
+              'file_name': response['files'][0]['file_name'],
+              'file_type': response['files'][0]['file_type'],
+            };
+            uploadedFiles.add(fileInfo);
+            print('✅ [Upload] File uploaded successfully: ${file.name}');
+          } else {
+            print('❌ [Upload] Failed to upload file: ${file.name}');
+            print('❌ [Upload] Response: $response');
+          }
+        } catch (e) {
+          print('❌ [Upload] Error uploading file ${file.name}: $e');
+          // Continue with next file even if this one fails
+        }
+        
+        setState(() {
+          _uploadProgress = (_uploadProgress ?? 0) + progressIncrement;
+        });
+      }
+      
+      print('📤 [Upload] Completed uploading ${uploadedFiles.length}/$totalFiles files');
+      return uploadedFiles;
+    } catch (e) {
+      print('❌ [Upload] Error during file upload: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading files: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return uploadedFiles; // Return any successfully uploaded files
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingFiles = false;
+          _uploadProgress = 1.0;
+        });
+      }
+    }
   }
 }
