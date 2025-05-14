@@ -159,6 +159,15 @@ class AudioService {
       print('🎵 [Audio] Stopping alarm sound');
       await _alarmPlayer.stop();
       _isAlarmPlaying = false;
+      
+      // Also ensure any system vibrations are stopped
+      try {
+        // HapticFeedback doesn't have a cancel method, so we can't directly cancel vibrations
+        // We'll rely on the _stopVibration method in the alarm service instead
+      } catch (e) {
+        print('🎵 [Audio] Unable to manage haptic feedback: $e');
+      }
+      
       print('✅ [Audio] Alarm sound stopped');
     } catch (e) {
       print('❌ [Audio] Error stopping alarm sound: $e');

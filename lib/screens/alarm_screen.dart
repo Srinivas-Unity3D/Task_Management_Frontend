@@ -8,12 +8,14 @@ import '../services/api_service.dart';
 import '../models/task.dart';
 import '../services/notification_service.dart';
 import '../services/audio_service.dart';
+import '../theme/colors.dart';  // Import the app colors
 
 class AlarmScreen extends StatefulWidget {
   final String? taskId;
   final String? taskTitle;
   final String? alarmId;
   final String? assigneeName;
+  final String? assignedBy;
   final String? dueDate;
 
   const AlarmScreen({
@@ -22,6 +24,7 @@ class AlarmScreen extends StatefulWidget {
     this.taskTitle,
     this.alarmId,
     this.assigneeName,
+    this.assignedBy,
     this.dueDate,
   }) : super(key: key);
 
@@ -54,6 +57,7 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    print('🔔 AlarmScreen - dispose() called');
     WidgetsBinding.instance.removeObserver(this);
     _stopVibration();
     _audioService.stopAlarmSound();
@@ -117,6 +121,7 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
 
   void _startVibration() {
     _stopVibration(); // Stop any existing vibration
+    print('📳 Starting vibration pattern');
     
     // Vibrate every 1.5 seconds
     _vibrateTimer = Timer.periodic(Duration(milliseconds: 1500), (_) {
@@ -128,9 +133,27 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
   }
 
   void _stopVibration() {
+    print('📳 Stopping vibration pattern');
     if (_vibrateTimer != null) {
       _vibrateTimer!.cancel();
       _vibrateTimer = null;
+      print('📳 Vibration timer cancelled');
+    }
+    
+    // Try multiple approaches to stop vibration
+    try {
+      // Cancel any pending haptics with empty/light feedback
+      HapticFeedback.lightImpact();
+      // Add multiple small delays to intercept any pending vibrations
+      Future.delayed(Duration(milliseconds: 50), () {
+        HapticFeedback.lightImpact();
+      });
+      Future.delayed(Duration(milliseconds: 100), () {
+        HapticFeedback.lightImpact();
+      });
+      print('📳 Additional vibration cancellation attempts made');
+    } catch (e) {
+      print('📳 Error during vibration cancellation: $e');
     }
   }
 
@@ -148,8 +171,13 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
   Future<void> _snoozeAlarm() async {
     try {
       // Stop alarm sound and vibration
+      print('🔔 Stopping alarm sound and vibration for snooze');
       await _audioService.stopAlarmSound();
       _stopVibration();
+      
+      // Ensure vibration has stopped with a small delay
+      await Future.delayed(Duration(milliseconds: 200));
+      _stopVibration(); // Try stopping again after a delay
 
       if (widget.taskId == null || widget.alarmId == null) {
         throw Exception('Invalid task or alarm ID');
@@ -164,12 +192,17 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
         onSnoozeComplete: () {
           // Close the alarm screen after successful snooze
           if (mounted) {
+            // Final attempt to ensure vibration is stopped
+            _stopVibration();
             Navigator.of(context).pop();
           }
         }
       );
     } catch (e) {
       print('❌ Error snoozing alarm: $e');
+      // Ensure vibration is stopped even on error
+      _stopVibration();
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to snooze alarm')),
@@ -181,9 +214,14 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
 
   Future<void> _dismissAlarm() async {
     try {
+      print('🔔 Dismissing alarm - stopping sound and vibration');
       // Stop alarm sound and vibration
       await _audioService.stopAlarmSound();
       _stopVibration();
+      
+      // Ensure vibration has stopped with a small delay
+      await Future.delayed(Duration(milliseconds: 200));
+      _stopVibration(); // Try stopping again after a delay
 
       // Show loading indicator
       setState(() => _isLoading = true);
@@ -219,6 +257,13 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
       if (mounted) {
         Navigator.of(context).pop();
       }
+    } finally {
+      // Final attempt to ensure vibration is stopped
+      _stopVibration();
+      
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -227,9 +272,18 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
     // Get task details either from the widget parameters or fetched data
     final String taskTitle = widget.taskTitle ?? _taskDetails?['title'] ?? 'Task Alarm';
     final String assigneeName = _taskDetails?['assignee_name'] ?? widget.assigneeName ?? 'Unknown';
+    
+    // Handle assigned_by with more care
+    String assignedBy = 'Unknown';
+    if (_taskDetails != null && _taskDetails!['assigned_by'] != null) {
+      assignedBy = _taskDetails!['assigned_by'];
+    } else if (widget.assignedBy != null && widget.assignedBy!.isNotEmpty) {
+      assignedBy = widget.assignedBy!;
+    }
+    
     final String dueDate = _formatDate(widget.dueDate ?? _taskDetails?['due_date']);
-    // Get theme color instead of hardcoded red
-    final Color themeColor = Theme.of(context).primaryColor;
+    // Use the app's accent color instead of theme color
+    final Color themeColor = AppColors.accentCyan;
 
     return WillPopScope(
       onWillPop: () async {
@@ -238,14 +292,14 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
         return false;
       },
       child: Scaffold(
-        backgroundColor: themeColor,
+        backgroundColor: AppColors.background,
         appBar: AppBar(
-          backgroundColor: themeColor,
-          title: Text('ALARM', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          backgroundColor: AppColors.background,
+          title: Text('ALARM', style: TextStyle(color: themeColor, fontWeight: FontWeight.bold)),
           automaticallyImplyLeading: false,
         ),
         body: _isLoading ? 
-          Center(child: CircularProgressIndicator(color: Colors.white)) :
+          Center(child: CircularProgressIndicator(color: themeColor)) :
           Center(
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -255,7 +309,7 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
                   Icon(
                     Icons.alarm_on,
                     size: 80,
-                    color: Colors.white,
+                    color: themeColor,
                   ),
                   SizedBox(height: 20),
                   Text(
@@ -269,7 +323,7 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
                   ),
                   SizedBox(height: 10),
                   Card(
-                    color: themeColor.withOpacity(0.8),
+                    color: AppColors.cardBackground,
                     margin: EdgeInsets.symmetric(vertical: 10),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
@@ -277,6 +331,8 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _infoRow(Icons.person, 'Assigned to: $assigneeName'),
+                          SizedBox(height: 8),
+                          _infoRow(Icons.person_outline, 'Assigned by: $assignedBy'),
                           SizedBox(height: 8),
                           _infoRow(Icons.calendar_today, 'Due date: $dueDate'),
                         ],
@@ -290,7 +346,7 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
                       ElevatedButton(
                         onPressed: _snoozeAlarm,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
+                          backgroundColor: AppColors.mediumPriority,
                           foregroundColor: Colors.white,
                           padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
                           textStyle: TextStyle(fontSize: 18),
@@ -300,7 +356,7 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
                       ElevatedButton(
                         onPressed: _dismissAlarm,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
+                          backgroundColor: AppColors.completed,
                           foregroundColor: Colors.white,
                           padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
                           textStyle: TextStyle(fontSize: 18),
@@ -320,7 +376,7 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
   Widget _infoRow(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, color: Colors.white70, size: 20),
+        Icon(icon, color: AppColors.textGrey, size: 20),
         SizedBox(width: 8),
         Expanded(
           child: Text(

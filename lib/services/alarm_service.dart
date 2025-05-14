@@ -221,12 +221,34 @@ class AlarmService {
         HapticFeedback.heavyImpact();
       });
     });
+    
+    print('⏰ [AlarmService] Vibration pattern started');
   }
   
   void _stopVibration() {
     if (_vibrationTimer != null) {
       _vibrationTimer!.cancel();
       _vibrationTimer = null;
+      print('⏰ [AlarmService] Vibration timer cancelled');
+    }
+    
+    // Try multiple approaches to stop vibration
+    try {
+      // Send a few light impacts to interrupt any ongoing vibration
+      HapticFeedback.lightImpact();
+      
+      // Add multiple small delays to intercept any pending vibrations
+      Future.delayed(Duration(milliseconds: 50), () {
+        HapticFeedback.lightImpact();
+      });
+      
+      Future.delayed(Duration(milliseconds: 100), () {
+        HapticFeedback.lightImpact();
+      });
+      
+      print('⏰ [AlarmService] Additional vibration stopping attempts made');
+    } catch (e) {
+      print('⏰ [AlarmService] Error during additional vibration stopping: $e');
     }
   }
   
