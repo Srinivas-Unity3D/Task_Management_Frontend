@@ -1,5 +1,6 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'dart:io';
+import 'package:flutter/services.dart';
 
 class AudioService {
   static final AudioService _instance = AudioService._internal();
@@ -16,6 +17,33 @@ class AudioService {
     
     try {
       print('🎵 [Audio] Initializing audio service...');
+      
+      // Set up error handler
+      _player.onLog.listen((String msg) {
+        print('❌ [Audio] Player error: $msg');
+        _isAlarmPlaying = false;
+      });
+      
+      // Set up completion handler
+      _player.onPlayerComplete.listen((_) {
+        print('✅ [Audio] Playback completed');
+        _isAlarmPlaying = false;
+      });
+      
+      // Test if we can access the audio files
+      try {
+        final manifestContent = await rootBundle.loadString('AssetManifest.json');
+        print('🎵 [Audio] Asset manifest loaded');
+        
+        if (!manifestContent.contains('sounds/alarm.mp3')) {
+          print('❌ [Audio] Alarm sound file not found in asset manifest');
+        } else {
+          print('✅ [Audio] Alarm sound file found in asset manifest');
+        }
+      } catch (e) {
+        print('❌ [Audio] Error loading asset manifest: $e');
+      }
+      
       _isInitialized = true;
       print('🎵 [Audio] Audio service initialized successfully');
     } catch (e) {
@@ -60,6 +88,11 @@ class AudioService {
     print('🎵 [Audio] Attempting to play alarm sound...');
     
     try {
+      if (!_isInitialized) {
+        print('🔄 [Audio] Service not initialized, initializing now...');
+        await initialize();
+      }
+      
       // Stop any existing playback
       await _player.stop();
       
@@ -67,11 +100,11 @@ class AudioService {
       await _player.setReleaseMode(ReleaseMode.loop);
       await _player.setVolume(1.0);
       
-      // Play directly from raw resource for Android
-      print('🎵 [Audio] Playing alarm sound from raw resource');
+      // Play the alarm sound
+      print('🎵 [Audio] Playing alarm sound from assets');
       await _player.play(AssetSource('sounds/alarm.mp3'));
       _isAlarmPlaying = true;
-      print('🎵 [Audio] Alarm sound played successfully');
+      print('✅ [Audio] Alarm sound started successfully');
     } catch (e) {
       print('❌ [Audio] Error playing alarm sound: $e');
       print('🔄 [Audio] Attempting to reinitialize...');
@@ -83,9 +116,10 @@ class AudioService {
         print('🎵 [Audio] Retrying alarm playback...');
         await _player.play(AssetSource('sounds/alarm.mp3'));
         _isAlarmPlaying = true;
-        print('🎵 [Audio] Retry successful');
+        print('✅ [Audio] Retry successful');
       } catch (e) {
         print('❌ [Audio] Retry failed: $e');
+        _isAlarmPlaying = false;
       }
     }
   }
@@ -97,7 +131,7 @@ class AudioService {
       print('🎵 [Audio] Stopping alarm sound');
       await _player.stop();
       _isAlarmPlaying = false;
-      print('🎵 [Audio] Alarm sound stopped successfully');
+      print('✅ [Audio] Alarm sound stopped successfully');
     } catch (e) {
       print('❌ [Audio] Error stopping alarm sound: $e');
     }
@@ -111,7 +145,7 @@ class AudioService {
       _isDisposed = true;
       await _player.stop();
       await _player.dispose();
-      print('🎵 [Audio] Audio service disposed successfully');
+      print('✅ [Audio] Audio service disposed successfully');
     } catch (e) {
       print('❌ [Audio] Error disposing audio service: $e');
     }

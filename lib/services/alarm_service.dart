@@ -160,17 +160,33 @@ class AlarmService {
   Future<void> _triggerAlarm(String taskId, String title, String body) async {
     print('⏰ [AlarmService] Triggering alarm for task: $taskId');
     
-    _isAlarmActive = true;
-    _currentAlarmTaskId = taskId;
-    
-    // Play alarm sound
-    await _audioService.playAlarmSound();
-    
-    // Vibrate the phone
-    _startVibrationPattern();
-    
-    // Show notification
-    await _showAlarmNotification(taskId, title, body);
+    try {
+      if (!_isInitialized) {
+        print('🔄 [AlarmService] Service not initialized, initializing now...');
+        await initialize();
+      }
+      
+      _isAlarmActive = true;
+      _currentAlarmTaskId = taskId;
+      
+      // Play alarm sound
+      print('⏰ [AlarmService] Playing alarm sound...');
+      await _audioService.playAlarmSound();
+      
+      // Vibrate the phone
+      print('⏰ [AlarmService] Starting vibration...');
+      _startVibrationPattern();
+      
+      // Show notification
+      print('⏰ [AlarmService] Showing alarm notification...');
+      await _showAlarmNotification(taskId, title, body);
+      
+      print('✅ [AlarmService] Alarm triggered successfully');
+    } catch (e) {
+      print('❌ [AlarmService] Error triggering alarm: $e');
+      _isAlarmActive = false;
+      _currentAlarmTaskId = null;
+    }
   }
   
   void _startVibrationPattern() {
@@ -275,17 +291,43 @@ class AlarmService {
         return;
       }
       
+      // Make sure service is initialized
+      if (!_isInitialized) {
+        print('⏰ AlarmService - Initializing service first...');
+        await initialize();
+      }
+      
       print('⏰ AlarmService - Playing alarm sound for task: $taskTitle (ID: $taskId)');
       
       // Play alarm sound persistently
-      await _audioService.playAlarmSound();
+      try {
+        print('⏰ AlarmService - About to play alarm sound...');
+        await _audioService.playAlarmSound();
+        print('⏰ AlarmService - Alarm sound play command sent successfully');
+      } catch (e) {
+        print('❌ AlarmService - ERROR PLAYING ALARM SOUND: $e');
+      }
       
       // Show high priority notification
-      _showAlarmNotification(
-        taskId,
-        taskTitle ?? 'Task reminder',
-        'Time to check your task',
-      );
+      try {
+        print('⏰ AlarmService - Showing alarm notification');
+        await _showAlarmNotification(
+          taskId,
+          taskTitle ?? 'Task reminder',
+          'Time to check your task',
+        );
+        print('⏰ AlarmService - Notification shown successfully');
+      } catch (e) {
+        print('❌ AlarmService - ERROR SHOWING NOTIFICATION: $e');
+      }
+      
+      // Start vibration
+      try {
+        print('⏰ AlarmService - Starting vibration');
+        _startVibrationPattern();
+      } catch (e) {
+        print('❌ AlarmService - ERROR STARTING VIBRATION: $e');
+      }
       
       // Add to active alarms
       _currentAlarmTaskId = taskId;
@@ -293,11 +335,14 @@ class AlarmService {
       
       // Trigger callback if registered
       if (onAlarmTriggered != null) {
+        print('⏰ AlarmService - Calling onAlarmTriggered callback');
         onAlarmTriggered!({
           'task_id': taskId,
           'alarm_id': alarmId,
           'title': taskTitle,
         });
+      } else {
+        print('⚠️ AlarmService - No onAlarmTriggered callback registered');
       }
       
       print('⏰ AlarmService - Alarm triggered successfully');
