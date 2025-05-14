@@ -8,6 +8,7 @@ class AudioService {
   AudioService._internal();
 
   final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _alarmPlayer = AudioPlayer(); // Dedicated player for alarms
   bool _isInitialized = false;
   bool _isDisposed = false;
   bool _isAlarmPlaying = false;
@@ -17,6 +18,14 @@ class AudioService {
     
     try {
       print('🎵 [Audio] Initializing audio service...');
+      
+      // Configure regular player
+      await _player.setReleaseMode(ReleaseMode.stop);
+      await _player.setVolume(1.0);
+      
+      // Configure dedicated alarm player
+      await _alarmPlayer.setReleaseMode(ReleaseMode.loop); // Loop for alarms
+      await _alarmPlayer.setVolume(1.0);
       
       // Set up error handler
       _player.onLog.listen((String msg) {
@@ -85,56 +94,89 @@ class AudioService {
   }
 
   Future<void> playAlarmSound() async {
-    print('🎵 [Audio] Attempting to play alarm sound...');
+    if (_isAlarmPlaying) {
+      print('🎵 [Audio] Alarm sound already playing, not starting another');
+      return;
+    }
     
     try {
+      print('🎵 [Audio] Attempting to play alarm sound...');
       if (!_isInitialized) {
-        print('🔄 [Audio] Service not initialized, initializing now...');
         await initialize();
       }
+
+      // Set up listener for completion
+      _alarmPlayer.onPlayerComplete.listen((_) {
+        print('✅ [Audio] Playback completed');
+      });
+
+      // Set up listener for state changes
+      _alarmPlayer.onPlayerStateChanged.listen((state) {
+        print('🎵 [Audio] Player state changed: $state');
+        if (state == PlayerState.playing) {
+          _isAlarmPlaying = true;
+        } else if (state == PlayerState.stopped || state == PlayerState.completed) {
+          _isAlarmPlaying = false;
+        }
+      });
       
-      // Stop any existing playback
-      await _player.stop();
-      
-      // Reset the player state
-      await _player.setReleaseMode(ReleaseMode.loop);
-      await _player.setVolume(1.0);
-      
-      // Play the alarm sound
+      // Make sure it's stopped before we begin
+      await _alarmPlayer.stop();
+
       print('🎵 [Audio] Playing alarm sound from assets');
-      await _player.play(AssetSource('sounds/alarm.mp3'));
-      _isAlarmPlaying = true;
+      
+      // First try to play directly
+      try {
+        await _alarmPlayer.play(AssetSource('sounds/alarm.mp3'));
+      } catch (e) {
+        // If that fails, try with setSource + resume
+        print('🎵 [Audio] First play attempt failed, trying alternative method: $e');
+        await _alarmPlayer.setSource(AssetSource('sounds/alarm.mp3'));
+        await _alarmPlayer.resume();
+      }
+      
       print('✅ [Audio] Alarm sound started successfully');
+      _isAlarmPlaying = true;
     } catch (e) {
       print('❌ [Audio] Error playing alarm sound: $e');
-      print('🔄 [Audio] Attempting to reinitialize...');
+      _isAlarmPlaying = false;
       
-      // Try to reinitialize and play again
-      _isInitialized = false;
-      await initialize();
+      // Try one more approach as a last resort
       try {
-        print('🎵 [Audio] Retrying alarm playback...');
-        await _player.play(AssetSource('sounds/alarm.mp3'));
-        _isAlarmPlaying = true;
-        print('✅ [Audio] Retry successful');
+        print('🎵 [Audio] Trying last resort method to play alarm');
+        final player = AudioPlayer();
+        await player.setVolume(1.0);
+        await player.setReleaseMode(ReleaseMode.loop);
+        await player.play(AssetSource('sounds/alarm.mp3'));
       } catch (e) {
-        print('❌ [Audio] Retry failed: $e');
-        _isAlarmPlaying = false;
+        print('❌ [Audio] Last resort also failed: $e');
       }
     }
   }
 
   Future<void> stopAlarmSound() async {
-    if (!_isAlarmPlaying) return;
-    
     try {
       print('🎵 [Audio] Stopping alarm sound');
-      await _player.stop();
+      await _alarmPlayer.stop();
       _isAlarmPlaying = false;
-      print('✅ [Audio] Alarm sound stopped successfully');
+      print('✅ [Audio] Alarm sound stopped');
     } catch (e) {
       print('❌ [Audio] Error stopping alarm sound: $e');
+      // Try to dispose and recreate as a last resort
+      try {
+        await _alarmPlayer.dispose();
+        // Create a new instance
+        final newPlayer = AudioPlayer();
+        // We'll lose this reference when this function ends, but at least
+        // we've stopped the sound by disposing the original player
+      } catch (e) {
+        print('❌ [Audio] Error disposing player: $e');
+      }
     }
+  }
+
+  bool isAlarmPlaying() {
+    return _isAlarmPlaying;
   }
 
   Future<void> dispose() async {
@@ -145,6 +187,7 @@ class AudioService {
       _isDisposed = true;
       await _player.stop();
       await _player.dispose();
+      await _alarmPlayer.dispose();
       print('✅ [Audio] Audio service disposed successfully');
     } catch (e) {
       print('❌ [Audio] Error disposing audio service: $e');

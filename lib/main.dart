@@ -243,7 +243,6 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   late bool _isLoggedIn;
-  final _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
@@ -251,18 +250,12 @@ class _MyAppState extends State<MyApp> {
     _isLoggedIn = widget.isLoggedIn;
   }
 
-  void _updateLoginState(bool isLoggedIn) {
-    setState(() {
-      _isLoggedIn = isLoggedIn;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: globalNavigatorKey,
       title: 'Task Management',
       debugShowCheckedModeBanner: false,
-      navigatorKey: _navigatorKey,
       theme: ThemeData(
         primaryColor: AppColors.accentCyan,
         scaffoldBackgroundColor: AppColors.background,
@@ -342,5 +335,11 @@ class _MyAppState extends State<MyApp> {
         }
       },
     );
+  }
+
+  void _updateLoginState(bool isLoggedIn) {
+    setState(() {
+      _isLoggedIn = isLoggedIn;
+    });
   }
 }

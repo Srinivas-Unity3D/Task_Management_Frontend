@@ -31,8 +31,15 @@ class AlarmService {
   bool _isAlarmActive = false;
   String? _currentAlarmTaskId;
   
+  // Replace instance callback with static callback
   // Define callback for alarm triggering
-  Function(Map<String, dynamic>)? onAlarmTriggered;
+  static Function(Map<String, dynamic>)? _onAlarmTriggeredCallback;
+  
+  // Set the callback for when alarm is triggered
+  static void setOnAlarmTriggeredCallback(Function(Map<String, dynamic>) callback) {
+    _onAlarmTriggeredCallback = callback;
+    print('✅ [AlarmService] onAlarmTriggered callback registered');
+  }
   
   // Initialize the service
   Future<void> initialize() async {
@@ -139,14 +146,28 @@ class AlarmService {
   
   // Stop an active alarm
   Future<void> stopAlarm(String taskId) async {
-    if (!_isAlarmActive || _currentAlarmTaskId != taskId) {
-      print('⏰ [AlarmService] No active alarm to stop for task: $taskId');
-      return;
+    print('⏰ [AlarmService] Stopping alarm for task: $taskId');
+    
+    try {
+      // Stop any audio
+      await _audioService.stopAlarmSound();
+      print('⏰ [AlarmService] Alarm sound stopped successfully');
+    } catch (e) {
+      print('❌ [AlarmService] Error stopping alarm sound: $e');
     }
     
-    await _audioService.stopAlarmSound();
+    // Stop vibration
     _stopVibration();
+    print('⏰ [AlarmService] Vibration stopped');
     
+    // Cancel local notification
+    try {
+      await _notificationsPlugin.cancel(taskId.hashCode);
+      print('⏰ [AlarmService] Notification canceled');
+    } catch (e) {
+      print('❌ [AlarmService] Error canceling notification: $e');
+    }
+
     _isAlarmActive = false;
     _currentAlarmTaskId = null;
     
@@ -266,6 +287,15 @@ class AlarmService {
       
       if (response.statusCode == 200) {
         print('✅ [AlarmService] Alarm acknowledged successfully');
+        
+        // Ensure all alarm state is cleaned up
+        _isAlarmActive = false;
+        _currentAlarmTaskId = null;
+        await _audioService.stopAlarmSound();
+        _stopVibration();
+        
+        // Force cancel all local notifications for this task
+        await _notificationsPlugin.cancel(taskId.hashCode);
       } else {
         print('❌ [AlarmService] Failed to acknowledge alarm: ${response.statusCode}');
         print('❌ [AlarmService] Error response: ${response.body}');
@@ -291,6 +321,12 @@ class AlarmService {
         return;
       }
       
+      // If this alarm is already active, don't trigger it again
+      if (_isAlarmActive && _currentAlarmTaskId == taskId) {
+        print('⏰ AlarmService - This alarm is already active, not triggering again');
+        return;
+      }
+      
       // Make sure service is initialized
       if (!_isInitialized) {
         print('⏰ AlarmService - Initializing service first...');
@@ -298,6 +334,13 @@ class AlarmService {
       }
       
       print('⏰ AlarmService - Playing alarm sound for task: $taskTitle (ID: $taskId)');
+      
+      // Stop any previous alarm first
+      if (_isAlarmActive) {
+        print('⏰ AlarmService - Stopping previous alarm before starting new one');
+        await _audioService.stopAlarmSound();
+        _stopVibration();
+      }
       
       // Play alarm sound persistently
       try {
@@ -334,9 +377,9 @@ class AlarmService {
       _isAlarmActive = true;
       
       // Trigger callback if registered
-      if (onAlarmTriggered != null) {
+      if (_onAlarmTriggeredCallback != null) {
         print('⏰ AlarmService - Calling onAlarmTriggered callback');
-        onAlarmTriggered!({
+        _onAlarmTriggeredCallback!({
           'task_id': taskId,
           'alarm_id': alarmId,
           'title': taskTitle,

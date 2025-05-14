@@ -9,6 +9,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_core/firebase_core.dart';
+import '../screens/alarm_screen.dart';
+import '../services/alarm_service.dart';
+
+// Add a global navigator key (in main.dart, but reference here)
+final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -84,10 +89,121 @@ class NotificationService {
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(channel);
 
+      // Register the alarm triggered callback
+      AlarmService.setOnAlarmTriggeredCallback(_showAlarmUI);
+
       _isInitialized = true;
     } catch (e) {
       print('🔔 Error initializing notification service: $e');
     }
+  }
+
+  // Shared method to show snooze UI - can be used by notification bar or alarm screen
+  Future<void> showSnoozeUI({
+    required BuildContext context,
+    required String taskId,
+    required String alarmId,
+    required String taskTitle,
+    Function? onSnoozeComplete,
+  }) async {
+    // Default snooze times
+    final List<int> snoozeOptions = [5, 15, 30, 60];
+    int selectedSnoozeMinutes = snoozeOptions[0];
+    
+    // Show the snooze dialog
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Snooze Alarm'),
+          content: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Snooze "$taskTitle" for:'),
+                  SizedBox(height: 20),
+                  DropdownButton<int>(
+                    value: selectedSnoozeMinutes,
+                    isExpanded: true,
+                    items: snoozeOptions.map((int minutes) {
+                      return DropdownMenuItem<int>(
+                        value: minutes,
+                        child: Text('$minutes minutes'),
+                      );
+                    }).toList(),
+                    onChanged: (int? value) {
+                      if (value != null) {
+                        setState(() {
+                          selectedSnoozeMinutes = value;
+                        });
+                      }
+                    },
+                  ),
+                ],
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context, 'cancel');
+              },
+              child: Text('CANCEL'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context, 'snooze');
+                
+                // Calculate snooze time
+                final DateTime snoozeUntil = DateTime.now().add(Duration(minutes: selectedSnoozeMinutes));
+                
+                try {
+                  // Show loading indicator
+                  final scaffoldMessenger = ScaffoldMessenger.of(context);
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(content: Text('Snoozing alarm for $selectedSnoozeMinutes minutes...'))
+                  );
+                  
+                  final response = await http.post(
+                    Uri.parse('${ApiService.baseUrl}/tasks/$taskId/snooze_alarm'),
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json',
+                    },
+                    body: json.encode({
+                      'alarm_id': alarmId,
+                      'snooze_until': snoozeUntil.toIso8601String(),
+                    }),
+                  );
+                  
+                  if (response.statusCode == 200) {
+                    print('✅ Alarm snoozed successfully');
+                    if (onSnoozeComplete != null) {
+                      onSnoozeComplete();
+                    }
+                  } else {
+                    print('❌ Failed to snooze alarm: ${response.statusCode}');
+                    print('❌ Error response: ${response.body}');
+                    
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(content: Text('Failed to snooze alarm'))
+                    );
+                  }
+                } catch (e) {
+                  print('❌ Error snoozing alarm: $e');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to snooze alarm'))
+                  );
+                }
+              },
+              child: Text('SNOOZE'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _handleAlarmNotification(Map<String, dynamic> alarmData) async {
@@ -108,6 +224,16 @@ class NotificationService {
       if (onAlarmTriggered != null) {
         print('🔔 Triggering alarm callback');
         onAlarmTriggered!(alarmData);
+      }
+
+      // Show the AlarmScreen as a dialog if in foreground
+      if (globalNavigatorKey.currentState != null) {
+        globalNavigatorKey.currentState!.push(
+          MaterialPageRoute(
+            builder: (context) => AlarmScreen(),
+            fullscreenDialog: true,
+          ),
+        );
       }
     } catch (e) {
       print('🔔 Error handling alarm notification: $e');
@@ -486,6 +612,33 @@ class NotificationService {
       print('🔔 Alarm notification shown successfully');
     } catch (e) {
       print('🔔 Error showing alarm notification: $e');
+    }
+  }
+
+  // Callback to show the alarm UI
+  Future<void> _showAlarmUI(Map<String, dynamic> alarmData) async {
+    try {
+      print('🔔 Showing alarm UI for: ${alarmData['title']}');
+      
+      // Use the global navigator key to show the alarm screen
+      if (globalNavigatorKey.currentState != null) {
+        await globalNavigatorKey.currentState!.push(
+          MaterialPageRoute(
+            builder: (context) => AlarmScreen(
+              taskId: alarmData['task_id'] ?? '',
+              taskTitle: alarmData['title'] ?? 'Task Alarm',
+              alarmId: alarmData['alarm_id'] ?? '',
+              assigneeName: alarmData['assignee_name'] ?? '',
+              dueDate: alarmData['due_date'] ?? '',
+            ),
+            fullscreenDialog: true,
+          ),
+        );
+      } else {
+        print('❌ Global navigator key is null, cannot show alarm screen');
+      }
+    } catch (e) {
+      print('❌ Error showing alarm UI: $e');
     }
   }
 }
