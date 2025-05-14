@@ -28,6 +28,9 @@ class Task {
   final DateTime? alarmStartDate;
   final TimeOfDay? alarmStartTime;
   final String? alarmFrequency;
+  final bool? isAlarmActive;
+  final DateTime? lastTriggered;
+  final DateTime? nextTrigger;
 
   Task({
     required this.taskId,
@@ -43,11 +46,17 @@ class Task {
     this.alarmStartDate,
     this.alarmStartTime,
     this.alarmFrequency,
+    this.isAlarmActive,
+    this.lastTriggered,
+    this.nextTrigger,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
     DateTime? parseAlarmStartDate;
     TimeOfDay? parseAlarmStartTime;
+    bool? isAlarmActive;
+    DateTime? lastTriggered;
+    DateTime? nextTrigger;
     
     if (json['alarm_settings'] != null) {
       final alarmSettings = json['alarm_settings'];
@@ -60,6 +69,13 @@ class Task {
           hour: int.parse(timeParts[0]),
           minute: int.parse(timeParts[1]),
         );
+      }
+      isAlarmActive = alarmSettings['is_active'];
+      if (alarmSettings['last_triggered'] != null) {
+        lastTriggered = DateTime.parse(alarmSettings['last_triggered']);
+      }
+      if (alarmSettings['next_trigger'] != null) {
+        nextTrigger = DateTime.parse(alarmSettings['next_trigger']);
       }
     }
 
@@ -77,6 +93,9 @@ class Task {
       alarmStartDate: parseAlarmStartDate,
       alarmStartTime: parseAlarmStartTime,
       alarmFrequency: json['alarm_settings']?['frequency'],
+      isAlarmActive: isAlarmActive,
+      lastTriggered: lastTriggered,
+      nextTrigger: nextTrigger,
     );
   }
 
@@ -90,6 +109,15 @@ class Task {
     }
     if (alarmFrequency != null) {
       alarmSettings['frequency'] = alarmFrequency;
+    }
+    if (isAlarmActive != null) {
+      alarmSettings['is_active'] = isAlarmActive;
+    }
+    if (lastTriggered != null) {
+      alarmSettings['last_triggered'] = lastTriggered!.toIso8601String();
+    }
+    if (nextTrigger != null) {
+      alarmSettings['next_trigger'] = nextTrigger!.toIso8601String();
     }
 
     return {

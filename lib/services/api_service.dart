@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -16,6 +17,15 @@ import '../models/task_assignment.dart';
 import '../models/voice_note.dart';
 import 'send_notification_service.dart';
 
+// Add this class to handle SSL certificates
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  }
+}
+
 class ApiService {
   static const String baseUrl = 'https://134.209.149.12';
   // static const String baseUrl = 'http://10.20.0.248:5000';
@@ -27,6 +37,8 @@ class ApiService {
   final _authService = AuthService();
   
   ApiService() {
+    // Set up SSL certificate handling
+    HttpOverrides.global = MyHttpOverrides();
     _initDio();
     setupFcmTokenRefreshListener();
     _loadTokensFromStorage();
@@ -35,64 +47,72 @@ class ApiService {
   void _initDio() {
     _dio = Dio(BaseOptions(
       baseUrl: baseUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      validateStatus: (status) => true,
+      validateStatus: (status) => status! < 500, // Allow all responses under 500
     ));
     
+    // Add SSL certificate handling for Dio
+    (_dio.httpClientAdapter as DefaultHttpClientAdapter).onHttpClientCreate = (HttpClient client) {
+      client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      return client;
+    };
+    
+    // Add request interceptor to always get fresh token
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        // Check token validity before making request
-        if (_accessToken != null && !await _authService.isLoggedIn()) {
-          print('🔑 [API] Token expired, attempting refresh before request');
+        print('🌐 [API] Making request to: ${options.path}');
+        print('🌐 [API] Request method: ${options.method}');
+        print('🌐 [API] Headers: ${options.headers}');
+        
+        if (options.contentType != 'multipart/form-data') {
+          options.contentType = 'application/json';
+        }
+        
+        // Always get a fresh token for each request
+        try {
+          final token = await _authService.getToken();
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+            print('🔐 [API] Added token to request (${token.substring(0, 15)}...)');
+          } else {
+            print('⚠️ [API] No token available for request');
+          }
+        } catch (e) {
+          print('❌ [API] Error getting token: $e');
+        }
+        
+        return handler.next(options);
+      },
+      onResponse: (response, handler) {
+        print('📥 [API] Response from: ${response.requestOptions.path}');
+        print('📥 [API] Status code: ${response.statusCode}');
+        return handler.next(response);
+      },
+      onError: (DioException error, handler) async {
+        print('❌ [API] Error on request: ${error.requestOptions.path}');
+        print('❌ [API] Error type: ${error.type}');
+        print('❌ [API] Error message: ${error.message}');
+        
+        if (error.response != null) {
+          print('❌ [API] Error response: ${error.response?.data}');
+          print('❌ [API] Error status code: ${error.response?.statusCode}');
+        }
+        
+        // Handle authentication errors
+        if (error.response?.statusCode == 401) {
+          print('🔄 [API] Unauthorized error - attempting token refresh');
           final refreshed = await refreshToken();
-          if (!refreshed) {
-            return handler.reject(
-              DioException(
-                requestOptions: options,
-                error: 'Token refresh failed',
-                type: DioExceptionType.unknown,
-              ),
-            );
+          if (refreshed) {
+            print('✅ [API] Token refreshed, retrying request');
+            return handler.resolve(await _retry(error.requestOptions));
           }
         }
         
-        if (_accessToken != null) {
-          options.headers['Authorization'] = 'Bearer $_accessToken';
-        }
-        return handler.next(options);
-      },
-      onError: (DioException error, handler) async {
-        if (error.response?.statusCode == 401) {
-          // If we're already refreshing, wait for that to complete
-          if (_isRefreshing && _refreshTokenCompleter != null) {
-            try {
-              final refreshed = await _refreshTokenCompleter!.future;
-              if (refreshed) {
-                return handler.resolve(await _retry(error.requestOptions));
-              }
-            } catch (e) {
-              print('❌ [API] Error waiting for token refresh: $e');
-            }
-          } else {
-            try {
-              final refreshed = await refreshToken();
-              if (refreshed) {
-                return handler.resolve(await _retry(error.requestOptions));
-              }
-            } catch (e) {
-              print('❌ [API] Error refreshing token: $e');
-            }
-          }
-          
-          // If we get here, token refresh failed
-          await clearTokens();
-          return handler.reject(error);
-        }
         return handler.next(error);
       },
     ));
@@ -441,25 +461,29 @@ class ApiService {
 
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
-      print('Attempting login for user: $username');
+      print('🔑 [Login] Attempting login for user: $username');
 
       // Get stored FCM token
       final prefs = await SharedPreferences.getInstance();
       final storedFcmToken = prefs.getString('fcm_token');
-      print('Stored FCM token: $storedFcmToken');
+      print('📱 [Login] Stored FCM token: $storedFcmToken');
 
       // Always get fresh FCM token from device
       final freshFcmToken = await NotificationFirebaseService().getDeviceToken();
-      print('Fresh FCM token from device: $freshFcmToken');
+      print('📱 [Login] Fresh FCM token from device: $freshFcmToken');
 
       // If we got a fresh token and it's different from stored token, update it
       if (freshFcmToken != null && freshFcmToken.isNotEmpty) {
         if (storedFcmToken != freshFcmToken) {
-          print('FCM token has changed, updating...');
+          print('📱 [Login] FCM token has changed, updating...');
           await prefs.setString('fcm_token', freshFcmToken);
         }
       }
 
+      // Configure SSL for development
+      HttpOverrides.global = MyHttpOverrides();
+
+      print('🔑 [Login] Sending login request to: $baseUrl/login');
       final response = await http
           .post(
             Uri.parse('$baseUrl/login'),
@@ -475,14 +499,13 @@ class ApiService {
           )
           .timeout(const Duration(seconds: 10));
 
-      print('Login response status: ${response.statusCode}');
-      print('Login response body: ${response.body}');
-
-      final data = json.decode(response.body);
+      print('🔑 [Login] Response status: ${response.statusCode}');
+      print('🔑 [Login] Response body: ${response.body}');
 
       if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        
         // Store user data in SharedPreferences
-        final prefs = await SharedPreferences.getInstance();
         if (data['user_id'] != null) {
           await prefs.setString('user_id', data['user_id'].toString());
         }
@@ -498,46 +521,53 @@ class ApiService {
           _accessToken = data['access_token'];
           _refreshToken = data['refresh_token'];
           await _saveTokensToStorage();
-          print('JWT tokens stored successfully');
+          print('🔑 [Login] JWT tokens stored successfully');
         }
 
         // Always update FCM token in backend after successful login
         if (freshFcmToken != null && freshFcmToken.isNotEmpty) {
-          print('Updating FCM token in backend after successful login');
+          print('📱 [Login] Updating FCM token in backend after successful login');
           final updateResult = await updateFcmToken(username, freshFcmToken);
-          print('FCM token update result: $updateResult');
+          print('📱 [Login] FCM token update result: $updateResult');
         } else {
-          print('No FCM token available to update after login');
+          print('📱 [Login] No FCM token available to update after login');
         }
 
         return {
           'success': true,
           'data': data,
         };
-      } else {
+      } else if (response.statusCode == 401) {
         return {
           'success': false,
-          'message': data['message'] ?? 'Login failed',
+          'message': 'Invalid username or password',
+        };
+      } else {
+        print('❌ [Login] Server error: ${response.statusCode}');
+        print('❌ [Login] Error response: ${response.body}');
+        return {
+          'success': false,
+          'message': 'Server error occurred. Please try again.',
         };
       }
     } on TimeoutException {
-      print('Login request timed out');
+      print('❌ [Login] Request timed out');
       return {
         'success': false,
-        'message':
-            'Connection timed out. Please check your internet connection.',
+        'message': 'Connection timed out. Please check your internet connection.',
       };
-    } on SocketException {
-      print('Network error during login');
+    } on SocketException catch (e) {
+      print('❌ [Login] Network error: $e');
       return {
         'success': false,
         'message': 'Network error. Please check your internet connection.',
       };
-    } catch (e) {
-      print('Login error: $e');
+    } catch (e, stackTrace) {
+      print('❌ [Login] Error: $e');
+      print('❌ [Login] Stack trace: $stackTrace');
       return {
         'success': false,
-        'message': 'Connection error. Please try again.',
+        'message': 'An error occurred during login. Please try again.',
       };
     }
   }
@@ -622,7 +652,7 @@ class ApiService {
     }
   }
 
-  Future<String> createTask({
+  Future<Map<String, dynamic>> createTask({
     required String title,
     required String description,
     required String assignedTo,
@@ -635,6 +665,12 @@ class ApiService {
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
+      print('🔄 [API] Creating task: title=$title, assignedTo=$assignedTo, status=$status');
+      if (alarmSettings != null) {
+        print('⏰ [API] Alarm settings: $alarmSettings');
+      }
+      
+      // Create task data
       final taskData = {
         'title': title,
         'description': description,
@@ -648,33 +684,43 @@ class ApiService {
         'attachments': attachments,
       };
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/tasks'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(taskData),
+      // Use _dio instead of http for automatic JWT token handling
+      final response = await _dio.post(
+        '/tasks',
+        data: taskData,
       );
 
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
+      print('📤 [API] Create task response status: ${response.statusCode}');
+      print('📤 [API] Create task response data: ${response.data}');
 
-      if (response.statusCode == 201) {
-        final responseData = json.decode(response.body);
-        return responseData['task_id'];
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final responseData = response.data;
+        return {
+          'success': true,
+          'message': 'Task created successfully',
+          'task_id': responseData['task_id']
+        };
       } else {
-        throw Exception(
-            'Failed to create task: ${response.statusCode} - ${response.body}');
+        print('❌ [API] Failed to create task: ${response.statusCode} - ${response.data}');
+        return {
+          'success': false,
+          'message': 'Failed to create task: ${response.statusMessage}'
+        };
       }
-    } on TimeoutException {
-      throw Exception(
-          'Connection timed out. Please check your internet connection and try again.');
-    } on SocketException catch (e) {
-      throw Exception(
-          'Network error: ${e.message}. Please check your internet connection.');
+    } on DioException catch (e) {
+      print('❌ [API] Dio error creating task: ${e.message}');
+      print('❌ [API] Error type: ${e.type}');
+      print('❌ [API] Error response: ${e.response?.data}');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.message}'
+      };
     } catch (e) {
-      throw Exception('Failed to create task: $e');
+      print('❌ [API] Error creating task: $e');
+      return {
+        'success': false,
+        'message': 'Failed to create task: $e'
+      };
     }
   }
 
@@ -893,7 +939,7 @@ class ApiService {
     }
   }
 
-  Future<String> updateTask({
+  Future<Map<String, dynamic>> updateTask({
     required String taskId,
     required String title,
     required String description,
@@ -902,17 +948,19 @@ class ApiService {
     required DateTime deadline,
     required String priority,
     required String status,
-    required String currentUser,
     Map<String, dynamic>? audioNote,
     List<Map<String, dynamic>>? attachments,
     Map<String, dynamic>? alarmSettings,
+    required String currentUser,
   }) async {
     try {
-      // Get current user from SharedPreferences to determine who is updating
-      final prefs = await SharedPreferences.getInstance();
-      final updatedBy = prefs.getString('username') ??
-          assignedBy; // Fallback to assignedBy if not found
-
+      print('🔄 [API] Updating task: $taskId');
+      print('📝 [API] Task data: title=$title, assignedTo=$assignedTo, status=$status');
+      if (alarmSettings != null) {
+        print('⏰ [API] Alarm settings: $alarmSettings');
+      }
+      
+      // Create task data
       final taskData = {
         'title': title,
         'description': description,
@@ -921,34 +969,50 @@ class ApiService {
         'deadline': deadline.toIso8601String(),
         'priority': priority,
         'status': status,
-        'updated_by': updatedBy,
+        'updated_by': currentUser,
         'audio_note': audioNote,
         'alarm_settings': alarmSettings,
         'attachments': attachments,
-        'currentUser' : currentUser
+        'currentUser': currentUser
       };
 
-      final response = await http.put(
-        Uri.parse('$baseUrl/tasks/$taskId'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(taskData),
+      // Use _dio instead of http for automatic JWT token handling
+      final response = await _dio.put(
+        '/tasks/$taskId',
+        data: taskData,
       );
 
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
+      print('📤 [API] Update task response status: ${response.statusCode}');
+      print('📤 [API] Update task response data: ${response.data}');
 
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        return responseData['task_id'];
+        final responseData = response.data;
+        return {
+          'success': true,
+          'message': 'Task updated successfully',
+          'task_id': responseData['task_id']
+        };
       } else {
-        throw Exception(
-            'Failed to update task: ${response.statusCode} - ${response.body}');
+        print('❌ [API] Failed to update task: ${response.statusCode} - ${response.data}');
+        return {
+          'success': false,
+          'message': 'Failed to update task: ${response.statusMessage}'
+        };
       }
+    } on DioException catch (e) {
+      print('❌ [API] Dio error updating task: ${e.message}');
+      print('❌ [API] Error type: ${e.type}');
+      print('❌ [API] Error response: ${e.response?.data}');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.message}'
+      };
     } catch (e) {
-      throw Exception('Failed to update task: $e');
+      print('❌ [API] Error updating task: $e');
+      return {
+        'success': false,
+        'message': 'Failed to update task: $e'
+      };
     }
   }
 
@@ -1107,28 +1171,35 @@ class ApiService {
       print('⏰ [API] Start Time: $startTime');
       print('⏰ [API] Frequency: $frequency');
       
+      // Calculate next trigger time based on start date, time and frequency
+      final startDateTime = DateTime(
+        startDate.year,
+        startDate.month,
+        startDate.day,
+        int.parse(startTime.split(':')[0]),
+        int.parse(startTime.split(':')[1]),
+      );
+      
       final data = {
         'task_id': taskId,
         'assigned_to': assignedTo,
         'start_date': startDate.toIso8601String().split('T')[0],
         'start_time': startTime,
         'frequency': frequency,
+        'is_active': true,
+        'next_trigger': startDateTime.toIso8601String(),
       };
       
-      final response = await http.post(
-        Uri.parse('$baseUrl/alarms/register'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(data),
+      final response = await _dio.post(
+        '/alarms/register',
+        data: data,
       );
       
       print('⏰ [API] Register alarm response status: ${response.statusCode}');
-      print('⏰ [API] Register alarm response body: ${response.body}');
+      print('⏰ [API] Register alarm response data: ${response.data}');
       
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = json.decode(response.body);
+        final responseData = response.data;
         print('✅ [API] Alarm registered successfully');
         return {
           'success': true,
@@ -1140,15 +1211,14 @@ class ApiService {
         return {
           'success': false,
           'message': 'Failed to register alarm',
-          'error': response.body,
+          'error': response.data,
         };
       }
     } catch (e) {
-      print('❌ [API] Error registering task alarm: $e');
+      print('❌ [API] Error registering alarm: $e');
       return {
         'success': false,
-        'message': 'Error registering task alarm',
-        'error': e.toString(),
+        'message': 'Error registering alarm: $e',
       };
     }
   }
@@ -1254,26 +1324,54 @@ class ApiService {
     return response;
   }
 
-  Future<List<Map<String, dynamic>>?> uploadFile(FormData formData) async {
+  Future<Map<String, dynamic>?> uploadFile(FormData formData) async {
     try {
+      // The authorization token will be added by the interceptor
+      print('📤 [API] Uploading file, content type: multipart/form-data');
+      
       final response = await _dio.post(
         '/upload',
         data: formData,
         options: Options(
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
+          contentType: 'multipart/form-data',
         ),
       );
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        return List<Map<String, dynamic>>.from(response.data['files']);
+      print('📤 [API] Upload response status: ${response.statusCode}');
+      print('📤 [API] Upload response data: ${response.data}');
+
+      if (response.statusCode == 200) {
+        if (response.data != null) {
+          if (response.data is Map<String, dynamic>) {
+            // Return the entire response since it might have different formats
+            // This way we can handle both old and new formats
+            return response.data;
+          } else {
+            print('❌ [API] Unexpected response format: ${response.data.runtimeType}');
+            return null;
+          }
+        }
+        return null;
       } else {
         print('❌ [API] File upload failed: ${response.statusCode}');
+        print('❌ [API] Error response: ${response.data}');
         return null;
       }
     } catch (e) {
       print('❌ [API] Error uploading file: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getTaskById(String taskId) async {
+    try {
+      final response = await _dio.get('/tasks/$taskId');
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return response.data['task'];
+      }
+      return null;
+    } catch (e) {
+      print('❌ [ApiService] Error fetching task by ID: $e');
       return null;
     }
   }

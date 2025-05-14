@@ -54,6 +54,10 @@ class SocketService {
       _serverUrl = serverUrl;
     }
     print('🔌 Converted socket URL: $_serverUrl');
+    
+    // Set up SSL certificate handling for both development and release
+    HttpOverrides.global = DevHttpOverrides();
+    
     await _notificationService.initialize();
     _startTokenRefreshTimer();
   }

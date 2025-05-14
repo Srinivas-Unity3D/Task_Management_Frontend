@@ -7,12 +7,23 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import '../models/task.dart';
 import 'audio_service.dart';
+import 'dart:io';
+
+// Add SSL certificate handling
+class AlarmHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  }
+}
 
 class AlarmService {
   static final AlarmService _instance = AlarmService._internal();
   factory AlarmService() => _instance;
   AlarmService._internal();
   
+  static const String baseUrl = 'https://134.209.149.12';
   final AudioService _audioService = AudioService();
   final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
   Timer? _vibrationTimer;
@@ -70,32 +81,60 @@ class AlarmService {
   
   // Handles an incoming alarm notification from FCM
   Future<void> handleAlarmNotification(Map<String, dynamic> data) async {
-    if (!_isInitialized) await initialize();
+    if (!_isInitialized) {
+      print('⏰ [AlarmService] Service not initialized, initializing now...');
+      await initialize();
+    }
     
     print('⏰ [AlarmService] Received alarm notification: $data');
     
-    // Extract alarm data
-    final String taskId = data['task_id'] ?? '';
-    final String title = data['title'] ?? 'Task Alarm';
-    final String body = data['body'] ?? 'Time to check your task';
-    
-    // Check if this is an immediate test alarm
-    final bool isImmediate = data['immediate_alarm'] == 'true';
-    if (isImmediate) {
-      print('⏰ [AlarmService] IMMEDIATE ALARM detected! Playing alarm immediately');
-      // For immediate alarms, always play even if another alarm is active
+    try {
+      // Extract alarm data
+      final String taskId = data['task_id'] ?? '';
+      final String title = data['title'] ?? 'Task Alarm';
+      final String body = data['body'] ?? 'Time to check your task';
+      final bool isActive = data['is_active'] ?? true;
+      final DateTime? nextTrigger = data['next_trigger'] != null 
+          ? DateTime.parse(data['next_trigger']) 
+          : null;
+      
+      if (taskId.isEmpty) {
+        print('❌ [AlarmService] Invalid alarm data: missing task_id');
+        return;
+      }
+      
+      // Check if alarm is still active
+      if (!isActive) {
+        print('⏰ [AlarmService] Alarm is not active, skipping');
+        return;
+      }
+      
+      // Check if this is an immediate test alarm
+      final bool isImmediate = data['immediate_alarm'] == 'true';
+      if (isImmediate) {
+        print('⏰ [AlarmService] IMMEDIATE ALARM detected! Playing alarm immediately');
+        await _triggerAlarm(taskId, title, body);
+        return;
+      }
+      
+      // Only proceed if this is a new alarm or a different alarm
+      if (_isAlarmActive && _currentAlarmTaskId == taskId) {
+        print('⏰ [AlarmService] Alarm already active for this task');
+        return;
+      }
+      
+      // Check if next trigger time is valid
+      if (nextTrigger != null && nextTrigger.isBefore(DateTime.now())) {
+        print('⏰ [AlarmService] Next trigger time is in the past, skipping');
+        return;
+      }
+      
+      // Trigger the alarm
       await _triggerAlarm(taskId, title, body);
-      return;
+    } catch (e, stackTrace) {
+      print('❌ [AlarmService] Error handling alarm notification: $e');
+      print('❌ [AlarmService] Stack trace: $stackTrace');
     }
-    
-    // Only proceed if this is a new alarm or a different alarm
-    if (_isAlarmActive && _currentAlarmTaskId == taskId) {
-      print('⏰ [AlarmService] Alarm already active for this task');
-      return;
-    }
-    
-    // Trigger the alarm
-    await _triggerAlarm(taskId, title, body);
   }
   
   // Stop an active alarm
@@ -189,28 +228,34 @@ class AlarmService {
   Future<void> _acknowledgeAlarm(String taskId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final baseUrl = 'https://134.209.149.12'; // Updated to HTTPS
+      final token = prefs.getString('access_token');
       
+      if (token == null) {
+        print('❌ [AlarmService] No access token available for alarm acknowledgment');
+        return;
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/alarms/acknowledge'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
         },
         body: json.encode({
           'task_id': taskId,
-          'user_id': prefs.getString('user_id'),
           'acknowledged_at': DateTime.now().toIso8601String(),
         }),
       );
       
       if (response.statusCode == 200) {
-        print('⏰ [AlarmService] Alarm acknowledgment sent successfully');
+        print('✅ [AlarmService] Alarm acknowledged successfully');
       } else {
-        print('⏰ [AlarmService] Failed to send alarm acknowledgment: ${response.statusCode}');
+        print('❌ [AlarmService] Failed to acknowledge alarm: ${response.statusCode}');
+        print('❌ [AlarmService] Error response: ${response.body}');
       }
     } catch (e) {
-      print('⏰ [AlarmService] Error acknowledging alarm: $e');
+      print('❌ [AlarmService] Error acknowledging alarm: $e');
     }
   }
 
