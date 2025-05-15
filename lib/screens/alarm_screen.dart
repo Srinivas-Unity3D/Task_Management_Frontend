@@ -281,7 +281,15 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
       assignedBy = widget.assignedBy!;
     }
     
-    final String dueDate = _formatDate(widget.dueDate ?? _taskDetails?['due_date']);
+    final String dueDate = _formatDate(widget.dueDate ?? _taskDetails?['deadline']);
+    
+    // Debug logging to trace values
+    print('🔔 [AlarmScreen] Building with values:');
+    print('🔔 [AlarmScreen] taskTitle: $taskTitle');
+    print('🔔 [AlarmScreen] assigneeName: $assigneeName');
+    print('🔔 [AlarmScreen] assignedBy: $assignedBy (widget value: ${widget.assignedBy})');
+    print('🔔 [AlarmScreen] dueDate: $dueDate (widget value: ${widget.dueDate})');
+    
     // Use the app's accent color instead of theme color
     final Color themeColor = AppColors.accentCyan;
 

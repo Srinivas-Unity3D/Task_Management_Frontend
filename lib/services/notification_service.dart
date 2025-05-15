@@ -748,7 +748,7 @@ class NotificationService {
               alarmId: alarmData['alarm_id'] ?? '',
               assigneeName: alarmData['assignee_name'] ?? '',
               assignedBy: alarmData['assigned_by'] ?? 'Unknown',
-              dueDate: alarmData['due_date'] ?? '',
+              dueDate: alarmData['deadline'] ?? '',
             ),
             fullscreenDialog: true,
           ),

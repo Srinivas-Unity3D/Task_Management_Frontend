@@ -337,6 +337,9 @@ class AlarmService {
       String? taskId = data['task_id'];
       String? taskTitle = data['title'];
       String? alarmId = data['alarm_id'];
+      String? assigneeName = data['assignee_name'];
+      String? assignedBy = data['assigned_by'];
+      String? deadline = data['deadline'];
       
       if (taskId == null) {
         print('❌ AlarmService - Invalid alarm data: missing task_id');
@@ -405,6 +408,9 @@ class AlarmService {
           'task_id': taskId,
           'alarm_id': alarmId,
           'title': taskTitle,
+          'assignee_name': assigneeName,
+          'assigned_by': assignedBy,
+          'deadline': deadline, 
         });
       } else {
         print('⚠️ AlarmService - No onAlarmTriggered callback registered');
