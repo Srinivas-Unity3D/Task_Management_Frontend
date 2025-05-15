@@ -279,44 +279,44 @@ class ApiService {
 
   Future<Map<String, dynamic>> updateFcmToken(String username, String fcmToken) async {
     try {
-      print('Updating FCM token for username: $username');
-      print('FCM token to update: $fcmToken');
-
-      // First get the user_id for the username using POST request
-      final response = await http.post(
-        Uri.parse('$baseUrl/get_fcm_token'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode({
-          'username': username,
-        }),
-      );
-
-      print('Get FCM token response status: ${response.statusCode}');
-      print('Get FCM token response body: ${response.body}');
-
-      if (response.statusCode != 200) {
-        print('Failed to get user ID. Status: ${response.statusCode}, Body: ${response.body}');
-        return {
-          'success': false,
-          'message': 'Failed to get user ID',
-        };
-      }
-
-      final userData = json.decode(response.body);
-      final userId = userData['user_id'];
-
-      if (userId == null) {
-        print('User ID not found in response: ${response.body}');
-        return {
-          'success': false,
-          'message': 'User ID not found',
-        };
-      }
-
-      print('Retrieved user ID: $userId');
+      // print('Updating FCM token for username: $username');
+      // print('FCM token to update: $fcmToken');
+      //
+      // // First get the user_id for the username using POST request
+      // final response = await http.post(
+      //   Uri.parse('$baseUrl/get_fcm_token'),
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //     'Accept': 'application/json',
+      //   },
+      //   body: json.encode({
+      //     'username': username,
+      //   }),
+      // );
+      //
+      // print('Get FCM token response status: ${response.statusCode}');
+      // print('Get FCM token response body: ${response.body}');
+      //
+      // if (response.statusCode != 200) {
+      //   print('Failed to get user ID. Status: ${response.statusCode}, Body: ${response.body}');
+      //   return {
+      //     'success': false,
+      //     'message': 'Failed to get user ID',
+      //   };
+      // }
+      //
+      // final userData = json.decode(response.body);
+      // final userId = userData['user_id'];
+      //
+      // if (userId == null) {
+      //   print('User ID not found in response: ${response.body}');
+      //   return {
+      //     'success': false,
+      //     'message': 'User ID not found',
+      //   };
+      // }
+      //
+      // print('Retrieved user ID: $userId');
 
       // Now update the FCM token
       final updateResponse = await http.post(
@@ -326,7 +326,7 @@ class ApiService {
           'Accept': 'application/json',
         },
         body: json.encode({
-          'user_id': userId,
+          'username': username,
           'fcm_token': fcmToken,
         }),
       );
@@ -592,8 +592,8 @@ class ApiService {
             },
           ).timeout(const Duration(seconds: 10));
 
-          print('📥 [API] Tasks response status: ${response.statusCode}');
-          print('📥 [API] Tasks response body: ${response.body}');
+          // print('📥 [API] Tasks response status: ${response.statusCode}');
+          // print('📥 [API] Tasks response body: ${response.body}');
 
           if (response.statusCode == 200) {
             final data = json.decode(response.body);

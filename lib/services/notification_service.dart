@@ -394,8 +394,8 @@ class NotificationService {
         },
       ).timeout(const Duration(seconds: 10));
 
-      print('🔔 [NotificationService] Response status: ${response.statusCode}');
-      print('🔔 [NotificationService] Response body: ${response.body}');
+      // print('🔔 [NotificationService] Response status: ${response.statusCode}');
+      // print('🔔 [NotificationService] Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);

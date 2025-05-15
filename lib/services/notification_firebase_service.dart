@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:app_settings/app_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:taskmanagement/services/api_service.dart';
 
 //import '../screens/notification_screen.dart';
 import '../screens/notifications_screen.dart'; // Adjust path to your NotificationScreen
@@ -146,9 +147,15 @@ class NotificationFirebaseService {
 
   /// Sets up a listener for FCM token refresh events.
   void _setupTokenRefreshListener() {
-    _messaging.onTokenRefresh.listen((newToken) {
+    _messaging.onTokenRefresh.listen((newToken) async {
       debugPrint('🔄 New FCM Token: $newToken');
       // TODO: Send new token to your server for targeting notifications
+
+      final pref = await SharedPreferences.getInstance();
+      final username = pref.getString('username');
+
+      ApiService().updateFcmToken(username!, newToken);
+
     }).onError((e) {
       debugPrint('❌ Error on token refresh: $e');
     });
