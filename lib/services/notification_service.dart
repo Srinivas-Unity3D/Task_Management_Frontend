@@ -9,6 +9,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_core/firebase_core.dart';
+import '../screens/alarm_screen.dart';
+import '../services/alarm_service.dart';
+
+// Add a global navigator key (in main.dart, but reference here)
+final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -84,10 +89,238 @@ class NotificationService {
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(channel);
 
+      // Register the alarm triggered callback
+      AlarmService.setOnAlarmTriggeredCallback(_showAlarmUI);
+
       _isInitialized = true;
     } catch (e) {
       print('🔔 Error initializing notification service: $e');
     }
+  }
+
+  // Shared method to show snooze UI - can be used by notification bar or alarm screen
+  Future<void> showSnoozeUI({
+    required BuildContext context,
+    required String taskId,
+    required String alarmId,
+    required String taskTitle,
+    Function? onSnoozeComplete,
+  }) async {
+    // Default snooze time
+    DateTime snoozeDateTime = DateTime.now().add(Duration(minutes: 30));
+    String reason = '';
+    
+    // Show the snooze dialog
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            primaryColor: Color(0xFF7DF9FF),
+            colorScheme: ColorScheme.dark(
+              primary: Color(0xFF7DF9FF),
+              onPrimary: Colors.black,
+              surface: Color(0xFF131B2E),
+              onSurface: Colors.white,
+            ),
+            dialogBackgroundColor: Color(0xFF0A0F1C),
+          ),
+          child: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return AlertDialog(
+                backgroundColor: Color(0xFF0A0F1C),
+                title: Text(
+                  'Snooze Notification',
+                  style: TextStyle(color: Color(0xFF7DF9FF)),
+                  textAlign: TextAlign.center,
+                ),
+                content: SingleChildScrollView(
+                  child: Container(
+                    width: double.maxFinite,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Date & Time Picker
+                        InkWell(
+                          onTap: () async {
+                            final DateTime? picked = await showDatePicker(
+                              context: context,
+                              initialDate: snoozeDateTime,
+                              firstDate: DateTime.now(),
+                              lastDate: DateTime.now().add(Duration(days: 365)),
+                              builder: (BuildContext context, Widget? child) {
+                                return Theme(
+                                  data: ThemeData.dark().copyWith(
+                                    colorScheme: ColorScheme.dark(
+                                      primary: Color(0xFF7DF9FF),
+                                      onPrimary: Colors.black,
+                                      surface: Color(0xFF131B2E),
+                                      onSurface: Colors.white,
+                                    ),
+                                  ),
+                                  child: child!,
+                                );
+                              },
+                            );
+                            if (picked != null) {
+                              final TimeOfDay? pickedTime = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay.fromDateTime(snoozeDateTime),
+                                builder: (BuildContext context, Widget? child) {
+                                  return Theme(
+                                    data: ThemeData.dark().copyWith(
+                                      colorScheme: ColorScheme.dark(
+                                        primary: Color(0xFF7DF9FF),
+                                        onPrimary: Colors.black,
+                                        surface: Color(0xFF131B2E),
+                                        onSurface: Colors.white,
+                                      ),
+                                    ),
+                                    child: child!,
+                                  );
+                                },
+                              );
+                              
+                              if (pickedTime != null) {
+                                setState(() {
+                                  snoozeDateTime = DateTime(
+                                    picked.year,
+                                    picked.month,
+                                    picked.day,
+                                    pickedTime.hour,
+                                    pickedTime.minute,
+                                  );
+                                });
+                              }
+                            }
+                          },
+                          child: Container(
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Color(0xFF131B2E),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  "Snooze until: ${snoozeDateTime.year}-${snoozeDateTime.month.toString().padLeft(2, '0')}-${snoozeDateTime.day.toString().padLeft(2, '0')} ${snoozeDateTime.hour.toString().padLeft(2, '0')}:${snoozeDateTime.minute.toString().padLeft(2, '0')}",
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                                Icon(Icons.calendar_today, color: Color(0xFF7DF9FF)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 16),
+                        
+                        // Reason Text Field
+                        Text("Reason", style: TextStyle(color: Colors.white70)),
+                        SizedBox(height: 8),
+                        TextField(
+                          style: TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: 'Why would you like to snooze?',
+                            hintStyle: TextStyle(color: Colors.white38),
+                            filled: true,
+                            fillColor: Color(0xFF131B2E),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onChanged: (value) {
+                            reason = value;
+                          },
+                        ),
+                        SizedBox(height: 16),
+                        
+                        // Audio Note (Optional)
+                        Text("Audio Note (optional)", style: TextStyle(color: Colors.white70)),
+                        SizedBox(height: 8),
+                        Container(
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Color(0xFF131B2E),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.mic, color: Color(0xFF7DF9FF)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context, 'cancel');
+                    },
+                    child: Text('Cancel', style: TextStyle(color: Colors.white70)),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFF7DF9FF),
+                      foregroundColor: Colors.black,
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(context, 'snooze');
+                      
+                      try {
+                        // Show loading indicator
+                        final scaffoldMessenger = ScaffoldMessenger.of(context);
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(content: Text('Snoozing alarm...'))
+                        );
+                        
+                        final response = await http.post(
+                          Uri.parse('${ApiService.baseUrl}/tasks/$taskId/snooze_alarm'),
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                          },
+                          body: json.encode({
+                            'alarm_id': alarmId,
+                            'snooze_until': snoozeDateTime.toIso8601String(),
+                            'reason': reason,
+                          }),
+                        );
+                        
+                        if (response.statusCode == 200) {
+                          print('✅ Alarm snoozed successfully');
+                          if (onSnoozeComplete != null) {
+                            onSnoozeComplete();
+                          }
+                        } else {
+                          print('❌ Failed to snooze alarm: ${response.statusCode}');
+                          print('❌ Error response: ${response.body}');
+                          
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(content: Text('Failed to snooze alarm'))
+                          );
+                        }
+                      } catch (e) {
+                        print('❌ Error snoozing alarm: $e');
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed to snooze alarm'))
+                        );
+                      }
+                    },
+                    child: Text('Snooze'),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _handleAlarmNotification(Map<String, dynamic> alarmData) async {
@@ -108,6 +341,16 @@ class NotificationService {
       if (onAlarmTriggered != null) {
         print('🔔 Triggering alarm callback');
         onAlarmTriggered!(alarmData);
+      }
+
+      // Show the AlarmScreen as a dialog if in foreground
+      if (globalNavigatorKey.currentState != null) {
+        globalNavigatorKey.currentState!.push(
+          MaterialPageRoute(
+            builder: (context) => AlarmScreen(),
+            fullscreenDialog: true,
+          ),
+        );
       }
     } catch (e) {
       print('🔔 Error handling alarm notification: $e');
@@ -486,6 +729,35 @@ class NotificationService {
       print('🔔 Alarm notification shown successfully');
     } catch (e) {
       print('🔔 Error showing alarm notification: $e');
+    }
+  }
+
+  // Callback to show the alarm UI
+  Future<void> _showAlarmUI(Map<String, dynamic> alarmData) async {
+    try {
+      print('🔔 Showing alarm UI for: ${alarmData['title']}');
+      print('🔔 Alarm data: $alarmData');
+      
+      // Use the global navigator key to show the alarm screen
+      if (globalNavigatorKey.currentState != null) {
+        await globalNavigatorKey.currentState!.push(
+          MaterialPageRoute(
+            builder: (context) => AlarmScreen(
+              taskId: alarmData['task_id'] ?? '',
+              taskTitle: alarmData['title'] ?? 'Task Alarm',
+              alarmId: alarmData['alarm_id'] ?? '',
+              assigneeName: alarmData['assignee_name'] ?? '',
+              assignedBy: alarmData['assigned_by'] ?? 'Unknown',
+              dueDate: alarmData['due_date'] ?? '',
+            ),
+            fullscreenDialog: true,
+          ),
+        );
+      } else {
+        print('❌ Global navigator key is null, cannot show alarm screen');
+      }
+    } catch (e) {
+      print('❌ Error showing alarm UI: $e');
     }
   }
 }

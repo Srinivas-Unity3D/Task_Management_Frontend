@@ -38,9 +38,37 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.assignedTo != null) {
+    if (widget.task != null) {
+      // Populate form fields with existing task data
+      _titleController.text = widget.task!.title;
+      _descriptionController.text = widget.task!.description ?? '';
+      
+      // Set deadline if available
+      if (widget.task!.deadline != null) {
+        try {
+          _deadline = widget.task!.deadline;
+          _deadlineTime = TimeOfDay(hour: widget.task!.deadline.hour, minute: widget.task!.deadline.minute);
+        } catch (e) {
+          print('Error parsing due date: $e');
+        }
+      }
+      
+      // Set priority - convert from enum to string
+      _priority = widget.task!.priority.toString().split('.').last;
+      
+      // Set assigned to
+      if (widget.task!.assignedTo != null) {
+        _assignedToController.text = widget.task!.assignedTo;
+      }
+      
+      // Fetch alarm settings for this task
+      _fetchAlarmSettings();
+    } else if (widget.assignedTo != null) {
       _assignedToController.text = widget.assignedTo!;
     }
+    
+    // Load users list for assignee dropdown
+    _loadUsers();
   }
 
   @override
@@ -130,7 +158,53 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _assignedToController,
-                decoration: const InputDecoration(labelText: 'Assign To'),
+                decoration: const InputDecoration(
+                  labelText: 'Assign To',
+                  hintText: 'Enter username of assignee',
+                  suffixIcon: Icon(Icons.person),
+                ),
+                readOnly: true,
+                onTap: () {
+                  if (_users.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Loading users list...')),
+                    );
+                    return;
+                  }
+                  
+                  showDialog(
+                    context: context,
+                    builder: (context) {
+                      return AlertDialog(
+                        title: Text('Select Assignee'),
+                        content: Container(
+                          width: double.maxFinite,
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _users.length,
+                            itemBuilder: (context, index) {
+                              return ListTile(
+                                title: Text(_users[index]),
+                                onTap: () {
+                                  setState(() {
+                                    _assignedToController.text = _users[index];
+                                  });
+                                  Navigator.pop(context);
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text('Cancel'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please select an assignee';
@@ -301,6 +375,82 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
           setState(() => _isLoading = false);
         }
       }
+    }
+  }
+
+  Future<void> _fetchAlarmSettings() async {
+    try {
+      setState(() => _isLoading = true);
+      
+      final response = await http.get(
+        Uri.parse('${ApiService.baseUrl}/tasks/${widget.task!.taskId}/alarms'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        
+        if (data['success'] == true && data['alarms'] != null && data['alarms'].isNotEmpty) {
+          final alarm = data['alarms'][0]; // Take first alarm
+          
+          // Parse start date
+          if (alarm['start_date'] != null) {
+            try {
+              _alarmStartDate = DateTime.parse(alarm['start_date']);
+            } catch (e) {
+              print('Error parsing alarm start date: $e');
+            }
+          }
+          
+          // Parse start time
+          if (alarm['start_time'] != null) {
+            try {
+              final timeParts = alarm['start_time'].split(':');
+              _alarmStartTime = TimeOfDay(
+                hour: int.parse(timeParts[0]),
+                minute: int.parse(timeParts[1]),
+              );
+            } catch (e) {
+              print('Error parsing alarm start time: $e');
+            }
+          }
+          
+          // Set frequency
+          _frequency = alarm['frequency'];
+          
+          setState(() {}); // Update UI with alarm settings
+        }
+      }
+    } catch (e) {
+      print('Error fetching alarm settings: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+  
+  Future<void> _loadUsers() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiService.baseUrl}/users'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true && data['users'] != null) {
+          setState(() {
+            _users = List<String>.from(data['users'].map((user) => user['username']));
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading users: $e');
     }
   }
 } 

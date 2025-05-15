@@ -1,147 +1,98 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../services/api_service.dart';
 import '../models/task.dart';
 import '../services/notification_service.dart';
 import '../services/audio_service.dart';
+import '../theme/colors.dart';  // Import the app colors
 
 class AlarmScreen extends StatefulWidget {
-  const AlarmScreen({Key? key}) : super(key: key);
+  final String? taskId;
+  final String? taskTitle;
+  final String? alarmId;
+  final String? assigneeName;
+  final String? assignedBy;
+  final String? dueDate;
+
+  const AlarmScreen({
+    Key? key,
+    this.taskId,
+    this.taskTitle,
+    this.alarmId,
+    this.assigneeName,
+    this.assignedBy,
+    this.dueDate,
+  }) : super(key: key);
 
   @override
   _AlarmScreenState createState() => _AlarmScreenState();
 }
 
-class _AlarmScreenState extends State<AlarmScreen> {
+class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
   final NotificationService _notificationService = NotificationService();
   final AudioService _audioService = AudioService();
   final AudioPlayer _directPlayer = AudioPlayer(); // Direct player for testing
-  List<Map<String, dynamic>> _alarms = [];
+  final ApiService _apiService = ApiService();
   bool _isLoading = true;
   bool _isAlarmActive = false;
   Map<String, dynamic>? _activeAlarm;
+  Timer? _vibrateTimer;
+  Map<String, dynamic>? _taskDetails;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeServices();
-    _loadAlarms();
-    _setupAlarmListener();
+    // Play alarm sound directly
+    _playAlarmSound();
+    _startVibration();
+    // Fetch additional task details if needed
+    _fetchTaskDetails();
+  }
+
+  @override
+  void dispose() {
+    print('🔔 AlarmScreen - dispose() called');
+    WidgetsBinding.instance.removeObserver(this);
+    _stopVibration();
+    _audioService.stopAlarmSound();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Resume vibration if app comes back to foreground
+      _startVibration();
+    } else if (state == AppLifecycleState.paused) {
+      // Stop vibration if app goes to background
+      _stopVibration();
+    }
   }
 
   Future<void> _initializeServices() async {
     try {
-      print('🔔 Initializing services...');
+      print('🔔 Initializing alarm screen services...');
       await _audioService.initialize();
-      print('✅ Services initialized successfully');
+      setState(() => _isLoading = false);
+      print('✅ Alarm screen services initialized successfully');
     } catch (e) {
-      print('❌ Error initializing services: $e');
+      print('❌ Error initializing alarm screen services: $e');
+      setState(() => _isLoading = false);
     }
   }
 
-  void _setupAlarmListener() {
-    print('🔔 Setting up alarm listener');
-    _notificationService.onAlarmTriggered = (alarm) {
-      print('🔔 Alarm triggered: $alarm');
-      setState(() {
-        _isAlarmActive = true;
-        _activeAlarm = alarm;
-      });
-      _showAlarmDialog(alarm);
-    };
-  }
-
-  void _showAlarmDialog(Map<String, dynamic> alarm) async {
-    print('🔔 Showing alarm dialog');
-    // Play alarm sound
-    await _audioService.playAlarmSound();
+  Future<void> _fetchTaskDetails() async {
+    if (widget.taskId == null) return;
     
-    if (!mounted) return;
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return WillPopScope(
-          onWillPop: () async => false,
-          child: AlertDialog(
-            backgroundColor: Colors.red[900],
-            title: const Text(
-              'ALARM',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  alarm['task_title'] ?? 'Untitled Task',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Due: ${alarm['next_alarm_time']}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                  ),
-                ),
-                Text(
-                  'Frequency: ${alarm['frequency']}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  print('🔔 Snooze button pressed');
-                  _snoozeAlarm(alarm['task_id'], alarm['alarm_id']);
-                  Navigator.of(context).pop();
-                },
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Snooze'),
-              ),
-              TextButton(
-                onPressed: () {
-                  print('🔔 Acknowledge button pressed');
-                  _acknowledgeAlarm(alarm['task_id'], alarm['alarm_id']);
-                  Navigator.of(context).pop();
-                },
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Acknowledge'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _loadAlarms() async {
-    setState(() => _isLoading = true);
     try {
       final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/tasks/alarms'),
+        Uri.parse('${ApiService.baseUrl}/tasks/${widget.taskId}'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -149,249 +100,294 @@ class _AlarmScreenState extends State<AlarmScreen> {
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> alarmsJson = json.decode(response.body);
         setState(() {
-          _alarms = alarmsJson.map((alarm) => Map<String, dynamic>.from(alarm)).toList();
-          _isLoading = false;
+          _taskDetails = json.decode(response.body);
+          print('✅ Task details fetched: $_taskDetails');
         });
-      } else {
-        throw Exception('Failed to load alarms');
       }
     } catch (e) {
-      print('🔔 Error loading alarms: $e');
-      setState(() => _isLoading = false);
+      print('❌ Error fetching task details: $e');
+    }
+  }
+
+  Future<void> _playAlarmSound() async {
+    try {
+      await _audioService.playAlarmSound();
+      print('🔔 Alarm sound started in AlarmScreen');
+    } catch (e) {
+      print('❌ Error playing alarm sound in AlarmScreen: $e');
+    }
+  }
+
+  void _startVibration() {
+    _stopVibration(); // Stop any existing vibration
+    print('📳 Starting vibration pattern');
+    
+    // Vibrate every 1.5 seconds
+    _vibrateTimer = Timer.periodic(Duration(milliseconds: 1500), (_) {
+      HapticFeedback.heavyImpact();
+      Future.delayed(Duration(milliseconds: 500), () {
+        HapticFeedback.heavyImpact();
+      });
+    });
+  }
+
+  void _stopVibration() {
+    print('📳 Stopping vibration pattern');
+    if (_vibrateTimer != null) {
+      _vibrateTimer!.cancel();
+      _vibrateTimer = null;
+      print('📳 Vibration timer cancelled');
+    }
+    
+    // Try multiple approaches to stop vibration
+    try {
+      // Cancel any pending haptics with empty/light feedback
+      HapticFeedback.lightImpact();
+      // Add multiple small delays to intercept any pending vibrations
+      Future.delayed(Duration(milliseconds: 50), () {
+        HapticFeedback.lightImpact();
+      });
+      Future.delayed(Duration(milliseconds: 100), () {
+        HapticFeedback.lightImpact();
+      });
+      print('📳 Additional vibration cancellation attempts made');
+    } catch (e) {
+      print('📳 Error during vibration cancellation: $e');
+    }
+  }
+
+  // Format date string for display
+  String _formatDate(String? dateString) {
+    if (dateString == null) return 'No date';
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return dateString;
+    }
+  }
+
+  Future<void> _snoozeAlarm() async {
+    try {
+      // Stop alarm sound and vibration
+      print('🔔 Stopping alarm sound and vibration for snooze');
+      await _audioService.stopAlarmSound();
+      _stopVibration();
+      
+      // Ensure vibration has stopped with a small delay
+      await Future.delayed(Duration(milliseconds: 200));
+      _stopVibration(); // Try stopping again after a delay
+
+      if (widget.taskId == null || widget.alarmId == null) {
+        throw Exception('Invalid task or alarm ID');
+      }
+
+      // Use the shared snooze UI
+      await _notificationService.showSnoozeUI(
+        context: context,
+        taskId: widget.taskId!,
+        alarmId: widget.alarmId!,
+        taskTitle: widget.taskTitle ?? 'Task Alarm',
+        onSnoozeComplete: () {
+          // Close the alarm screen after successful snooze
+          if (mounted) {
+            // Final attempt to ensure vibration is stopped
+            _stopVibration();
+            Navigator.of(context).pop();
+          }
+        }
+      );
+    } catch (e) {
+      print('❌ Error snoozing alarm: $e');
+      // Ensure vibration is stopped even on error
+      _stopVibration();
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading alarms: $e')),
+          SnackBar(content: Text('Failed to snooze alarm')),
         );
+        Navigator.of(context).pop();
       }
     }
   }
 
-  Future<void> _acknowledgeAlarm(String taskId, String alarmId) async {
+  Future<void> _dismissAlarm() async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/tasks/$taskId/acknowledge_alarm'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode({
-          'alarm_id': alarmId,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        // Remove the acknowledged alarm from the list
-        setState(() {
-          _alarms.removeWhere((alarm) => 
-            alarm['task_id'] == taskId && alarm['alarm_id'] == alarmId);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Alarm acknowledged')),
-        );
-      }
-    } catch (e) {
-      print('Error acknowledging alarm: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to acknowledge alarm')),
-      );
-    }
-  }
-
-  Future<void> _snoozeAlarm(String taskId, String alarmId) async {
-    try {
-      final DateTime snoozeUntil = DateTime.now().add(const Duration(minutes: 30));
+      print('🔔 Dismissing alarm - stopping sound and vibration');
+      // Stop alarm sound and vibration
+      await _audioService.stopAlarmSound();
+      _stopVibration();
       
+      // Ensure vibration has stopped with a small delay
+      await Future.delayed(Duration(milliseconds: 200));
+      _stopVibration(); // Try stopping again after a delay
+
+      // Show loading indicator
+      setState(() => _isLoading = true);
+
+      if (widget.taskId == null || widget.alarmId == null) {
+        throw Exception('Invalid task or alarm ID');
+      }
+
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/tasks/$taskId/snooze_alarm'),
+        Uri.parse('${ApiService.baseUrl}/tasks/${widget.taskId}/acknowledge_alarm'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: json.encode({
-          'alarm_id': alarmId,
-          'snooze_until': snoozeUntil.toIso8601String(),
+          'alarm_id': widget.alarmId,
         }),
       );
 
       if (response.statusCode == 200) {
-        // Remove the snoozed alarm from the list
-        setState(() {
-          _alarms.removeWhere((alarm) => 
-            alarm['task_id'] == taskId && alarm['alarm_id'] == alarmId);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Alarm snoozed for 30 minutes')),
-        );
+        print('✅ Alarm acknowledged successfully');
+      } else {
+        print('❌ Failed to acknowledge alarm: ${response.statusCode}');
+        print('❌ Error response: ${response.body}');
+      }
+      
+      // Close the alarm screen regardless of API response
+      if (mounted) {
+        Navigator.of(context).pop();
       }
     } catch (e) {
-      print('Error snoozing alarm: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to snooze alarm')),
-      );
-    }
-  }
-
-  // Direct method to play raw sound on Android
-  Future<void> _playRawAlarmSound() async {
-    try {
-      print('🔊 Playing raw alarm sound directly');
-      // First try with default configuration
-      await _directPlayer.play(AssetSource('alarm.mp3'));
-    } catch (e) {
-      print('❌ Error playing raw alarm sound: $e');
-      try {
-        // Try with explicit configuration
-        print('🔄 Trying alternative method');
-        await _directPlayer.setSource(AssetSource('alarm.mp3'));
-        await _directPlayer.resume();
-      } catch (e) {
-        print('❌ Second attempt failed: $e');
+      print('❌ Error acknowledging alarm: $e');
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } finally {
+      // Final attempt to ensure vibration is stopped
+      _stopVibration();
+      
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Alarms'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadAlarms,
-          ),
-          IconButton(
-            icon: const Icon(Icons.alarm),
-            onPressed: () async {
-              print('🔔 Test alarm button pressed');
-              try {
-                // Play sound directly for testing
-                await _playRawAlarmSound();
-                
-                // Show test dialog
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => AlertDialog(
-                    backgroundColor: Colors.red[900],
-                    title: const Text(
-                      'ALARM TEST',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+    // Get task details either from the widget parameters or fetched data
+    final String taskTitle = widget.taskTitle ?? _taskDetails?['title'] ?? 'Task Alarm';
+    final String assigneeName = _taskDetails?['assignee_name'] ?? widget.assigneeName ?? 'Unknown';
+    
+    // Handle assigned_by with more care
+    String assignedBy = 'Unknown';
+    if (_taskDetails != null && _taskDetails!['assigned_by'] != null) {
+      assignedBy = _taskDetails!['assigned_by'];
+    } else if (widget.assignedBy != null && widget.assignedBy!.isNotEmpty) {
+      assignedBy = widget.assignedBy!;
+    }
+    
+    final String dueDate = _formatDate(widget.dueDate ?? _taskDetails?['due_date']);
+    // Use the app's accent color instead of theme color
+    final Color themeColor = AppColors.accentCyan;
+
+    return WillPopScope(
+      onWillPop: () async {
+        // Prevent back button from dismissing the alarm
+        _dismissAlarm();
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.background,
+          title: Text('ALARM', style: TextStyle(color: themeColor, fontWeight: FontWeight.bold)),
+          automaticallyImplyLeading: false,
+        ),
+        body: _isLoading ? 
+          Center(child: CircularProgressIndicator(color: themeColor)) :
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.alarm_on,
+                    size: 80,
+                    color: themeColor,
+                  ),
+                  SizedBox(height: 20),
+                  Text(
+                    taskTitle,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 10),
+                  Card(
+                    color: AppColors.cardBackground,
+                    margin: EdgeInsets.symmetric(vertical: 10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _infoRow(Icons.person, 'Assigned to: $assigneeName'),
+                          SizedBox(height: 8),
+                          _infoRow(Icons.person_outline, 'Assigned by: $assignedBy'),
+                          SizedBox(height: 8),
+                          _infoRow(Icons.calendar_today, 'Due date: $dueDate'),
+                        ],
                       ),
                     ),
-                    content: const Text(
-                      'This is a test alarm. Did you hear the sound?',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                        style: TextButton.styleFrom(
-                          backgroundColor: Colors.green,
+                  ),
+                  SizedBox(height: 30),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      ElevatedButton(
+                        onPressed: _snoozeAlarm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.mediumPriority,
                           foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                          textStyle: TextStyle(fontSize: 18),
                         ),
-                        child: const Text('YES'),
+                        child: Text('SNOOZE'),
                       ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Sound not playing. Check if sound files are in the correct location.'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        },
-                        style: TextButton.styleFrom(
-                          backgroundColor: Colors.orange,
+                      ElevatedButton(
+                        onPressed: _dismissAlarm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.completed,
                           foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                          textStyle: TextStyle(fontSize: 18),
                         ),
-                        child: const Text('NO'),
+                        child: Text('DISMISS'),
                       ),
                     ],
                   ),
-                );
-              } catch (e) {
-                print('❌ Error in test alarm: $e');
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error: $e')),
-                );
-              }
-            },
-            tooltip: 'Test Alarm',
+                ],
+              ),
+            ),
           ),
-        ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _alarms.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No active alarms',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _alarms.length,
-                  itemBuilder: (context, index) {
-                    final alarm = _alarms[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: ListTile(
-                        title: Text(
-                          alarm['task_title'] ?? 'Untitled Task',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Due: ${alarm['next_alarm_time']}',
-                              style: const TextStyle(
-                                color: Colors.red,
-                              ),
-                            ),
-                            Text(
-                              'Frequency: ${alarm['frequency']}',
-                            ),
-                          ],
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.snooze),
-                              onPressed: () => _snoozeAlarm(
-                                alarm['task_id'],
-                                alarm['alarm_id'],
-                              ),
-                              tooltip: 'Snooze',
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.check),
-                              onPressed: () => _acknowledgeAlarm(
-                                alarm['task_id'],
-                                alarm['alarm_id'],
-                              ),
-                              tooltip: 'Acknowledge',
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, color: AppColors.textGrey, size: 20),
+        SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+            ),
+          ),
+        ),
+      ],
     );
   }
 } 
