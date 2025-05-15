@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../theme/colors.dart';
 
 class VoiceRecorder extends StatefulWidget {
-  final Function(String?) onRecordingComplete;
+  final Function(String?, {String? filePath, int? duration}) onRecordingComplete;
 
   const VoiceRecorder({
     Key? key,
@@ -31,46 +31,109 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
 
   Future<void> _startRecording() async {
     try {
+      print('🎙️ Checking recording permission');
       if (await _audioRecorder.hasPermission()) {
         final directory = await getTemporaryDirectory();
-        _recordingPath = '${directory.path}/audio_note.m4a';
         
-        if (_recordingPath != null) {
-          await _audioRecorder.start(
-            record_pkg.RecordConfig(
-              encoder: record_pkg.AudioEncoder.aacLc,
-              bitRate: 128000,
-              sampleRate: 44100,
-            ),
-            path: _recordingPath!,
-          );
-          
-          setState(() {
-            _isRecording = true;
-            _hasRecording = false;
-          });
+        // Ensure directory exists
+        if (!await directory.exists()) {
+          print('📁 Creating temporary directory: ${directory.path}');
+          await directory.create(recursive: true);
         }
+        
+        // Create unique filename with timestamp to avoid conflicts
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        _recordingPath = '${directory.path}/snooze_notification_${timestamp}.wav';
+        
+        print('🎙️ Will save recording to: $_recordingPath');
+        
+        // Make sure the file doesn't exist already
+        final file = File(_recordingPath!);
+        if (await file.exists()) {
+          print('🎙️ Deleting existing file: $_recordingPath');
+          try {
+            await file.delete();
+          } catch (e) {
+            print('⚠️ Failed to delete existing file: $e');
+          }
+        }
+        
+        print('🎙️ Starting audio recording with WAV format');
+        await _audioRecorder.start(
+          record_pkg.RecordConfig(
+            encoder: record_pkg.AudioEncoder.wav,
+            bitRate: 128000,
+            sampleRate: 44100,
+          ),
+          path: _recordingPath!,
+        );
+        
+        print('✅ Recording started successfully');
+        setState(() {
+          _isRecording = true;
+          _hasRecording = false;
+        });
+      } else {
+        print('❌ No permission to record audio');
       }
     } catch (e) {
-      debugPrint('Error starting recording: $e');
+      print('❌ Error starting recording: $e');
     }
   }
 
   Future<void> _stopRecording() async {
     try {
+      print('🎙️ Stopping audio recording');
       await _audioRecorder.stop();
       
       if (_recordingPath != null) {
         final file = File(_recordingPath!);
         if (await file.exists()) {
-          final bytes = await file.readAsBytes();
-          final base64Audio = base64Encode(bytes);
-          widget.onRecordingComplete(base64Audio);
-          setState(() => _hasRecording = true);
+          final fileSize = await file.length();
+          print('📂 Audio file size: $fileSize bytes');
+          
+          if (fileSize > 100) { // Only process file if it has content
+            try {
+              print('🎙️ Reading file bytes for base64 encoding');
+              final bytes = await file.readAsBytes();
+              final duration = bytes.length ~/ 44; // Better approximation for WAV
+              
+              print('🎙️ Converting to base64: ${bytes.length} bytes');
+              final base64Audio = base64Encode(bytes);
+              print('✅ Audio recording processed successfully: $duration ms, ${base64Audio.length} chars base64');
+              
+              // Pass all information to the callback
+              widget.onRecordingComplete(
+                base64Audio, 
+                filePath: _recordingPath,
+                duration: duration
+              );
+              
+              setState(() => _hasRecording = true);
+            } catch (e) {
+              print('❌ Error processing audio file: $e');
+            }
+          } else {
+            print('⚠️ Audio file too small (${fileSize} bytes), not using it');
+          }
+        } else {
+          print('⚠️ Audio file not found after recording: $_recordingPath');
+          
+          // Check the directory contents
+          final directory = File(_recordingPath!).parent;
+          try {
+            final files = await directory.list().toList();
+            print('📁 Files in directory: ${files.length}');
+            for (var f in files) {
+              print('📄 - ${f.path} (${await File(f.path).length()} bytes)');
+            }
+          } catch (e) {
+            print('❌ Error listing directory: $e');
+          }
         }
       }
     } catch (e) {
-      debugPrint('Error stopping recording: $e');
+      print('❌ Error stopping recording: $e');
     } finally {
       setState(() => _isRecording = false);
     }

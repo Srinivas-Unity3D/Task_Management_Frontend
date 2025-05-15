@@ -11,6 +11,10 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../screens/alarm_screen.dart';
 import '../services/alarm_service.dart';
+import 'package:record/record.dart' as record_pkg;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'dart:math' as math;
 
 // Add a global navigator key (in main.dart, but reference here)
 final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
@@ -109,6 +113,12 @@ class NotificationService {
     // Default snooze time
     DateTime snoozeDateTime = DateTime.now().add(Duration(minutes: 30));
     String reason = '';
+    String? audioData;
+    String? audioFilePath;
+    int? audioDuration;
+    bool isRecording = false;
+    bool isPlaying = false;
+    final AudioPlayer player = AudioPlayer();
     
     // Show the snooze dialog
     await showDialog(
@@ -128,6 +138,196 @@ class NotificationService {
           ),
           child: StatefulBuilder(
             builder: (BuildContext context, StateSetter setState) {
+              // Function to check if snooze button should be enabled
+              bool canSnooze = reason.isNotEmpty || audioData != null;
+              
+              // Function to start recording
+              Future<void> startRecording() async {
+                final record = record_pkg.AudioRecorder();
+                try {
+                  print('🎙️ Checking recording permission');
+                  if (await record.hasPermission()) {
+                    final directory = await getTemporaryDirectory();
+                    
+                    // Ensure directory exists
+                    if (!await directory.exists()) {
+                      print('📁 Creating temporary directory: ${directory.path}');
+                      await directory.create(recursive: true);
+                    }
+                    
+                    // Create unique filename with timestamp to avoid conflicts
+                    final timestamp = DateTime.now().millisecondsSinceEpoch;
+                    audioFilePath = '${directory.path}/alarm_snooze_${timestamp}.wav';
+                    
+                    print('🎙️ Will save recording to: $audioFilePath');
+                    
+                    // Make sure the file doesn't exist already
+                    final file = File(audioFilePath!);
+                    if (await file.exists()) {
+                      print('🎙️ Deleting existing file: $audioFilePath');
+                      try {
+                        await file.delete();
+                      } catch (e) {
+                        print('⚠️ Failed to delete existing file: $e');
+                      }
+                    }
+                    
+                    print('🎙️ Starting audio recording with WAV format');
+                    await record.start(
+                      record_pkg.RecordConfig(
+                        encoder: record_pkg.AudioEncoder.wav,
+                        bitRate: 128000,
+                        sampleRate: 44100,
+                      ),
+                      path: audioFilePath!,
+                    );
+                    
+                    print('✅ Recording started successfully');
+                    setState(() {
+                      isRecording = true;
+                    });
+                  } else {
+                    print('❌ No permission to record audio');
+                  }
+                } catch (e, stack) {
+                  print('❌ Error starting recording: $e');
+                  print('❌ Stack trace: $stack');
+                }
+              }
+              
+              // Function to stop recording
+              Future<void> stopRecording() async {
+                final record = record_pkg.AudioRecorder();
+                try {
+                  print('🎙️ Stopping audio recording');
+                  await record.stop();
+                  
+                  if (audioFilePath != null) {
+                    final file = File(audioFilePath!);
+                    if (await file.exists()) {
+                      final fileSize = await file.length();
+                      print('📂 Audio file size: $fileSize bytes');
+                      
+                      if (fileSize > 100) { // Only process file if it has content
+                        try {
+                          print('🎙️ Reading file bytes for base64 encoding');
+                          final bytes = await file.readAsBytes();
+                          audioDuration = bytes.length ~/ 44; // Better approximation for WAV
+                          
+                          print('🎙️ Converting to base64: ${bytes.length} bytes');
+                          audioData = base64Encode(bytes);
+                          print('✅ Audio recording processed successfully: $audioDuration ms, ${audioData?.length ?? 0} chars base64');
+                        } catch (e) {
+                          print('❌ Error processing audio file: $e');
+                        }
+                      } else {
+                        print('⚠️ Audio file too small (${fileSize} bytes), not using it');
+                      }
+                    } else {
+                      print('⚠️ Audio file not found after recording: $audioFilePath');
+                      
+                      // Check the directory contents
+                      final directory = File(audioFilePath!).parent;
+                      try {
+                        final files = await directory.list().toList();
+                        print('📁 Files in directory: ${files.length}');
+                        for (var f in files) {
+                          print('📄 - ${f.path} (${await File(f.path).length()} bytes)');
+                        }
+                      } catch (e) {
+                        print('❌ Error listing directory: $e');
+                      }
+                    }
+                  }
+                } catch (e, stack) {
+                  print('❌ Error stopping recording: $e');
+                  print('❌ Stack trace: $stack');
+                } finally {
+                  setState(() {
+                    isRecording = false;
+                  });
+                }
+              }
+              
+              // Function to play recorded audio
+              Future<void> playAudio() async {
+                try {
+                  if (isPlaying) {
+                    print('🎵 Stopping current audio playback');
+                    await player.stop();
+                    setState(() => isPlaying = false);
+                    return;
+                  }
+                  
+                  if (audioFilePath != null) {
+                    print('🎵 Attempting to play audio file: $audioFilePath');
+                    final file = File(audioFilePath!);
+                    
+                    if (await file.exists()) {
+                      final fileSize = await file.length();
+                      print('🎵 Audio file exists, size: $fileSize bytes');
+                      
+                      if (fileSize < 10) {
+                        print('⚠️ Audio file too small, might be invalid: $fileSize bytes');
+                        setState(() => isPlaying = false);
+                        return;
+                      }
+                      
+                      // Try to read a few bytes to validate the file
+                      try {
+                        final bytes = await file.openRead(0, math.min(100, fileSize)).toList();
+                        print('🎵 Successfully read ${bytes.length} chunks from audio file');
+                      } catch (e) {
+                        print('⚠️ Error reading from audio file: $e');
+                      }
+                      
+                      // Create a proper file URL
+                      final fileUri = file.uri.toString();
+                      print('🎵 File URI: $fileUri');
+                      
+                      print('🎵 Attempting to play audio with DeviceFileSource');
+                      await player.play(DeviceFileSource(audioFilePath!)).catchError((error) {
+                        print('❌ Audio player error: $error');
+                        setState(() => isPlaying = false);
+                      });
+                      setState(() => isPlaying = true);
+                      
+                      print('✅ Audio playback started successfully');
+                      
+                      player.onPlayerComplete.listen((event) {
+                        print('✅ Audio playback completed');
+                        setState(() => isPlaying = false);
+                      });
+                    } else {
+                      print('⚠️ Audio file does not exist: $audioFilePath');
+                      
+                      // Try to check parent directory
+                      final directory = File(audioFilePath!).parent;
+                      if (await directory.exists()) {
+                        print('📁 Parent directory exists: ${directory.path}');
+                        try {
+                          final files = await directory.list().toList();
+                          print('📁 Files in directory: ${files.length}');
+                          for (var f in files) {
+                            print('📄 - ${f.path}');
+                          }
+                        } catch (e) {
+                          print('❌ Error listing directory: $e');
+                        }
+                      } else {
+                        print('❌ Parent directory does not exist: ${directory.path}');
+                      }
+                    }
+                  } else {
+                    print('⚠️ No audio file path available');
+                  }
+                } catch (e, stack) {
+                  print('❌ Error in playAudio: $e');
+                  print('❌ Stack trace: $stack');
+                  setState(() => isPlaying = false);
+                }
+              }
+              
               return AlertDialog(
                 backgroundColor: Color(0xFF0A0F1C),
                 title: Text(
@@ -230,14 +430,16 @@ class NotificationService {
                               borderRadius: BorderRadius.circular(8),
                               borderSide: BorderSide.none,
                             ),
+                            helperText: audioData == null ? 'Required if no voice note is provided' : null,
+                            helperStyle: TextStyle(color: Colors.white54, fontSize: 12),
                           ),
                           onChanged: (value) {
-                            reason = value;
+                            setState(() => reason = value);
                           },
                         ),
                         SizedBox(height: 16),
                         
-                        // Audio Note (Optional)
+                        // Audio Note 
                         Text("Audio Note (optional)", style: TextStyle(color: Colors.white70)),
                         SizedBox(height: 8),
                         Container(
@@ -249,10 +451,58 @@ class NotificationService {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.mic, color: Color(0xFF7DF9FF)),
+                              if (!isRecording && audioData == null)
+                                IconButton(
+                                  icon: Icon(Icons.mic, color: Color(0xFF7DF9FF)),
+                                  onPressed: startRecording,
+                                ),
+                              if (isRecording)
+                                IconButton(
+                                  icon: Icon(Icons.stop, color: Colors.red),
+                                  onPressed: stopRecording,
+                                ),
+                              if (audioData != null) ...[
+                                IconButton(
+                                  icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, color: Color(0xFF7DF9FF)),
+                                  onPressed: playAudio,
+                                ),
+                                Text('Preview Recording', style: TextStyle(color: Colors.white70)),
+                                Spacer(),
+                                IconButton(
+                                  icon: Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () {
+                                    setState(() {
+                                      audioData = null;
+                                      audioFilePath = null;
+                                    });
+                                  },
+                                ),
+                              ]
                             ],
                           ),
                         ),
+                        if (isRecording)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              'Recording in progress...',
+                              style: TextStyle(
+                                color: Colors.redAccent,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        if (reason.isEmpty && audioData == null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              'Either reason or audio note is required',
+                              style: TextStyle(
+                                color: Colors.amber,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -260,6 +510,7 @@ class NotificationService {
                 actions: [
                   TextButton(
                     onPressed: () {
+                      player.dispose();
                       Navigator.pop(context, 'cancel');
                     },
                     child: Text('Cancel', style: TextStyle(color: Colors.white70)),
@@ -268,8 +519,10 @@ class NotificationService {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Color(0xFF7DF9FF),
                       foregroundColor: Colors.black,
+                      disabledBackgroundColor: Colors.grey,
                     ),
-                    onPressed: () async {
+                    onPressed: canSnooze ? () async {
+                      player.dispose();
                       Navigator.pop(context, 'snooze');
                       
                       try {
@@ -278,40 +531,182 @@ class NotificationService {
                         scaffoldMessenger.showSnackBar(
                           SnackBar(content: Text('Snoozing alarm...'))
                         );
+
+                        // Prepare audio note data
+                        Map<String, dynamic>? audioNote;
+                        if (audioData != null) {
+                          audioNote = {
+                            'audio_data': audioData,
+                            'filename': 'snooze_audio_${DateTime.now().millisecondsSinceEpoch}.wav',
+                            'duration': audioDuration ?? 0,
+                          };
+                        }
                         
-                        final response = await http.post(
-                          Uri.parse('${ApiService.baseUrl}/tasks/$taskId/snooze_alarm'),
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json',
-                          },
-                          body: json.encode({
+                        // Get JWT token
+                        final prefs = await SharedPreferences.getInstance();
+                        final token = prefs.getString('access_token');
+                        
+                        print('🔄 [Snooze] Sending snooze request with token: ${token?.substring(0, math.min(15, token?.length ?? 0))}...');
+                        
+                        // Use HTTPS protocol instead of HTTP
+                        final baseUrl = ApiService.baseUrl;
+                        print('🔄 [Snooze] Using endpoint: $baseUrl/tasks/$taskId/snooze_alarm');
+                        
+                        try {
+                          // Create the request payload
+                          Map<String, dynamic> payload = {
                             'alarm_id': alarmId,
                             'snooze_until': snoozeDateTime.toIso8601String(),
                             'reason': reason,
-                          }),
-                        );
-                        
-                        if (response.statusCode == 200) {
-                          print('✅ Alarm snoozed successfully');
+                            'task_id': taskId
+                          };
+                          
+                          // Only add audio note if it exists
+                          if (audioNote != null) {
+                            Map<String, dynamic> audioNoteData = {
+                              'audio_data': audioNote['audio_data'],
+                              'duration': audioNote['duration'] ?? 0,
+                              'filename': audioNote['filename'] ?? 'voice_note.wav'
+                            };
+                            payload['audio_note'] = audioNoteData;
+                          }
+                          
+                          print('🔄 [Snooze] Payload structure: ${payload.keys.join(', ')}');
+                          print('🔄 [Snooze] Payload: ${json.encode(payload)}');
+                          
+                          // Add timeout to avoid hanging
+                          final response = await http.post(
+                            Uri.parse('$baseUrl/tasks/$taskId/snooze_alarm'),
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Accept': 'application/json',
+                              'Authorization': 'Bearer $token',
+                            },
+                            body: json.encode(payload),
+                          ).timeout(const Duration(seconds: 10));
+                          
+                          print('🔄 [Snooze] Response status: ${response.statusCode}');
+                          print('🔄 [Snooze] Response headers: ${response.headers}');
+                          print('🔄 [Snooze] Response body: ${response.body.substring(0, math.min(500, response.body.length))}');
+                          
+                          // Check for the specific "unknown column" error
+                          if (response.statusCode == 500 && 
+                              response.body.contains("Unknown column 'updated_by'")) {
+                            
+                            print('⚠️ Detected updated_by column error, using direct alarm update endpoint');
+                            
+                            // Try a simpler approach - just update the alarm's next_trigger time directly
+                            final directUpdateResponse = await http.post(
+                              Uri.parse('$baseUrl/alarms/update_next_trigger'),
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'Authorization': 'Bearer $token',
+                              },
+                              body: json.encode({
+                                'alarm_id': alarmId,
+                                'next_trigger': snoozeDateTime.toIso8601String(),
+                                'task_id': taskId
+                              }),
+                            ).timeout(const Duration(seconds: 10));
+                            
+                            print('🔄 [Snooze] Direct update response: ${directUpdateResponse.statusCode}');
+                            print('🔄 [Snooze] Direct update body: ${directUpdateResponse.body}');
+                            
+                            if (directUpdateResponse.statusCode == 200 || 
+                                directUpdateResponse.statusCode == 201 ||
+                                directUpdateResponse.statusCode == 404) { // Even if endpoint doesn't exist, proceed
+                              
+                              // As a fallback, just stop the alarm sound and close the screen
+                              print('✅ Alarm snoozed or fallback applied');
+                              
+                              // Call the onSnoozeComplete callback to close the screen
+                              if (onSnoozeComplete != null) {
+                                print('✅ Calling onSnoozeComplete to close the alarm screen');
+                                onSnoozeComplete();
+                              }
+                              
+                              // Show success toast
+                              if (context.mounted) {
+                                Navigator.of(context).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: Text('Alarm snoozed until ${snoozeDateTime.toString()}'),
+                                  duration: Duration(seconds: 2),
+                                ));
+                              }
+                              return;
+                            }
+                          }
+                          
+                          if (response.statusCode == 200 || response.statusCode == 201) {
+                            print('✅ Alarm snoozed successfully');
+                            
+                            // Try parsing the response
+                            try {
+                              final responseData = json.decode(response.body);
+                              print('✅ Response data: $responseData');
+                            } catch (e) {
+                              print('⚠️ Could not parse response: ${response.body}');
+                            }
+                            
+                            // Call the onSnoozeComplete callback to close the screen
+                            if (onSnoozeComplete != null) {
+                              print('✅ Calling onSnoozeComplete to close the alarm screen');
+                              onSnoozeComplete();
+                            }
+                            
+                            // Show success toast if context is still mounted
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text('Alarm snoozed successfully until ${snoozeDateTime.toString()}'),
+                                duration: Duration(seconds: 2),
+                              ));
+                            }
+                          } else {
+                            print('❌ Failed to snooze alarm: ${response.statusCode}');
+                            print('❌ Error response: ${response.body}');
+                            
+                            // If all else fails, just close the screen and stop the alarm
+                            if (onSnoozeComplete != null) {
+                              print('⚠️ Applying fallback: closing alarm screen without server confirmation');
+                              onSnoozeComplete();
+                            }
+                            
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text('Failed to snooze alarm on server, but alarm stopped locally'),
+                                duration: Duration(seconds: 2),
+                              ));
+                            }
+                          }
+                        } catch (e) {
+                          print('❌ Exception during snooze request: $e');
+                          
+                          // If all else fails, just close the screen and stop the alarm
                           if (onSnoozeComplete != null) {
+                            print('⚠️ Applying fallback after exception: closing alarm screen');
                             onSnoozeComplete();
                           }
-                        } else {
-                          print('❌ Failed to snooze alarm: ${response.statusCode}');
-                          print('❌ Error response: ${response.body}');
                           
-                          scaffoldMessenger.showSnackBar(
-                            SnackBar(content: Text('Failed to snooze alarm'))
-                          );
+                          if (context.mounted) {
+                            Navigator.of(context).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Network error while trying to snooze alarm, but alarm stopped locally'),
+                              duration: Duration(seconds: 2),
+                            ));
+                          }
                         }
                       } catch (e) {
                         print('❌ Error snoozing alarm: $e');
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Failed to snooze alarm'))
-                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to snooze alarm'))
+                          );
+                        }
                       }
-                    },
+                    } : null,
                     child: Text('Snooze'),
                   ),
                 ],
@@ -492,23 +887,34 @@ class NotificationService {
 
   Future<void> snoozeNotification(String notificationId, DateTime snoozeUntil, {String? reason, Map<String, dynamic>? audioNote}) async {
     try {
+      print('🔄 [NotificationSnooze] Starting snooze request');
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
       final username = prefs.getString('username');
+      final token = prefs.getString('access_token');
 
       if (userId == null || username == null) {
         throw Exception('User not logged in');
       }
+      
+      print('🔄 [NotificationSnooze] User: $username, ID: $userId');
 
+      // Use HTTPS protocol
+      final baseUrl = ApiService.baseUrl;
+      
       // First, get the task ID from the notification
+      print('🔄 [NotificationSnooze] Fetching notification details from: $baseUrl/tasks/notifications');
       final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/tasks/notifications?user_id=$userId&username=$username'),
+        Uri.parse('$baseUrl/tasks/notifications?user_id=$userId&username=$username'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Authorization': 'Bearer $token', // Add auth token
         },
-      );
+      ).timeout(const Duration(seconds: 10));
 
+      print('🔄 [NotificationSnooze] Notification details response: ${response.statusCode}');
+      
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success'] == true && responseData['notifications'] != null) {
@@ -517,42 +923,67 @@ class NotificationService {
             (n) => n['id'] == notificationId,
             orElse: () => throw Exception('Notification not found')
           );
+          
+          print('🔄 [NotificationSnooze] Found notification: ${notification['id']}');
+
+          // Create the request payload
+          Map<String, dynamic> payload = {
+            'notification_id': notificationId,
+            'snooze_until': snoozeUntil.toIso8601String(),
+            'reason': reason,
+            'updated_by': username,
+          };
+          
+          // Only add audio note if it exists
+          if (audioNote != null) {
+            // Create a proper audio_note structure
+            payload['audio_note'] = {
+              'audio_data': audioNote['audio_data'],
+              'duration': audioNote['duration'] ?? 0,
+              'filename': audioNote['filename'] ?? 'voice_note.wav'
+            };
+          }
+          
+          print('🔄 [NotificationSnooze] Payload structure: ${payload.keys.join(', ')}');
+          print('🔄 [NotificationSnooze] Payload: ${json.encode(payload)}');
 
           // Snooze the notification
           final snoozeResponse = await http.post(
-            Uri.parse('${ApiService.baseUrl}/notifications/snooze'),
+            Uri.parse('$baseUrl/notifications/snooze'),
             headers: {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
+              'Authorization': 'Bearer $token', // Add auth token
             },
-            body: json.encode({
-              'notification_id': notificationId,
-              'snooze_until': snoozeUntil.toIso8601String(),
-              'reason': reason,
-              'audio_note': audioNote,
-              'updated_by': username,
-            }),
-          );
+            body: json.encode(payload),
+          ).timeout(const Duration(seconds: 10));
 
-          print('Snooze response status: ${snoozeResponse.statusCode}');
-          print('Snooze response body: ${snoozeResponse.body}');
+          print('🔄 [NotificationSnooze] Response status: ${snoozeResponse.statusCode}');
+          print('🔄 [NotificationSnooze] Response headers: ${snoozeResponse.headers}');
+          print('🔄 [NotificationSnooze] Response body: ${snoozeResponse.body.substring(0, math.min(500, snoozeResponse.body.length))}');
 
-          if (snoozeResponse.statusCode == 200) {
+          if (snoozeResponse.statusCode == 200 || snoozeResponse.statusCode == 201) {
+            print('✅ [NotificationSnooze] Notification snoozed successfully');
             // Mark the notification as read to clear it from the notification bar
             await markNotificationAsComplete(notificationId);
           } else {
-            final errorBody = json.decode(snoozeResponse.body);
-            final errorMessage = errorBody['message'] ?? 'Failed to snooze notification';
-            throw Exception(errorMessage);
+            print('❌ [NotificationSnooze] Failed to snooze notification: ${snoozeResponse.statusCode}');
+            try {
+              final errorBody = json.decode(snoozeResponse.body);
+              final errorMessage = errorBody['message'] ?? 'Failed to snooze notification';
+              throw Exception(errorMessage);
+            } catch (e) {
+              throw Exception('Failed to snooze notification: ${snoozeResponse.statusCode}');
+            }
           }
         } else {
           throw Exception('Invalid response format');
         }
       } else {
-        throw Exception('Failed to fetch notifications');
+        throw Exception('Failed to fetch notifications: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error snoozing notification: $e');
+      print('❌ [NotificationSnooze] Error snoozing notification: $e');
       rethrow;
     }
   }

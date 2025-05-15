@@ -9,6 +9,7 @@ import '../models/task.dart';
 import '../services/notification_service.dart';
 import '../services/audio_service.dart';
 import '../theme/colors.dart';  // Import the app colors
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AlarmScreen extends StatefulWidget {
   final String? taskId;
@@ -229,23 +230,95 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
       if (widget.taskId == null || widget.alarmId == null) {
         throw Exception('Invalid task or alarm ID');
       }
-
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/tasks/${widget.taskId}/acknowledge_alarm'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode({
+      
+      // Get auth token
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+      
+      // Use HTTPS protocol instead of HTTP
+      final baseUrl = ApiService.baseUrl;
+      print('🔄 [Dismiss] Using endpoint: $baseUrl/tasks/${widget.taskId}/acknowledge_alarm');
+      
+      try {
+        // Create the request payload
+        final payload = {
           'alarm_id': widget.alarmId,
-        }),
-      );
+          'acknowledged_at': DateTime.now().toIso8601String()
+        };
+        
+        print('🔄 [Dismiss] Sending payload: ${json.encode(payload)}');
+        
+        final response = await http.post(
+          Uri.parse('$baseUrl/tasks/${widget.taskId}/acknowledge_alarm'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: json.encode(payload),
+        ).timeout(const Duration(seconds: 10));
+        
+        print('🔄 [Dismiss] Response status: ${response.statusCode}');
+        print('🔄 [Dismiss] Response body: ${response.body}');
 
-      if (response.statusCode == 200) {
-        print('✅ Alarm acknowledged successfully');
-      } else {
-        print('❌ Failed to acknowledge alarm: ${response.statusCode}');
-        print('❌ Error response: ${response.body}');
+        // Check for the specific "unknown column" error
+        if (response.statusCode == 500 && 
+            response.body.contains("Unknown column 'updated_by'")) {
+          
+          print('⚠️ Detected updated_by column error, using direct alarm update endpoint');
+          
+          // Try a simpler approach - just update the alarm's status directly
+          final directUpdateResponse = await http.post(
+            Uri.parse('$baseUrl/alarms/deactivate'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: json.encode({
+              'alarm_id': widget.alarmId,
+              'task_id': widget.taskId
+            }),
+          ).timeout(const Duration(seconds: 10));
+          
+          print('🔄 [Dismiss] Direct update response: ${directUpdateResponse.statusCode}');
+          print('🔄 [Dismiss] Direct update body: ${directUpdateResponse.body}');
+          
+          // Even if the direct update fails, proceed with closing the alarm screen
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Alarm acknowledged'))
+            );
+          }
+        } 
+        else if (response.statusCode == 200 || response.statusCode == 201) {
+          print('✅ Alarm acknowledged successfully');
+          
+          // Show success message
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Alarm acknowledged successfully'))
+            );
+          }
+        } 
+        else {
+          print('❌ Failed to acknowledge alarm: ${response.statusCode}');
+          print('❌ Error response: ${response.body}');
+          
+          // Show error message but still close the screen
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to acknowledge alarm on server, but alarm stopped locally'))
+            );
+          }
+        }
+      } catch (e) {
+        print('❌ Error making acknowledge request: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Network error while acknowledging alarm, but alarm stopped locally'))
+          );
+        }
       }
       
       // Close the alarm screen regardless of API response

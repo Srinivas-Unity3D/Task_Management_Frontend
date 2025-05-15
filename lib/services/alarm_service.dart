@@ -294,17 +294,22 @@ class AlarmService {
         return;
       }
 
+      // Create the request payload
+      final payload = {
+        'alarm_id': _currentAlarmTaskId,
+        'acknowledged_at': DateTime.now().toIso8601String(),
+      };
+      
+      print('🔄 [AlarmService] Sending acknowledge request with payload: ${json.encode(payload)}');
+
       final response = await http.post(
-        Uri.parse('$baseUrl/alarms/acknowledge'),
+        Uri.parse('$baseUrl/tasks/$taskId/acknowledge_alarm'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode({
-          'task_id': taskId,
-          'acknowledged_at': DateTime.now().toIso8601String(),
-        }),
+        body: json.encode(payload),
       );
       
       if (response.statusCode == 200) {
@@ -319,11 +324,71 @@ class AlarmService {
         // Force cancel all local notifications for this task
         await _notificationsPlugin.cancel(taskId.hashCode);
       } else {
+        // Check for the specific "unknown column" error
+        try {
+          if (response.statusCode == 500 && 
+              response.body.contains("Unknown column 'updated_by'")) {
+            
+            print('⚠️ [AlarmService] Detected updated_by column error, using direct alarm update endpoint');
+            
+            // Try a simpler approach - just update the alarm's status directly
+            final directUpdateResponse = await http.post(
+              Uri.parse('$baseUrl/alarms/deactivate'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+              body: json.encode({
+                'alarm_id': _currentAlarmTaskId,
+                'task_id': taskId
+              }),
+            ).timeout(const Duration(seconds: 10));
+            
+            print('🔄 [AlarmService] Direct update response: ${directUpdateResponse.statusCode}');
+            
+            // Even if the direct update fails, clean up the alarm state locally
+            _isAlarmActive = false;
+            _currentAlarmTaskId = null;
+            await _audioService.stopAlarmSound();
+            _stopVibration();
+            
+            // Force cancel all local notifications for this task
+            await _notificationsPlugin.cancel(taskId.hashCode);
+            
+            return;
+          }
+        } catch (e) {
+          print('❌ [AlarmService] Error parsing response: $e');
+        }
+        
         print('❌ [AlarmService] Failed to acknowledge alarm: ${response.statusCode}');
         print('❌ [AlarmService] Error response: ${response.body}');
+        
+        // Clean up the alarm state locally anyway
+        _isAlarmActive = false;
+        _currentAlarmTaskId = null;
+        await _audioService.stopAlarmSound();
+        _stopVibration();
+        
+        // Force cancel all local notifications for this task
+        await _notificationsPlugin.cancel(taskId.hashCode);
       }
     } catch (e) {
       print('❌ [AlarmService] Error acknowledging alarm: $e');
+      
+      // Clean up the alarm state locally anyway
+      _isAlarmActive = false;
+      _currentAlarmTaskId = null;
+      await _audioService.stopAlarmSound();
+      _stopVibration();
+      
+      // Force cancel all local notifications
+      try {
+        await _notificationsPlugin.cancel(taskId.hashCode);
+      } catch (e) {
+        print('❌ [AlarmService] Error canceling notification: $e');
+      }
     }
   }
 
