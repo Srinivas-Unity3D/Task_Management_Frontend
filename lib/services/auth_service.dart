@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
-  static const String _tokenKey = 'jwt_token';
+  static const String _tokenKey = 'access_token';
   static const String _tokenExpiryKey = 'jwt_token_expiry';
   
   // Private constructor
@@ -96,7 +96,7 @@ class AuthService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('access_token');
-      print('🔑 [Auth] DEBUG - Current token: ${token?.substring(0, 20)}... (length: ${token?.length})');
+      print('🔑 [Auth] DEBUG - Current token: ${token?.substring(0, min(20, token?.length ?? 0))}... (length: ${token?.length})');
       return token ?? '';
     } catch (e) {
       print('❌ [Auth] Error getting token for debugging: $e');

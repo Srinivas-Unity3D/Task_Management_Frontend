@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
@@ -69,16 +70,17 @@ class ApiService {
         print('🌐 [API] Request method: ${options.method}');
         print('🌐 [API] Headers: ${options.headers}');
         
+        // Set content type appropriately but don't overwrite multipart/form-data
         if (options.contentType != 'multipart/form-data') {
           options.contentType = 'application/json';
         }
         
-        // Always get a fresh token for each request
+        // Always get a fresh token for each request - for all content types including multipart/form-data
         try {
           final token = await _authService.getToken();
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
-            print('🔐 [API] Added token to request (${token.substring(0, 15)}...)');
+            print('🔐 [API] Added token to request (${token.substring(0, min(15, token.length))}...)');
           } else {
             print('⚠️ [API] No token available for request');
           }
@@ -756,7 +758,14 @@ class ApiService {
       if (voiceNote.audioData != null) {
         print('📝 [API] Saving voice note from audio data');
         final tempDir = await getTemporaryDirectory();
-        final fileName = voiceNote.fileName.isNotEmpty ? voiceNote.fileName : 'voice_note.wav';
+        
+        // Ensure filename has .wav extension
+        String fileName = voiceNote.fileName.isNotEmpty ? voiceNote.fileName : 'voice_note.wav';
+        if (!fileName.toLowerCase().endsWith('.wav')) {
+          final nameParts = fileName.split('.');
+          fileName = '${nameParts.first}.wav';
+        }
+        
         final file = File('${tempDir.path}/$fileName');
         final bytes = base64.decode(voiceNote.audioData!);
         await file.writeAsBytes(bytes);
@@ -767,34 +776,61 @@ class ApiService {
       // Always use the API endpoint for download, not the filePath
       if (voiceNote.taskId != null && voiceNote.id != null) {
         final url = '/api/tasks/${voiceNote.taskId}/audio/${voiceNote.id}/download';
-        print('📥 [API] Downloading voice note from endpoint: $url');
-        final response = await _dio.get(
-          url,
-          options: Options(
-            responseType: ResponseType.bytes,
-            validateStatus: (status) => status! < 500,
-          ),
-        );
-
-        print('📥 [API] Download response status: ${response.statusCode}');
-        print('📥 [API] Download response headers: ${response.headers}');
-
-        if (response.statusCode == 200) {
-          final bytes = response.data as List<int>;
-          final tempDir = await getTemporaryDirectory();
-          final fileName = voiceNote.fileName.isNotEmpty ? voiceNote.fileName : 'voice_note.wav';
-          final file = File('${tempDir.path}/$fileName');
-          await file.writeAsBytes(bytes);
-          print('✅ [API] Voice note downloaded and saved successfully');
-          return file.path;
-        } else {
-          print('❌ [API] Failed to download voice note: ${response.statusCode}');
-          print('❌ [API] Error response: ${response.data}');
+        print('📥 [API] Downloading voice note from: $url');
+        
+        // Get token for authentication
+        final token = await _authService.getToken();
+        if (token == null) {
+          print('⚠️ [API] No token available for voice note download');
+          if (await refreshToken()) {
+            return downloadVoiceNote(voiceNote); // Retry after token refresh
+          }
+          return null;
+        }
+        
+        try {
+          // Use Dio for authenticated download
+          final response = await _dio.get(
+            url,
+            options: Options(
+              responseType: ResponseType.bytes,
+              headers: {
+                'Authorization': 'Bearer $token',
+              },
+            ),
+          );
+          
+          if (response.statusCode == 200) {
+            print('✅ [API] Voice note downloaded successfully');
+            final tempDir = await getTemporaryDirectory();
+            
+            // Ensure filename has .wav extension
+            String fileName = voiceNote.fileName.isNotEmpty ? voiceNote.fileName : 'voice_note.wav';
+            if (!fileName.toLowerCase().endsWith('.wav')) {
+              final nameParts = fileName.split('.');
+              fileName = '${nameParts.first}.wav';
+            }
+            
+            final file = File('${tempDir.path}/$fileName');
+            await file.writeAsBytes(response.data);
+            return file.path;
+          } else {
+            print('⚠️ [API] Failed to download voice note: ${response.statusCode}');
+            return null;
+          }
+        } catch (e) {
+          print('⚠️ [API] Error downloading voice note: $e');
           return null;
         }
       }
-
-      print('❌ [API] No audio data or valid IDs available for download');
+      
+      // Fallback to using the file path directly (not recommended, but kept for compatibility)
+      if (voiceNote.filePath != null && voiceNote.filePath!.isNotEmpty) {
+        print('⚠️ [API] Using direct file path (not recommended): ${voiceNote.filePath}');
+        return voiceNote.filePath;
+      }
+      
+      print('⚠️ [API] No way to download voice note: missing ID or file path');
       return null;
     } catch (e) {
       print('❌ [API] Error downloading voice note: $e');
@@ -851,31 +887,55 @@ class ApiService {
       print('📞 [API] Fetching audio note for task: $taskId');
       final response = await _dio.get('/tasks/$taskId/audio');
       print('✅ [API] Audio note response status: ${response.statusCode}');
-      print('✅ [API] Audio note response data: ${response.data}');
-
-      if (response.statusCode == 404) {
+      
+      if (response.statusCode == 200) {
+        print('✅ [API] Audio notes found: ${response.data}');
+        
+        // Ensure all file paths are properly formatted for client use
+        if (response.data is List) {
+          for (var note in response.data) {
+            if (note is Map<String, dynamic> && note.containsKey('file_path')) {
+              // Store the original file_path for reference
+              note['original_file_path'] = note['file_path'];
+              
+              // Create a proper API endpoint URL for downloading
+              if (note.containsKey('audio_id')) {
+                note['download_url'] = '/api/tasks/$taskId/audio/${note['audio_id']}/download';
+              }
+            }
+          }
+        }
+        
+        return {'success': true, 'data': response.data};
+      } else if (response.statusCode == 404) {
         print('ℹ️ [API] No audio note found for task');
         return {'success': true, 'data': null};
+      } else if (response.statusCode == 401) {
+        print('⚠️ [API] Authentication failed when fetching audio notes');
+        // Try refreshing token and retry once
+        if (await refreshToken()) {
+          return getAudioNote(taskId); // Recursive call after token refresh
+        }
+        return {
+          'success': false,
+          'message': 'Authentication failed when fetching audio notes'
+        };
+      } else {
+        print('❌ [API] Failed to fetch audio note: ${response.statusCode}');
+        return {'success': false, 'message': 'Failed to fetch audio note'};
       }
-
-      if (response.statusCode != 200) {
-        throw DioException(
-          requestOptions: response.requestOptions,
-          response: response,
-          message: 'Failed to get audio note: ${response.statusMessage}',
-        );
+    } on DioException catch (e) {
+      print('❌ [API] Dio error fetching audio note: ${e.message}');
+      if (e.response?.statusCode == 401) {
+        // Try refreshing token and retry once
+        if (await refreshToken()) {
+          return getAudioNote(taskId);
+        }
       }
-
-      return {
-        'success': true,
-        'data': response.data,
-      };
+      return {'success': false, 'message': 'Error fetching audio note: ${e.message}'};
     } catch (e) {
-      print('❌ [API] Error getting audio note: $e');
-      return {
-        'success': false,
-        'message': 'Failed to download audio note',
-      };
+      print('❌ [API] Error fetching audio note: $e');
+      return {'success': false, 'message': 'Error fetching audio note: $e'};
     }
   }
 
@@ -1326,40 +1386,54 @@ class ApiService {
 
   Future<Map<String, dynamic>?> uploadFile(FormData formData) async {
     try {
-      // The authorization token will be added by the interceptor
-      print('📤 [API] Uploading file, content type: multipart/form-data');
+      print('📤 [API] Uploading file with form data: ${formData.fields}');
+      
+      // Get auth token specifically for file upload
+      final token = await _authService.getToken();
+      if (token == null) {
+        print('⚠️ [API] No token available for file upload');
+        // Try refreshing token
+        if (await refreshToken()) {
+          print('✅ [API] Token refreshed, retrying upload');
+          return uploadFile(formData); // Recursive call after token refresh
+        }
+        return {'success': false, 'message': 'Authentication failed'};
+      }
       
       final response = await _dio.post(
         '/upload',
         data: formData,
         options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'multipart/form-data',
+          },
           contentType: 'multipart/form-data',
+          validateStatus: (status) => status! < 500,
         ),
       );
 
       print('📤 [API] Upload response status: ${response.statusCode}');
-      print('📤 [API] Upload response data: ${response.data}');
-
-      if (response.statusCode == 200) {
-        if (response.data != null) {
-          if (response.data is Map<String, dynamic>) {
-            // Return the entire response since it might have different formats
-            // This way we can handle both old and new formats
-            return response.data;
-          } else {
-            print('❌ [API] Unexpected response format: ${response.data.runtimeType}');
-            return null;
-          }
+      
+      if (response.statusCode == 401) {
+        print('⚠️ [API] Authentication failed during file upload');
+        // Try refreshing token and retry once
+        if (await refreshToken()) {
+          return uploadFile(formData); // Recursive call after token refresh
         }
-        return null;
-      } else {
-        print('❌ [API] File upload failed: ${response.statusCode}');
-        print('❌ [API] Error response: ${response.data}');
-        return null;
+        return {'success': false, 'message': 'Authentication failed during upload'};
       }
+      
+      if (response.statusCode != 200) {
+        print('❌ [API] Upload failed with status: ${response.statusCode}');
+        print('❌ [API] Error response: ${response.data}');
+        return {'success': false, 'message': 'File upload failed'};
+      }
+
+      return response.data;
     } catch (e) {
       print('❌ [API] Error uploading file: $e');
-      return null;
+      return {'success': false, 'message': 'Connection error during upload'};
     }
   }
 
