@@ -840,26 +840,65 @@ class ApiService {
 
   Future<List<Attachment>> getTaskAttachments(String taskId) async {
     try {
+      print('📎 [API] Fetching attachments for task: $taskId');
+      
       final response = await _dio.get('/tasks/$taskId/attachments');
+      
+      print('📎 [API] Attachments response status: ${response.statusCode}');
+      
       if (response.statusCode == 200) {
-        final List<dynamic> attachments = response.data['attachments'];
-        return attachments
-            .map((attachment) => Attachment.fromJson(attachment))
-            .toList();
+        if (response.data['success'] == true && response.data['attachments'] != null) {
+          final List<dynamic> attachments = response.data['attachments'];
+          print('📎 [API] Found ${attachments.length} attachments');
+          return attachments
+              .map((attachment) => Attachment.fromJson(attachment))
+              .toList();
+        } else {
+          print('📎 [API] No attachments found or invalid response format');
+          return [];
+        }
+      } else if (response.statusCode == 401) {
+        print('⚠️ [API] Authentication failed when fetching attachments');
+        // Try refreshing token and retry once
+        if (await refreshToken()) {
+          return getTaskAttachments(taskId); // Recursive call after token refresh
+        }
+        throw Exception('Authentication failed when fetching attachments');
       } else {
+        print('❌ [API] Failed to fetch attachments: ${response.statusCode}');
         throw Exception('Failed to fetch attachments');
       }
     } catch (e) {
       print('❌ [API] Error getting task attachments: $e');
+      if (e.toString().contains('401')) {
+        // Handle 401 errors that might be thrown as exceptions
+        if (await refreshToken()) {
+          return getTaskAttachments(taskId);
+        }
+      }
       throw Exception('Failed to fetch attachments: $e');
     }
   }
 
   Future<String> downloadAttachment(String attachmentId) async {
     try {
+      print('📥 [API] Downloading attachment: $attachmentId');
+      
+      // Get token for authentication
+      final token = await _authService.getToken();
+      if (token == null) {
+        print('⚠️ [API] No token available for attachment download');
+        throw Exception('Authentication failed');
+      }
+      
       final response = await _dio.get(
-        '/attachments/$attachmentId',
-        options: Options(responseType: ResponseType.bytes),
+        '/attachments/$attachmentId/download',
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: {
+            'Authorization': 'Bearer $token',
+          },
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -870,11 +909,21 @@ class ApiService {
                 ?.split('filename=')
                 .last ??
             'attachment_$attachmentId';
+        print('📥 [API] Saving attachment as: $fileName');
         final file = File('${tempDir.path}/$fileName');
         await file.writeAsBytes(bytes);
+        print('✅ [API] Attachment downloaded and saved');
         return file.path;
+      } else if (response.statusCode == 401) {
+        print('⚠️ [API] Authentication failed when downloading attachment');
+        // Try refreshing token and retry once
+        if (await refreshToken()) {
+          return downloadAttachment(attachmentId); // Recursive call after token refresh
+        }
+        throw Exception('Authentication failed when downloading attachment');
       } else {
-        throw Exception('Failed to download attachment');
+        print('❌ [API] Failed to download attachment: ${response.statusCode}');
+        throw Exception('Failed to download attachment: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ [API] Error downloading attachment: $e');
