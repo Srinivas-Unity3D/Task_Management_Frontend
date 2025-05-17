@@ -12,6 +12,7 @@ import 'services/notification_service.dart';
 import 'services/alarm_service.dart';
 import 'firebase_options.dart';
 import 'dart:convert';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'screens/sign_in_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -26,26 +27,87 @@ bool _isInitializing = false;
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
+    print('📱 Background message handler started');
+    print('📱 Message ID: ${message.messageId}');
+    print('📱 Message data: ${message.data}');
+    print('📱 Notification: ${message.notification?.title} - ${message.notification?.body}');
+
     if (!_isFirebaseInitialized && !_isInitializing) {
+      print('🔄 Initializing Firebase in background handler...');
       _isInitializing = true;
       await Firebase.initializeApp(
           options: DefaultFirebaseOptions.currentPlatform);
       _isFirebaseInitialized = true;
       _isInitializing = false;
+      print('✅ Firebase initialized in background handler');
     }
 
-    print('📱 Handling a background message: ${message.messageId}');
-    print('📱 Message data: ${message.data}');
-
+    // Initialize services
+    print('🔄 Initializing services in background handler...');
     final notificationService = NotificationService();
     await notificationService.initialize();
+    print('✅ Notification service initialized in background handler');
 
     final alarmService = AlarmService();
     await alarmService.initialize();
+    print('✅ Alarm service initialized in background handler');
 
-    await notificationService.handleNewNotification();
+    // Check if this is an alarm notification
+    if (message.data['type'] == 'task_alarm') {
+      print('⏰ Received task alarm notification in background');
+      
+      // Create notification details
+      final androidDetails = AndroidNotificationDetails(
+        'task_alarms',
+        'Task Alarms',
+        channelDescription: 'High priority notifications for task alarms',
+        importance: Importance.max,
+        priority: Priority.high,
+        sound: const RawResourceAndroidNotificationSound('alarm'),
+        fullScreenIntent: true,
+        category: AndroidNotificationCategory.alarm,
+        visibility: NotificationVisibility.public,
+        playSound: true,
+        enableVibration: true,
+        enableLights: true,
+        color: const Color(0xFF2196F3),
+        ledColor: const Color(0xFF2196F3),
+        ledOnMs: 1000,
+        ledOffMs: 500,
+      );
+
+      final iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        sound: 'alarm.mp3',
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      );
+
+      final notificationDetails = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      // Show the notification
+      await alarmService.showAlarmNotification(
+        title: 'Task Alarm',
+        body: 'Time to complete your task!',
+        payload: jsonEncode(message.data),
+        notificationDetails: notificationDetails,
+      );
+
+      // Trigger the alarm
+      await alarmService.triggerAlarm(message.data);
+      print('✅ Alarm triggered in background');
+    } else {
+      print('📱 Handling regular notification in background');
+      await notificationService.handleNewNotification();
+      print('✅ Regular notification handled in background');
+    }
   } catch (e) {
     print('❌ Error in background handler: $e');
+    print('❌ Stack trace: ${StackTrace.current}');
     _isInitializing = false;
   }
 }
@@ -171,22 +233,6 @@ void main() async {
       );
       print('✅ FCM foreground notification options set');
 
-      // Set up foreground message handler
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-        print('📱 Received foreground message');
-        print('📱 Message data: ${message.data}');
-
-        if (message.notification != null) {
-          print('📱 Message notification: ${message.notification?.title}');
-          await notificationService.handleNewNotification();
-        }
-
-        if (message.data['type'] == 'task_alarm') {
-          print('⏰ Received task alarm notification');
-          await alarmService.triggerAlarm(message.data);
-        }
-      });
-
       // Set up background message handler
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
@@ -252,7 +298,7 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return GetMaterialApp(
       navigatorKey: globalNavigatorKey,
       title: 'Task Management',
       debugShowCheckedModeBanner: false,

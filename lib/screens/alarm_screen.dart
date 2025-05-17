@@ -18,6 +18,7 @@ class AlarmScreen extends StatefulWidget {
   final String? assigneeName;
   final String? assignedBy;
   final String? dueDate;
+  final bool showSnooze;
 
   const AlarmScreen({
     Key? key,
@@ -27,6 +28,7 @@ class AlarmScreen extends StatefulWidget {
     this.assigneeName,
     this.assignedBy,
     this.dueDate,
+    this.showSnooze = false,
   }) : super(key: key);
 
   @override
@@ -53,7 +55,16 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
     _playAlarmSound();
     _startVibration();
     // Fetch additional task details if needed
-    _fetchTaskDetails();
+    if (widget.taskId != null) {
+      _fetchTaskDetails();
+    }
+    
+    // If showSnooze is true, show snooze UI immediately
+    if (widget.showSnooze) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _snoozeAlarm();
+      });
+    }
   }
 
   @override
@@ -159,13 +170,13 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
   }
 
   // Format date string for display
-  String _formatDate(String? dateString) {
-    if (dateString == null) return 'No date';
+  String _formatDate(String? dateStr) {
+    if (dateStr == null) return 'No date';
     try {
-      final date = DateTime.parse(dateString);
+      final date = DateTime.parse(dateStr);
       return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     } catch (e) {
-      return dateString;
+      return dateStr; // Return original string if parsing fails
     }
   }
 
@@ -344,24 +355,16 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     // Get task details either from the widget parameters or fetched data
     final String taskTitle = widget.taskTitle ?? _taskDetails?['title'] ?? 'Task Alarm';
-    final String assigneeName = _taskDetails?['assignee_name'] ?? widget.assigneeName ?? 'Unknown';
-    
-    // Handle assigned_by with more care
-    String assignedBy = 'Unknown';
-    if (_taskDetails != null && _taskDetails!['assigned_by'] != null) {
-      assignedBy = _taskDetails!['assigned_by'];
-    } else if (widget.assignedBy != null && widget.assignedBy!.isNotEmpty) {
-      assignedBy = widget.assignedBy!;
-    }
-    
+    final String assigneeName = widget.assigneeName ?? _taskDetails?['assignee_name'] ?? 'Unknown';
+    final String assignedBy = widget.assignedBy ?? _taskDetails?['assigned_by'] ?? 'Unknown';
     final String dueDate = _formatDate(widget.dueDate ?? _taskDetails?['deadline']);
     
     // Debug logging to trace values
     print('🔔 [AlarmScreen] Building with values:');
     print('🔔 [AlarmScreen] taskTitle: $taskTitle');
     print('🔔 [AlarmScreen] assigneeName: $assigneeName');
-    print('🔔 [AlarmScreen] assignedBy: $assignedBy (widget value: ${widget.assignedBy})');
-    print('🔔 [AlarmScreen] dueDate: $dueDate (widget value: ${widget.dueDate})');
+    print('🔔 [AlarmScreen] assignedBy: $assignedBy');
+    print('🔔 [AlarmScreen] dueDate: $dueDate');
     
     // Use the app's accent color instead of theme color
     final Color themeColor = AppColors.accentCyan;
@@ -402,24 +405,12 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
                     ),
                     textAlign: TextAlign.center,
                   ),
+                  SizedBox(height: 20),
+                  _infoRow(Icons.person, 'Assigned to: $assigneeName'),
                   SizedBox(height: 10),
-                  Card(
-                    color: AppColors.cardBackground,
-                    margin: EdgeInsets.symmetric(vertical: 10),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _infoRow(Icons.person, 'Assigned to: $assigneeName'),
-                          SizedBox(height: 8),
-                          _infoRow(Icons.person_outline, 'Assigned by: $assignedBy'),
-                          SizedBox(height: 8),
-                          _infoRow(Icons.calendar_today, 'Due date: $dueDate'),
-                        ],
-                      ),
-                    ),
-                  ),
+                  _infoRow(Icons.person_outline, 'Assigned by: $assignedBy'),
+                  SizedBox(height: 10),
+                  _infoRow(Icons.calendar_today, 'Due date: $dueDate'),
                   SizedBox(height: 30),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,

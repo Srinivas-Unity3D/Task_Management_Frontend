@@ -162,7 +162,12 @@ class SendNotificationService {
           'android': {
             'priority': 'high',
             'notification': {
-              'channel_id': 'high_importance_channel', // Must match NotificationService
+              'channel_id': 'task_alarms', // Match the channel ID in AlarmService
+              'sound': 'alarm',
+              'priority': 'high',
+              'visibility': 'public',
+              'full_screen_intent': true,
+              'category': 'alarm',
             },
           },
           'apns': {
@@ -171,6 +176,7 @@ class SendNotificationService {
               'aps': {
                 'sound': 'default',
                 'badge': 1,
+                'category': 'ALARM',
               },
             },
           },

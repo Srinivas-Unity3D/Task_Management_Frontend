@@ -5,9 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
+import 'package:alarm/alarm.dart';
 import '../models/task.dart';
 import 'audio_service.dart';
 import 'dart:io';
+import 'package:just_audio/just_audio.dart';
+import 'package:get/get.dart';
 
 // Add SSL certificate handling
 class AlarmHttpOverrides extends HttpOverrides {
@@ -43,27 +46,71 @@ class AlarmService {
   
   // Initialize the service
   Future<void> initialize() async {
-    if (_isInitialized) return;
-    
-    print('⏰ [AlarmService] Initializing...');
-    
-    // Initialize audio service
-    await _audioService.initialize();
-    
-    // Initialize local notifications
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-        
-    const InitializationSettings initializationSettings =
-        InitializationSettings(android: initializationSettingsAndroid);
-        
-    await _notificationsPlugin.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse: _onNotificationTapped,
-    );
-    
-    _isInitialized = true;
-    print('⏰ [AlarmService] Initialized successfully');
+    try {
+      print('🔄 Initializing AlarmService...');
+      
+      // Initialize audio player
+      await _audioService.initialize();
+      print('✅ Audio service initialized');
+
+      // Initialize notifications plugin
+      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
+      await _notificationsPlugin.initialize(initSettings);
+      print('✅ Notifications plugin initialized');
+
+      // Create high priority notification channel for alarms
+      const androidChannel = AndroidNotificationChannel(
+        'task_alarms',
+        'Task Alarms',
+        description: 'High priority notifications for task alarms',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        enableLights: true,
+        showBadge: true,
+        sound: RawResourceAndroidNotificationSound('alarm'),
+        ledColor: Color(0xFF2196F3),
+      );
+
+      final androidPlugin = _notificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        await androidPlugin.createNotificationChannel(androidChannel);
+        print('✅ Alarm notification channel created');
+      }
+
+      // Request notification permissions
+      final settings = await _notificationsPlugin
+          .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+          ?.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+            critical: true,
+          );
+      print('📱 iOS notification permissions: $settings');
+
+      // Initialize audio player with alarm sound
+      await _audioService.setReleaseMode(ReleaseMode.loop);
+      await _audioService.setVolume(1.0);
+      await _audioService.setSource(AssetSource('sounds/alarm.mp3'));
+      print('✅ Audio player initialized with alarm sound');
+
+      _isInitialized = true;
+      print('✅ AlarmService initialized successfully');
+    } catch (e) {
+      print('❌ Error initializing AlarmService: $e');
+      print('❌ Stack trace: ${StackTrace.current}');
+    }
   }
   
   void _onNotificationTapped(NotificationResponse response) {
@@ -120,7 +167,7 @@ class AlarmService {
       final bool isImmediate = data['immediate_alarm'] == 'true';
       if (isImmediate) {
         print('⏰ [AlarmService] IMMEDIATE ALARM detected! Playing alarm immediately');
-        await _triggerAlarm(taskId, title, body);
+        await triggerAlarm(data);
         return;
       }
       
@@ -137,7 +184,7 @@ class AlarmService {
       }
       
       // Trigger the alarm
-      await _triggerAlarm(taskId, title, body);
+      await triggerAlarm(data);
     } catch (e, stackTrace) {
       print('❌ [AlarmService] Error handling alarm notification: $e');
       print('❌ [AlarmService] Stack trace: $stackTrace');
@@ -149,6 +196,10 @@ class AlarmService {
     print('⏰ [AlarmService] Stopping alarm for task: $taskId');
     
     try {
+      // Stop the alarm plugin's alarm
+      await Alarm.stop(taskId.hashCode);
+      print('⏰ [AlarmService] Alarm plugin alarm stopped');
+      
       // Stop any audio
       await _audioService.stopAlarmSound();
       print('⏰ [AlarmService] Alarm sound stopped successfully');
@@ -177,43 +228,88 @@ class AlarmService {
     await _acknowledgeAlarm(taskId);
   }
   
-  // Trigger the alarm
-  Future<void> _triggerAlarm(String taskId, String title, String body) async {
-    print('⏰ [AlarmService] Triggering alarm for task: $taskId');
-    
+  /// Trigger alarm from FCM notification data
+  Future<void> triggerAlarm(Map<String, dynamic> data) async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
     try {
-      if (!_isInitialized) {
-        print('🔄 [AlarmService] Service not initialized, initializing now...');
-        await initialize();
-      }
+      print('🔔 Triggering alarm...');
       
+      // Set alarm state
       _isAlarmActive = true;
-      _currentAlarmTaskId = taskId;
+      _currentAlarmTaskId = data['task_id']?.toString();
       
-      // Play alarm sound
-      print('⏰ [AlarmService] Playing alarm sound...');
+      // Play alarm sound with wake lock
       await _audioService.playAlarmSound();
       
-      // Vibrate the phone
-      print('⏰ [AlarmService] Starting vibration...');
-      _startVibrationPattern();
+      // Start vibration
+      _vibrate();
       
-      // Show notification
-      print('⏰ [AlarmService] Showing alarm notification...');
-      await _showAlarmNotification(taskId, title, body);
+      // Show high priority notification with full screen intent
+      final androidDetails = AndroidNotificationDetails(
+        'task_alarms',
+        'Task Alarms',
+        channelDescription: 'High priority notifications for task alarms',
+        importance: Importance.max,
+        priority: Priority.high,
+        sound: const RawResourceAndroidNotificationSound('alarm'),
+        fullScreenIntent: true,
+        category: AndroidNotificationCategory.alarm,
+        visibility: NotificationVisibility.public,
+        playSound: true,
+        enableVibration: true,
+        enableLights: true,
+        color: const Color(0xFF2196F3),
+        ledColor: const Color(0xFF2196F3),
+        ledOnMs: 1000,
+        ledOffMs: 500,
+        actions: [
+          const AndroidNotificationAction('stop', 'Stop Alarm'),
+        ],
+      );
+
+      final iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        sound: 'alarm.mp3',
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      );
+
+      final notificationDetails = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      await _notificationsPlugin.show(
+        _currentAlarmTaskId.hashCode,
+        data['title'] ?? 'Task Alarm',
+        data['body'] ?? 'Time to complete your task!',
+        notificationDetails,
+        payload: json.encode({
+          'type': 'task_alarm',
+          'task_id': _currentAlarmTaskId,
+        }),
+      );
       
-      print('✅ [AlarmService] Alarm triggered successfully');
+      print('✅ Alarm triggered successfully');
     } catch (e) {
-      print('❌ [AlarmService] Error triggering alarm: $e');
-      _isAlarmActive = false;
-      _currentAlarmTaskId = null;
+      print('❌ Error triggering alarm: $e');
+      // Try to recover
+      try {
+        await _audioService.initialize();
+        await _audioService.playAlarmSound();
+      } catch (e) {
+        print('❌ Error during recovery: $e');
+      }
     }
   }
   
-  void _startVibrationPattern() {
+  void _vibrate() {
     // Cancel any existing vibration
     _stopVibration();
-    
     // Start new vibration pattern
     _vibrationTimer = Timer.periodic(Duration(milliseconds: 1500), (timer) {
       HapticFeedback.heavyImpact();
@@ -221,34 +317,14 @@ class AlarmService {
         HapticFeedback.heavyImpact();
       });
     });
-    
-    print('⏰ [AlarmService] Vibration pattern started');
+    print('⏰ Vibration pattern started');
   }
   
   void _stopVibration() {
     if (_vibrationTimer != null) {
       _vibrationTimer!.cancel();
       _vibrationTimer = null;
-      print('⏰ [AlarmService] Vibration timer cancelled');
-    }
-    
-    // Try multiple approaches to stop vibration
-    try {
-      // Send a few light impacts to interrupt any ongoing vibration
-      HapticFeedback.lightImpact();
-      
-      // Add multiple small delays to intercept any pending vibrations
-      Future.delayed(Duration(milliseconds: 50), () {
-        HapticFeedback.lightImpact();
-      });
-      
-      Future.delayed(Duration(milliseconds: 100), () {
-        HapticFeedback.lightImpact();
-      });
-      
-      print('⏰ [AlarmService] Additional vibration stopping attempts made');
-    } catch (e) {
-      print('⏰ [AlarmService] Error during additional vibration stopping: $e');
+      print('⏰ Vibration timer cancelled');
     }
   }
   
@@ -392,98 +468,63 @@ class AlarmService {
     }
   }
 
-  /// Trigger alarm from FCM notification data
-  Future<void> triggerAlarm(Map<String, dynamic> data) async {
+  // Set an alarm using the alarm plugin
+  Future<void> setAlarm(DateTime dateTime, String taskId, String title, String body) async {
+    print('⏰ [AlarmService] Setting alarm for task: $taskId at ${dateTime.toString()}');
+    
     try {
-      print('⏰ AlarmService - Triggering alarm from FCM notification');
-      print('⏰ AlarmService - FCM data: $data');
+      final alarmSettings = AlarmSettings(
+        id: taskId.hashCode,
+        dateTime: dateTime,
+        assetAudioPath: 'assets/sounds/alarm.mp3',
+        loopAudio: true,
+        vibrate: true,
+        androidFullScreenIntent: true,
+        volumeSettings: VolumeSettings.fade(
+          volume: 0.8,
+          fadeDuration: Duration(seconds: 5),
+          volumeEnforced: true,
+        ),
+        notificationSettings: NotificationSettings(
+          title: title,
+          body: body,
+          stopButton: 'Stop',
+          icon: '@mipmap/ic_launcher',
+        ),
+      );
       
-      // Extract task info from notification data
-      String? taskId = data['task_id'];
-      String? taskTitle = data['title'];
-      String? alarmId = data['alarm_id'];
-      String? assigneeName = data['assignee_name'];
-      String? assignedBy = data['assigned_by'];
-      String? deadline = data['deadline'];
-      
-      if (taskId == null) {
-        print('❌ AlarmService - Invalid alarm data: missing task_id');
-        return;
-      }
-      
-      // If this alarm is already active, don't trigger it again
-      if (_isAlarmActive && _currentAlarmTaskId == taskId) {
-        print('⏰ AlarmService - This alarm is already active, not triggering again');
-        return;
-      }
-      
-      // Make sure service is initialized
-      if (!_isInitialized) {
-        print('⏰ AlarmService - Initializing service first...');
-        await initialize();
-      }
-      
-      print('⏰ AlarmService - Playing alarm sound for task: $taskTitle (ID: $taskId)');
-      
-      // Stop any previous alarm first
-      if (_isAlarmActive) {
-        print('⏰ AlarmService - Stopping previous alarm before starting new one');
-        await _audioService.stopAlarmSound();
-        _stopVibration();
-      }
-      
-      // Play alarm sound persistently
-      try {
-        print('⏰ AlarmService - About to play alarm sound...');
-        await _audioService.playAlarmSound();
-        print('⏰ AlarmService - Alarm sound play command sent successfully');
-      } catch (e) {
-        print('❌ AlarmService - ERROR PLAYING ALARM SOUND: $e');
-      }
-      
-      // Show high priority notification
-      try {
-        print('⏰ AlarmService - Showing alarm notification');
-        await _showAlarmNotification(
-          taskId,
-          taskTitle ?? 'Task reminder',
-          'Time to check your task',
-        );
-        print('⏰ AlarmService - Notification shown successfully');
-      } catch (e) {
-        print('❌ AlarmService - ERROR SHOWING NOTIFICATION: $e');
-      }
-      
-      // Start vibration
-      try {
-        print('⏰ AlarmService - Starting vibration');
-        _startVibrationPattern();
-      } catch (e) {
-        print('❌ AlarmService - ERROR STARTING VIBRATION: $e');
-      }
-      
-      // Add to active alarms
-      _currentAlarmTaskId = taskId;
-      _isAlarmActive = true;
-      
-      // Trigger callback if registered
-      if (_onAlarmTriggeredCallback != null) {
-        print('⏰ AlarmService - Calling onAlarmTriggered callback');
-        _onAlarmTriggeredCallback!({
-          'task_id': taskId,
-          'alarm_id': alarmId,
-          'title': taskTitle,
-          'assignee_name': assigneeName,
-          'assigned_by': assignedBy,
-          'deadline': deadline, 
-        });
-      } else {
-        print('⚠️ AlarmService - No onAlarmTriggered callback registered');
-      }
-      
-      print('⏰ AlarmService - Alarm triggered successfully');
+      await Alarm.set(alarmSettings: alarmSettings);
+      print('✅ [AlarmService] Alarm set successfully for task: $taskId');
     } catch (e) {
-      print('❌ AlarmService - Error triggering alarm from FCM: $e');
+      print('❌ [AlarmService] Error setting alarm: $e');
+      rethrow;
     }
+  }
+
+  // Cancel an alarm
+  Future<void> cancelAlarm(String taskId) async {
+    print('⏰ [AlarmService] Canceling alarm for task: $taskId');
+    try {
+      await Alarm.stop(taskId.hashCode);
+      print('✅ [AlarmService] Alarm canceled successfully for task: $taskId');
+    } catch (e) {
+      print('❌ [AlarmService] Error canceling alarm: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> showAlarmNotification({
+    required String title,
+    required String body,
+    required String payload,
+    required NotificationDetails notificationDetails,
+  }) async {
+    await _notificationsPlugin.show(
+      0,
+      title,
+      body,
+      notificationDetails,
+      payload: payload,
+    );
   }
 } 
