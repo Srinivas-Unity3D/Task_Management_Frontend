@@ -310,9 +310,9 @@ class NotificationFirebaseService {
         ledColor: const Color(0xFF2196F3),
         ledOnMs: 1000,
         ledOffMs: 500,
-        actions: [
-          const AndroidNotificationAction('stop', 'Stop Alarm'),
-        ],
+        // actions: [
+        //   const AndroidNotificationAction('stop', 'Stop Alarm'),
+        // ],
       );
 
       const iosDetails = DarwinNotificationDetails(
@@ -447,7 +447,7 @@ Deadline: $deadline
   void _handleNotificationTap(String? payload) {
     try {
       if (payload == null) {
-        Get.to(() => const NotificationScreen());
+        // Get.to(() => const NotificationScreen());
         return;
       }
 
@@ -476,12 +476,12 @@ Deadline: $deadline
             showSnooze: true,
           ));
           return;
-        default:
-          Get.to(() => const NotificationScreen());
+        // default:
+          // Get.to(() => const NotificationScreen());
       }
     } catch (e) {
       debugPrint('❌ Error handling notification tap: $e');
-      Get.to(() => const NotificationScreen());
+      // Get.to(() => const NotificationScreen());
     }
   }
 
