@@ -270,6 +270,8 @@ class NotificationFirebaseService {
 
   /// Displays a local notification for the given FCM message.
   Future<void> _showLocalNotification(RemoteMessage message) async {
+    print("📲 _showLocalNotification from notification_firebase_service called");
+
     final notification = message.notification;
     if (notification == null) return;
 
@@ -277,9 +279,9 @@ class NotificationFirebaseService {
       const channelId = 'task_alarms';
       const channel = AndroidNotificationChannel(
         channelId,
-        'Task Alarms',
-        description: 'Used for important notifications',
-        importance: Importance.high,
+        'High Importance Notifications',
+        description: 'Used for critical alerts',
+        importance: Importance.max,
         playSound: true,
         sound: RawResourceAndroidNotificationSound('alarm'),
         enableVibration: true,
@@ -295,8 +297,8 @@ class NotificationFirebaseService {
         channel.id,
         channel.name,
         channelDescription: channel.description,
-        importance: Importance.high,
-        priority: Priority.high,
+        importance: Importance.max,
+        priority: Priority.max,
         playSound: true,
         sound: const RawResourceAndroidNotificationSound('alarm'),
         enableVibration: true,

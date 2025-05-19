@@ -504,16 +504,16 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
       key: _scaffoldKey,
       backgroundColor: AppColors.background,
       drawer: SidePanel(
-        onLogout: () async {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.clear();
-          if (mounted) {
-            Navigator.of(context).pushNamedAndRemoveUntil(
-              '/',
-              (route) => false,
-            );
-          }
-        },
+        // onLogout: () async {
+        //   final prefs = await SharedPreferences.getInstance();
+        //   await prefs.clear();
+        //   if (mounted) {
+        //     Navigator.of(context).pushNamedAndRemoveUntil(
+        //       '/',
+        //       (route) => false,
+        //     );
+        //   }
+        // },
         onClose: () => Navigator.pop(context),
         user: User(
           userId: _currentUserId ?? '',

@@ -18,10 +18,10 @@ class DevHttpOverrides extends HttpOverrides {
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
-  
+
   /// Get the singleton instance of SocketService
   static SocketService get instance => _instance;
-  
+
   IO.Socket? _socket;
   final ValueNotifier<bool> connected = ValueNotifier<bool>(false);
   String? _currentUsername;
@@ -54,10 +54,10 @@ class SocketService {
       _serverUrl = serverUrl;
     }
     print('🔌 Converted socket URL: $_serverUrl');
-    
+
     // Set up SSL certificate handling for both development and release
     HttpOverrides.global = DevHttpOverrides();
-    
+
     await _notificationService.initialize();
     _startTokenRefreshTimer();
   }
@@ -91,7 +91,7 @@ class SocketService {
     print('🔌 [Socket] Connecting socket for user: $username');
     print('🔌 [Socket] Current connection status: ${_socket?.connected ?? false}');
     print('🔌 [Socket] Server URL: $_serverUrl');
-    
+
     // Check if already connected with same username
     if (_socket != null && _socket!.connected && _currentUsername == username) {
       final authService = AuthService();
@@ -107,14 +107,14 @@ class SocketService {
         disconnect();
       }
     }
-    
+
     // Disconnect existing socket if any
     disconnect();
 
     _currentUsername = username;
     _isRegistered = false;
     _isConnecting = true;
-    
+
     if (_serverUrl == null) {
       print('❌ [Socket] Error: Server URL not initialized');
       _isConnecting = false;
@@ -126,7 +126,7 @@ class SocketService {
     try {
       final authService = AuthService();
       token = await authService.getToken();
-      
+
       // If token is null or expired, try to refresh it
       if (token == null || !(await authService.isLoggedIn())) {
         print('🔑 [Socket] Token invalid or expired, attempting refresh...');
@@ -134,13 +134,13 @@ class SocketService {
           token = await authService.getToken();
         }
       }
-      
+
       if (token == null) {
         print('❌ [Socket] No valid token available after refresh attempt');
         _isConnecting = false;
         return;
       }
-      
+
       print('🔑 [Socket] Using token: ${token.substring(0, min(10, token.length))}...');
     } catch (e) {
       print('❌ [Socket] Error getting auth token: $e');
@@ -158,7 +158,7 @@ class SocketService {
     try {
       print('🔌 [Socket] Creating socket connection to: $_serverUrl');
       print('🔌 [Socket] Connection options: transports=websocket, auth enabled');
-      
+
       final options = IO.OptionBuilder()
         .setTransports(['websocket'])
         .disableAutoConnect()
@@ -177,14 +177,14 @@ class SocketService {
         .build();
 
       print('🔌 [Socket] Options configured: ${options.toString()}');
-      
+
       _socket = IO.io(_serverUrl!, options);
 
       print('🔌 [Socket] Socket instance created, setting up listeners...');
       _setupSocketListeners();
       print('🔌 [Socket] Attempting to connect...');
       _socket!.connect();
-      
+
       // Verify connection after a short delay
       Future.delayed(Duration(seconds: 2), () {
         final isConnected = _socket?.connected ?? false;
@@ -192,7 +192,7 @@ class SocketService {
         print('🔌 [Socket] Socket ID: ${_socket?.id}');
         print('🔌 [Socket] Is registered: $_isRegistered');
         print('🔌 [Socket] Socket engine state: ${_socket?.io.engine?.readyState}');
-        
+
         if (isConnected) {
           print('✅ [Socket] Connection verified, registering user...');
           _registerUser();
@@ -200,7 +200,7 @@ class SocketService {
           print('🔄 [Socket] Connection failed, attempting to reconnect...');
           // Try a second approach before giving up
           _socket!.connect();
-          
+
           // Check again after a short delay
           Future.delayed(Duration(seconds: 2), () {
             final secondAttemptConnected = _socket?.connected ?? false;
@@ -234,7 +234,7 @@ class SocketService {
     print('🔌 [Socket] Current connection status: ${_socket?.connected ?? false}');
     print('🔌 [Socket] Current task notification listeners: ${_taskNotificationListeners.length}');
     print('🔌 [Socket] Current dashboard update listeners: ${_dashboardUpdateListeners.length}');
-    
+
     if (_socket == null) {
       print('❌ [Socket] Cannot setup listeners: socket is null');
       return;
@@ -366,13 +366,13 @@ class SocketService {
       print('🔌 Removing all socket listeners');
       print('🔌 Current task notification listeners before removal: ${_taskNotificationListeners.length}');
       print('🔌 Current dashboard update listeners before removal: ${_dashboardUpdateListeners.length}');
-      
+
       // Only clear socket event listeners, not our callback listeners
       _socket!.clearListeners();
-      
+
       // Re-setup socket listeners to maintain connection
       _setupSocketListeners();
-      
+
       print('🔌 Task notification listeners after removal: ${_taskNotificationListeners.length}');
       print('🔌 Dashboard update listeners after removal: ${_dashboardUpdateListeners.length}');
     }
@@ -394,7 +394,7 @@ class SocketService {
   void listenToTaskNotifications(Function(dynamic) onTaskNotification) {
     print('📨 Adding task notification listener');
     print('📨 Current listeners before adding: ${_taskNotificationListeners.length}');
-    
+
     if (!_taskNotificationListeners.contains(onTaskNotification)) {
       _taskNotificationListeners.add(onTaskNotification);
       print('📨 Current number of task notification listeners: ${_taskNotificationListeners.length}');
@@ -406,7 +406,7 @@ class SocketService {
   void listenToDashboardUpdates(Function(dynamic) onDashboardUpdate) {
     print('📨 Adding dashboard update listener');
     print('📨 Current listeners before adding: ${_dashboardUpdateListeners.length}');
-    
+
     if (!_dashboardUpdateListeners.contains(onDashboardUpdate)) {
       _dashboardUpdateListeners.add(onDashboardUpdate);
       print('📨 Current number of dashboard update listeners: ${_dashboardUpdateListeners.length}');
@@ -435,13 +435,13 @@ class SocketService {
     if (_socket != null && !_socket!.connected && _currentUsername != null && !_isConnecting) {
       print('🔌 Manually attempting to reconnect...');
       _isConnecting = true; // Set flag to prevent concurrent reconnection attempts
-      
+
       try {
         print('🔌 [Socket] Current connection status: ${_socket?.connected ?? false}');
         print('🔌 [Socket] Current username: $_currentUsername');
-        
+
         // Check if the socket engine is completely closed
-        if (_socket!.connected == false && _socket!.io.engine != null && 
+        if (_socket!.connected == false && _socket!.io.engine != null &&
             (_socket!.io.engine!.readyState != "open" && _socket!.io.engine!.readyState != "opening")) {
           print('🔌 Socket engine not open, creating new connection');
           disconnect();
@@ -449,7 +449,7 @@ class SocketService {
         } else {
           print('🔌 Socket engine still potentially viable, trying internal reconnect');
           _socket!.connect(); // Try to use socket.io's reconnect mechanism
-          
+
           // Check reconnection status after a delay
           Future.delayed(Duration(seconds: 2), () {
             if (!(_socket?.connected ?? false)) {
@@ -464,7 +464,7 @@ class SocketService {
         print('❌ Error during reconnection: $e');
         print('❌ Error stack trace: ${StackTrace.current}');
         _isConnecting = false;
-        
+
         // Safe fallback - create a new connection after a delay
         Future.delayed(Duration(seconds: 3), () {
           disconnect();
@@ -475,7 +475,7 @@ class SocketService {
       }
     } else {
       print('🔌 Cannot reconnect: socket=${_socket != null}, connected=${_socket?.connected}, username=$_currentUsername, isConnecting=$_isConnecting');
-      
+
       // Reset connecting flag if it's stuck
       if (_isConnecting && (_socket == null || _currentUsername == null)) {
         _isConnecting = false;
@@ -493,7 +493,7 @@ class SocketService {
   void _startHeartbeat() {
     // Stop any existing heartbeat
     _stopHeartbeat();
-    
+
     print('💓 [Socket] Starting heartbeat mechanism');
     // Send heartbeat every 30 seconds
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
@@ -515,7 +515,7 @@ class SocketService {
       }
     });
   }
-  
+
   // Stop sending heartbeats
   void _stopHeartbeat() {
     if (_heartbeatTimer != null) {
@@ -557,4 +557,5 @@ class SocketService {
       print('❌ [Socket] Error event received: $data');
     }
   }
-} 
+}
+

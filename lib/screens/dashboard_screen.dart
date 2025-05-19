@@ -4,8 +4,6 @@ import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/notification_firebase_service.dart';
-import '../widgets/dashboard/profile_section.dart';
-import '../widgets/dashboard/navigation_menu.dart';
 import '../widgets/dashboard/stats_card.dart';
 import '../models/user.dart';
 import '../models/task.dart';
@@ -21,15 +19,10 @@ import '../screens/assign_tasks_screen.dart';
 import '../screens/my_tasks_screen.dart';
 import '../screens/notifications_screen.dart';
 import '../services/socket_service.dart';
-import '../widgets/common_notification_icon.dart';
 import '../services/audio_service.dart';
 import '../services/alarm_service.dart';
 import '../widgets/common_app_bar.dart';
 import '../services/notification_service.dart';
-import 'dart:convert';
-import 'dart:io';
-import 'package:http/http.dart' as http;
-import 'package:audioplayers/audioplayers.dart';
 import 'dart:async';
 
 class DashboardScreen extends StatefulWidget {
@@ -126,7 +119,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         print('❌ [Dashboard] Widget is not mounted, skipping notification');
       }
     });
-    
+
     print('🔄 [Dashboard] Adding dashboard update listener');
     _socketService.listenToDashboardUpdates((data) {
       print('📊 [Dashboard] Raw dashboard update received in listener callback: $data');
@@ -157,7 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       print('🔄 Dashboard - Initializing services...');
       await _audioService.initialize();
       print('🔄 Dashboard - Audio service initialized');
-      
+
       // Initialize alarm service
       await _alarmService.initialize();
       print('🔄 Dashboard - Alarm service initialized');
@@ -197,8 +190,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _socketService.connect(username);
 
         // Verify socket connection
-        print('🔌 Dashboard - Socket connected: ${_socketService.isConnected()}');
-        
+        // print('🔌 Dashboard - Socket connected: ${_socketService.isConnected()}');
+
         // Setup socket listeners
         print('🔄 Dashboard - Setting up socket listeners');
         _setupSocketListeners();
@@ -206,7 +199,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Verify listeners are set up
         print('📨 Dashboard - Verifying socket listeners...');
         Future.delayed(Duration(seconds: 2), () {
-          print('🔌 Dashboard - Socket still connected: ${_socketService.isConnected()}');
+          // print('🔌 Dashboard - Socket still connected: ${_socketService.isConnected()}');
         });
       } else {
         print('❌ Dashboard - No username found in SharedPreferences');
@@ -224,24 +217,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     try {
-      print('📊 [Dashboard] Processing task notification: $data');
-      print('📊 [Dashboard] Current user: ${_user?.username}');
-      print('📊 [Dashboard] Notification sender: ${data['task']?['updated_by'] ?? data['task']?['assigned_by']}');
-      print('📊 [Dashboard] Task data: ${data['task']}');
+      // print('📊 [Dashboard] Processing task notification: $data');
+      // print('📊 [Dashboard] Current user: ${_user?.username}');
+      // print('📊 [Dashboard] Notification sender: ${data['task']?['updated_by'] ?? data['task']?['assigned_by']}');
+      // print('📊 [Dashboard] Task data: ${data['task']}');
 
       // Only play sound and vibrate if the notification is from another user
       final sender = data['task']?['updated_by'] ?? data['task']?['assigned_by'];
       if (sender != _user?.username) {
-        print('🔔 [Dashboard] Playing notification sound...');
+        // print('🔔 [Dashboard] Playing notification sound...');
         _playNotificationSound();
-        
+
         // Show notification in notification bar
-        print('🔔 [Dashboard] Showing system notification...');
-        _notificationService.showNotification(
-          title: data['type'] == 'task_created' ? 'New Task Assigned' : 'Task Updated',
-          body: data['task']?['title'] ?? 'You have a new task update',
-          payload: json.encode(data),
-        );
+        // print('🔔 [Dashboard] Showing system notification...');
+        // _notificationService.showNotification(
+        //   title: data['type'] == 'task_created' ? 'New Task Assigned' : 'Task Updated',
+        //   body: data['task']?['title'] ?? 'You have a new task update',
+        //   payload: json.encode(data),
+        // );
       } else {
         print('👤 [Dashboard] Skipping notification - from current user');
       }
@@ -261,6 +254,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       print('❌ [Dashboard] Error stack trace: ${StackTrace.current}');
     }
   }
+
+
 
   void _handleDashboardUpdate(dynamic data) {
     print('📊 [Dashboard] Processing dashboard update: $data');
@@ -416,6 +411,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+
   void _showSidePanel() {
     if (_user == null) return; // Don't show panel if user is not initialized
 
@@ -453,7 +449,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   end: Offset.zero,
                 ).animate(curvedAnimation),
                 child: SidePanel(
-                  onLogout: _handleLogout,
+                  // onLogout: _handleLogout,
                   onClose: () => Navigator.pop(context),
                   user: _user!,
                   currentRoute: '/',
@@ -465,6 +461,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       },
     );
   }
+
+
 
   void _switchView(ViewState newView) {
     switch (newView) {
@@ -519,7 +517,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   builder: (context) => const NotificationScreen(),
                 ),
               );
-              
+
               if (result == true && mounted) {
                 _notificationService.setUnreadState(false);
                 setState(() {
@@ -937,3 +935,4 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 }
+

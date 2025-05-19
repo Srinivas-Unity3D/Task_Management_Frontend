@@ -28,8 +28,11 @@ class MyHttpOverrides extends HttpOverrides {
 }
 
 class ApiService {
-  static const String baseUrl = 'https://134.209.149.12';
+  static const String url = '134.209.149.12';
+  // static const String url = '10.0.2.2:5001';
+  static const String baseUrl = 'https://$url';
   // static const String baseUrl = 'http://10.20.0.248:5000';
+
   late Dio _dio;
   String? _accessToken;
   String? _refreshToken;
@@ -1498,4 +1501,32 @@ class ApiService {
       return null;
     }
   }
+
+  //snooze notification api
+  Future<void> sendSnoozeAlert({required String taskId}) async {
+    final url = Uri.parse('$baseUrl/notifications/send_snooze_alert');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'task_id': taskId}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success']) {
+          print('✅ Snooze notification sent successfully.');
+        } else {
+          print('⚠️ Failed to send snooze notification: ${data['message']}');
+        }
+      } else {
+        print('❌ Server returned error: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error sending snooze alert: $e');
+    }
+  }
+
+
 }

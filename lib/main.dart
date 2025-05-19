@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:get/get.dart';
+import 'package:taskmanagement/services/api_service.dart';
 import 'package:taskmanagement/services/notification_firebase_service.dart';
 import 'dart:io';
 import 'services/socket_service.dart';
@@ -233,6 +234,22 @@ void main() async {
       );
       print('✅ FCM foreground notification options set');
 
+      // Set up foreground message handler
+      // FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      //   print('📱 Received foreground message');
+      //   print('📱 Message data: ${message.data}');
+      //
+      //   if (message.notification != null) {
+      //     print('📱 Message notification: ${message.notification?.title}');
+      //     await notificationService.handleNewNotification();
+      //   }
+      //
+      //   if (message.data['type'] == 'task_alarm') {
+      //     print('⏰ Received task alarm notification');
+      //     await alarmService.triggerAlarm(message.data);
+      //   }
+      // });
+
       // Set up background message handler
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
@@ -250,7 +267,8 @@ void main() async {
     try {
       print('🔌 Initializing socket service...');
       const serverUrl = 'https://134.209.149.12';
-      const wsUrl = 'wss://134.209.149.12';
+      const wsUrl = 'wss://${ApiService.url}';
+      // const wsUrl = 'wss://127.0.0.1:5001';
       socketService.init(wsUrl);
 
       final username = prefs.getString('username');
@@ -389,3 +407,4 @@ class _MyAppState extends State<MyApp> {
     });
   }
 }
+

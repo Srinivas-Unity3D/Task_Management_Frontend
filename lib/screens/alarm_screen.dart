@@ -201,11 +201,17 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
         taskId: widget.taskId!,
         alarmId: widget.alarmId!,
         taskTitle: widget.taskTitle ?? 'Task Alarm',
-        onSnoozeComplete: () {
+        onSnoozeComplete: () async {
           // Close the alarm screen after successful snooze
           if (mounted) {
             // Final attempt to ensure vibration is stopped
             _stopVibration();
+
+            // 👇 Send push notification to the assigned user
+            await _apiService.sendSnoozeAlert(
+                taskId: widget.taskId!
+            );
+
             Navigator.of(context).pop();
           }
         }
