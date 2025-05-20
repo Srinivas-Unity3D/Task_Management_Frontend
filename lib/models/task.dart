@@ -79,6 +79,10 @@ class Task {
       }
     }
 
+    if (json['assigned_by'] == null || json['assigned_by'].toString().isEmpty) {
+      throw FormatException('Task must have an assigner');
+    }
+
     return Task(
       taskId: json['task_id'] ?? '',
       title: json['title'] ?? '',
@@ -86,7 +90,7 @@ class Task {
       deadline: DateTime.parse(json['deadline'] ?? DateTime.now().toIso8601String()),
       priority: _parsePriority(json['priority'] ?? 'medium'),
       status: _parseStatus(json['status'] ?? 'pending'),
-      assignedBy: json['assigned_by'] ?? '',
+      assignedBy: json['assigned_by'],
       assignedByRole: json['assigned_by_role'] ?? '',
       assignedTo: json['assigned_to'] ?? '',
       completedAt: json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,

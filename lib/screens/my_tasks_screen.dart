@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
 
 import '../models/task.dart';
 import '../models/user.dart';
@@ -498,6 +501,93 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     );
   }
 
+  Future<void> _downloadTasks() async {
+    try {
+      setState(() => _isLoading = true);  // Show loading indicator
+      
+      // Get the current tasks that are displayed
+      if (_filteredTasks.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No tasks available to download'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Create CSV content from filtered tasks
+      String csvData = 'Title,Description,Deadline,Priority,Status\n';
+      for (var task in _filteredTasks) {
+        // Escape commas and quotes in text fields
+        String title = task.title.replaceAll('"', '""');
+        String description = task.description.replaceAll('"', '""');
+        String deadline = task.deadline.toString().split(' ')[0]; // Get just the date
+        String priority = task.priority.toString().split('.').last;
+        String status = task.status.toString().split('.').last;
+        
+        csvData += '"$title","$description","$deadline","$priority","$status"\n';
+      }
+
+      // Get the download directory
+      Directory? directory;
+      if (Platform.isAndroid) {
+        // Get the downloads directory on Android
+        directory = Directory('/storage/emulated/0/Download');
+      } else {
+        // For iOS, we'll use the documents directory
+        directory = await getApplicationDocumentsDirectory();
+      }
+
+      // Create the file
+      String fileName = 'tasks_${DateTime.now().millisecondsSinceEpoch}.csv';
+      final File file = File('${directory.path}/$fileName');
+      await file.writeAsString(csvData);
+
+      // Show success message with file location
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Tasks downloaded to: ${file.path}'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'OPEN',
+              textColor: Colors.white,
+              onPressed: () async {
+                // Open the file
+                try {
+                  await OpenFile.open(file.path);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Could not open file: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error downloading tasks: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);  // Hide loading indicator
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -580,9 +670,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.download, color: AppColors.accentCyan),
-                    onPressed: () {
-                      // TODO: Implement download functionality
-                    },
+                    onPressed: _downloadTasks,
+                    tooltip: 'Download Tasks',
                   ),
                 ),
               ],
