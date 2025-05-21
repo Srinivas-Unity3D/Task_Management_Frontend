@@ -296,7 +296,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // Needed for logout logic
+import '../../screens/assign_tasks_screen.dart';
+import '../../screens/dashboard_screen.dart';
+import '../../screens/my_tasks_screen.dart';
 import '../../screens/sign_in_screen.dart';
+import '../../services/auth_service.dart';
 import '../../theme/colors.dart';
 import '../../models/user.dart';
 
@@ -304,8 +308,9 @@ class SidePanel extends StatelessWidget {
   final VoidCallback onClose;
   final User user;
   final String currentRoute;
+  final _authService = AuthService();
 
-  const SidePanel({
+  SidePanel({
     Key? key,
     required this.onClose,
     required this.user,
@@ -330,6 +335,60 @@ class SidePanel extends StatelessWidget {
           (route) => false,
     );
   }
+
+  // Future<void> _navigateToAssignTasks(BuildContext context) async {
+  //   print('🔄 [SidePanel] Initiating navigation to Assign Tasks');
+  //   try {
+  //     // Verify authentication
+  //     final token = await _authService.getToken();
+  //     if (token == null) {
+  //       print('⚠️ [SidePanel] No valid token, redirecting to SignInScreen');
+  //       Navigator.of(context).pushReplacementNamed('/');
+  //       return;
+  //     }
+  //
+  //     // Increase delay to ensure SharedPreferences commits
+  //     await Future.delayed(const Duration(milliseconds: 200));
+  //     print('🔄 [SidePanel] Navigating to /assign-tasks after delay');
+  //
+  //     // Use push instead of pushNamed for reliability
+  //     Navigator.of(context).push(
+  //       MaterialPageRoute(builder: (context) => const AssignTasksScreen()),
+  //     );
+  //     // Alternatively, keep pushNamed with error handling
+  //     // Navigator.of(context).pushNamed('/assign-tasks');
+  //     print('✅ [SidePanel] Navigation to AssignTasksScreen triggered');
+  //   } catch (e) {
+  //     print('❌ [SidePanel] Navigation error: $e');
+  //   }
+  // }
+  //
+  // Future<void> _navigateToMyTasks(BuildContext context) async {
+  //   print('🔄 [SidePanel] Initiating navigation to My Tasks');
+  //   try {
+  //     // Verify authentication
+  //     final token = await _authService.getToken();
+  //     if (token == null) {
+  //       print('⚠️ [SidePanel] No valid token, redirecting to SignInScreen');
+  //       Navigator.of(context).pushReplacementNamed('/');
+  //       return;
+  //     }
+  //
+  //     // Delay to ensure SharedPreferences commits
+  //     await Future.delayed(const Duration(milliseconds: 200));
+  //     print('🔄 [SidePanel] Navigating to /my-tasks after delay');
+  //
+  //     // Use push for reliability
+  //     Navigator.of(context).push(
+  //       MaterialPageRoute(builder: (context) => const MyTasksScreen()),
+  //     );
+  //     // Alternative: pushNamed
+  //     // Navigator.of(context).pushNamed('/my-tasks');
+  //     print('✅ [SidePanel] Navigation to MyTasksScreen triggered');
+  //   } catch (e) {
+  //     print('❌ [SidePanel] Navigation error: $e');
+  //   }
+  // }
 
   Future<void> _showLogoutConfirmation(BuildContext context) async {
     final bool? shouldLogout = await showDialog<bool>(
@@ -558,7 +617,9 @@ class SidePanel extends StatelessWidget {
                 onTap: () {
                   Navigator.pop(context);
                   if (currentRoute != '/') {
-                    Navigator.pushReplacementNamed(context, '/');
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const DashboardScreen()),
+                    );
                   }
                 },
               ),
@@ -566,10 +627,13 @@ class SidePanel extends StatelessWidget {
                 icon: Icons.task_outlined,
                 label: 'My Tasks',
                 route: '/my-tasks',
+                // onTap: () => _navigateToMyTasks(context),
                 onTap: () {
                   Navigator.pop(context);
                   if (currentRoute != '/my-tasks') {
-                    Navigator.pushNamed(context, '/my-tasks');
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const MyTasksScreen()),
+                    );
                   }
                 },
               ),
@@ -577,10 +641,13 @@ class SidePanel extends StatelessWidget {
                 icon: Icons.assignment_ind_outlined,
                 label: 'Assign Tasks',
                 route: '/assign-tasks',
+                // onTap: () => _navigateToAssignTasks(context)
                 onTap: () {
                   Navigator.pop(context);
                   if (currentRoute != '/assign-tasks') {
-                    Navigator.pushNamed(context, '/assign-tasks');
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const AssignTasksScreen()),
+                    );
                   }
                 },
               ),
