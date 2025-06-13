@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task_assignment.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../services/notification_firebase_service.dart';
 import '../services/notification_service.dart';
 import '../services/socket_service.dart';
 import '../theme/colors.dart';
@@ -22,7 +23,7 @@ class AssignTasksScreen extends StatefulWidget {
 class _AssignTasksScreenState extends State<AssignTasksScreen> {
   final _apiService = ApiService();
   final _socketService = SocketService.instance;
-  final _notificationService = NotificationService();
+  final _notificationService = NotificationFirebaseService();
   List<TaskAssignment> _assignments = [];
   List<TaskAssignment> _filteredAssignments = [];
   bool _isLoading = true;

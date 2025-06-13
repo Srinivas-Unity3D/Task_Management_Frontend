@@ -1,14 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
 
 import '../models/task.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../services/notification_firebase_service.dart';
+import '../services/notification_service.dart';
+import '../services/audio_service.dart';
 import '../theme/colors.dart';
 import '../widgets/common_app_bar.dart';
 import '../widgets/dashboard/side_panel.dart';
 import '../widgets/filter_panel.dart';
 import './create_task_screen.dart';
+import '../services/socket_service.dart';
+import './notifications_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
   const MyTasksScreen({Key? key}) : super(key: key);
@@ -19,24 +28,119 @@ class MyTasksScreen extends StatefulWidget {
 
 class _MyTasksScreenState extends State<MyTasksScreen> {
   final ApiService _apiService = ApiService();
+  final SocketService _socketService = SocketService();
+  final NotificationFirebaseService _notificationService = NotificationFirebaseService();
+  // final AudioService _audioService = AudioService();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Task> _tasks = [];
   List<Task> _filteredTasks = [];
   bool _isLoading = true;
-  bool _hasUnreadNotifications = false;
   String? _currentUserId;
   String? _currentRole;
   String? _currentUsername;
   OverlayEntry? _filterOverlay;
+  bool _hasUnreadNotifications = false;
 
   @override
   void initState() {
     super.initState();
+    print('📋 MyTasksScreen - Initializing...');
     _loadUserAndTasks();
+    _setupSocketListeners();
+    _checkUnreadNotifications();
+  }
+
+  Future<void> _checkUnreadNotifications() async {
+    try {
+      final notifications = await _notificationService.getNotifications();
+      final hasUnread = notifications.any((n) => !n.isCompleted);
+      _notificationService.setUnreadState(hasUnread);
+      if (mounted) {
+        setState(() {
+          _hasUnreadNotifications = hasUnread;
+        });
+      }
+    } catch (e) {
+      print('❌ [MyTasks] Error checking unread notifications: $e');
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _checkUnreadNotifications();
+  }
+
+  void _setupSocketListeners() {
+    print('📋 MyTasksScreen - Setting up socket listeners');
+    // Remove any existing listeners
+    // _socketService.removeTaskNotificationListener(_handleTaskNotification);
+    _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
+
+    // Add new listeners
+    // _socketService.listenToTaskNotifications(_handleTaskNotification);
+    _socketService.listenToDashboardUpdates(_handleDashboardUpdate);
+    print('📋 MyTasksScreen - Socket listeners setup complete');
+  }
+
+  // void _handleTaskNotification(dynamic data) {
+  //   if (!mounted) {
+  //     print('❌ [MyTasks] Widget not mounted, skipping notification');
+  //     return;
+  //   }
+  //
+  //   try {
+  //     print('📋 [MyTasks] Processing task notification: $data');
+  //     print('📋 [MyTasks] Current user: $_currentUsername');
+  //     print('📋 [MyTasks] Notification sender: ${data['task']?['updated_by'] ?? data['task']?['assigned_by']}');
+  //     print('📋 [MyTasks] Task data: ${data['task']}');
+  //
+  //     // Only play sound and vibrate if the notification is from another user
+  //     final sender = data['task']?['updated_by'] ?? data['task']?['assigned_by'];
+  //     if (sender != _currentUsername) {
+  //       print('🔔 [MyTasks] Playing notification sound...');
+  //       // _audioService.playNotificationSound();
+  //
+  //       // Show notification in notification bar
+  //       print('🔔 [MyTasks] Showing system notification...');
+  //       _notificationService.showNotification(
+  //         title: data['type'] == 'task_created' ? 'New Task Assigned' : 'Task Updated',
+  //         body: data['task']?['title'] ?? 'You have a new task update',
+  //         payload: json.encode(data),
+  //       );
+  //     } else {
+  //       print('👤 [MyTasks] Skipping notification - from current user');
+  //     }
+  //
+  //     // Update task list and show notification badge
+  //     print('🔄 [MyTasks] Updating task list and badge...');
+  //     _notificationService.setUnreadState(true);
+  //     if (mounted) {
+  //       setState(() {
+  //         _hasUnreadNotifications = true;
+  //       });
+  //     }
+  //     _loadTasks();
+  //     print('✅ [MyTasks] Notification handling complete');
+  //   } catch (e) {
+  //     print('❌ [MyTasks] Error handling notification: $e');
+  //     print('❌ [MyTasks] Error stack trace: ${StackTrace.current}');
+  //   }
+  // }
+
+  void _handleDashboardUpdate(dynamic data) {
+    if (mounted) {
+      print('📋 MyTasksScreen - Received dashboard update');
+      // Refresh tasks list
+      _loadTasks();
+    }
   }
 
   @override
   void dispose() {
+    print('📋 MyTasksScreen - Disposing...');
+    // _socketService.removeTaskNotificationListener(_handleTaskNotification);
+    _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
     _removeFilterPanel();
     super.dispose();
   }
@@ -207,20 +311,21 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     }
   }
 
-  Widget _buildTaskCard(Task task) {
-    Color _getStatusColor(String status) {
-      switch (status.toLowerCase()) {
-        case 'pending':
-          return AppColors.pending;
-        case 'in_progress':
-          return AppColors.inProgress;
-        case 'completed':
-          return AppColors.completed;
-        default:
-          return AppColors.textGrey;
-      }
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return AppColors.pending;
+      case 'in_progress':
+      case 'inprogress':
+        return AppColors.inProgress;
+      case 'completed':
+        return AppColors.completed;
+      default:
+        return AppColors.textGrey;
     }
+  }
 
+  Widget _buildTaskCard(Task task) {
     String _formatDate(DateTime date) {
       return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     }
@@ -397,22 +502,109 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     );
   }
 
+  Future<void> _downloadTasks() async {
+    try {
+      setState(() => _isLoading = true);  // Show loading indicator
+      
+      // Get the current tasks that are displayed
+      if (_filteredTasks.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No tasks available to download'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Create CSV content from filtered tasks
+      String csvData = 'Title,Description,Deadline,Priority,Status\n';
+      for (var task in _filteredTasks) {
+        // Escape commas and quotes in text fields
+        String title = task.title.replaceAll('"', '""');
+        String description = task.description.replaceAll('"', '""');
+        String deadline = task.deadline.toString().split(' ')[0]; // Get just the date
+        String priority = task.priority.toString().split('.').last;
+        String status = task.status.toString().split('.').last;
+        
+        csvData += '"$title","$description","$deadline","$priority","$status"\n';
+      }
+
+      // Get the download directory
+      Directory? directory;
+      if (Platform.isAndroid) {
+        // Get the downloads directory on Android
+        directory = Directory('/storage/emulated/0/Download');
+      } else {
+        // For iOS, we'll use the documents directory
+        directory = await getApplicationDocumentsDirectory();
+      }
+
+      // Create the file
+      String fileName = 'tasks_${DateTime.now().millisecondsSinceEpoch}.csv';
+      final File file = File('${directory.path}/$fileName');
+      await file.writeAsString(csvData);
+
+      // Show success message with file location
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Tasks downloaded to: ${file.path}'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'OPEN',
+              textColor: Colors.white,
+              onPressed: () async {
+                // Open the file
+                try {
+                  await OpenFile.open(file.path);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Could not open file: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error downloading tasks: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);  // Hide loading indicator
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.background,
       drawer: SidePanel(
-        onLogout: () async {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.clear();
-          if (mounted) {
-            Navigator.of(context).pushNamedAndRemoveUntil(
-              '/',
-                  (route) => false,
-            );
-          }
-        },
+        // onLogout: () async {
+        //   final prefs = await SharedPreferences.getInstance();
+        //   await prefs.clear();
+        //   if (mounted) {
+        //     Navigator.of(context).pushNamedAndRemoveUntil(
+        //       '/',
+        //       (route) => false,
+        //     );
+        //   }
+        // },
         onClose: () => Navigator.pop(context),
         user: User(
           userId: _currentUserId ?? '',
@@ -428,10 +620,20 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           CommonAppBar(
             onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
             hasUnreadNotifications: _hasUnreadNotifications,
-            onNotificationCleared: () {
-              setState(() {
-                _hasUnreadNotifications = false;
-              });
+            onNotificationCleared: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationScreen(),
+                ),
+              );
+              
+              if (result == true && mounted) {
+                _notificationService.setUnreadState(false);
+                setState(() {
+                  _hasUnreadNotifications = false;
+                });
+              }
             },
           ),
           Padding(
@@ -469,9 +671,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.download, color: AppColors.accentCyan),
-                    onPressed: () {
-                      // TODO: Implement download functionality
-                    },
+                    onPressed: _downloadTasks,
+                    tooltip: 'Download Tasks',
                   ),
                 ),
               ],

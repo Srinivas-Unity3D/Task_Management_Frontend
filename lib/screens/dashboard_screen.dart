@@ -4,8 +4,6 @@ import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/notification_firebase_service.dart';
-import '../widgets/dashboard/profile_section.dart';
-import '../widgets/dashboard/navigation_menu.dart';
 import '../widgets/dashboard/stats_card.dart';
 import '../models/user.dart';
 import '../models/task.dart';
@@ -19,10 +17,13 @@ import '../services/api_service.dart';
 import '../screens/create_task_screen.dart';
 import '../screens/assign_tasks_screen.dart';
 import '../screens/my_tasks_screen.dart';
+import '../screens/notifications_screen.dart';
 import '../services/socket_service.dart';
-import '../widgets/common_notification_icon.dart';
 import '../services/audio_service.dart';
+import '../services/alarm_service.dart';
 import '../widgets/common_app_bar.dart';
+import '../services/notification_service.dart';
+import 'dart:async';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -35,7 +36,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ApiService _apiService = ApiService();
   final _socketService = SocketService.instance;
-  final _audioService = AudioService();
+  // final _audioService = AudioService();
+  final _notificationService = NotificationFirebaseService();
+  // final _alarmService = AlarmService();
   User? _user;
   TaskStats? _taskStats;
   bool _isLoading = true;
@@ -48,40 +51,110 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    print('🔄 Dashboard - Initializing...');
+    print('📊 DashboardScreen - Initializing...');
     _initializeServices();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final notificationService = Get.put(NotificationFirebaseService());
-      notificationService.initialize();
+    _checkUnreadNotifications();
+    notificationService.requestNotificationPermission();
+  }
+
+  Future<void> _checkUnreadNotifications() async {
+    try {
+      final notifications = await _notificationService.getNotifications();
+      final hasUnread = notifications.any((n) => !n.isCompleted);
+      _notificationService.setUnreadState(hasUnread);
+      if (mounted) {
+        setState(() {
+          _hasUnreadNotifications = hasUnread;
+        });
+      }
+    } catch (e) {
+      print('❌ [Dashboard] Error checking unread notifications: $e');
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _checkUnreadNotifications();
+  }
+
+  void _setupNotificationService() {
+    final notificationService = Get.put(NotificationFirebaseService());
+    notificationService.initialize();
+  }
+
+  void _handleConnectionStatusChange() {
+    print('🔌 [Dashboard] Socket connection status changed: ${_socketService.connected.value}');
+    if (_socketService.connected.value) {
+      print('✅ [Dashboard] Socket connected, setting up listeners');
+      _setupSocketListeners();
+    } else {
+      print('❌ [Dashboard] Socket disconnected, attempting to reconnect...');
+      // Try to reconnect after a short delay
+      Future.delayed(Duration(seconds: 2), () {
+        if (mounted && !_socketService.connected.value) {
+          print('🔄 [Dashboard] Attempting to reconnect...');
+          _socketService.reconnect();
+        }
+      });
+    }
+  }
+
+  void _setupSocketListeners() {
+    print('🔄 [Dashboard] Setting up socket listeners');
+    print('🔌 [Dashboard] Socket connected before setup: ${_socketService.isConnected()}');
+    
+    // Remove any existing listeners first
+    _socketService.removeAllListeners();
+    
+    // Add new listeners
+    print('🔄 [Dashboard] Adding task notification listener');
+    _socketService.listenToTaskNotifications((data) {
+      print('📬 [Dashboard] Raw notification received in listener callback: $data');
+      print('📬 [Dashboard] Current user: ${_user?.username}');
+      print('📬 [Dashboard] Widget mounted: $mounted');
+      if (mounted) {
+        print('📬 [Dashboard] Widget is mounted, calling _handleTaskNotification');
+        _handleTaskNotification(data);
+      } else {
+        print('❌ [Dashboard] Widget is not mounted, skipping notification');
+      }
     });
-    // notificationFirebaseService.getDeviceToken();
-    // notificationFirebaseService.firebaseInit(context);
-    // notificationFirebaseService.setupInteractMessage(context);
-    // notificationFirebaseService.requestNotificationPermission();
 
-    // Wait until after first frame to request permission
-    //WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // notificationService.re();
-      // notificationService.firebaseInit(context);
-      // notificationService.setupInteractMessage(context);
-
-    //});
+    print('🔄 [Dashboard] Adding dashboard update listener');
+    _socketService.listenToDashboardUpdates((data) {
+      print('📊 [Dashboard] Raw dashboard update received in listener callback: $data');
+      if (mounted) {
+        print('📊 [Dashboard] Widget is mounted, calling _handleDashboardUpdate');
+        _handleDashboardUpdate(data);
+      } else {
+        print('❌ [Dashboard] Widget is not mounted, skipping dashboard update');
+      }
+    });
+    
+    print('✅ [Dashboard] Socket listeners setup complete');
+    print('🔌 [Dashboard] Socket connected after setup: ${_socketService.isConnected()}');
   }
 
   @override
   void dispose() {
-    // Remove socket listeners when disposing
-    _socketService.removeTaskNotificationListener(_handleTaskNotification);
-    _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
-    _audioService.dispose();
+    print('🔄 Dashboard - Disposing...');
+    // Remove socket listeners
+    _socketService.removeAllListeners();
+    _socketService.connected.removeListener(_handleConnectionStatusChange);
+    
     super.dispose();
   }
 
   Future<void> _initializeServices() async {
     try {
       print('🔄 Dashboard - Initializing services...');
-      await _audioService.initialize();
+      // await _audioService.initialize();
       print('🔄 Dashboard - Audio service initialized');
+
+      // Initialize alarm service
+      // await _alarmService.initialize();
+      print('🔄 Dashboard - Alarm service initialized');
 
       // Load initial data
       await _loadUserAndSetupSocket();
@@ -117,101 +190,87 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Connect socket with username
         _socketService.connect(username);
 
-        // Remove any existing listeners before adding new ones
-        _socketService.removeTaskNotificationListener(_handleTaskNotification);
-        _socketService.removeDashboardUpdateListener(_handleDashboardUpdate);
+        // Verify socket connection
+        // print('🔌 Dashboard - Socket connected: ${_socketService.isConnected()}');
 
         // Setup socket listeners
         print('🔄 Dashboard - Setting up socket listeners');
         _setupSocketListeners();
+
+        // Verify listeners are set up
+        print('📨 Dashboard - Verifying socket listeners...');
+        Future.delayed(Duration(seconds: 2), () {
+          // print('🔌 Dashboard - Socket still connected: ${_socketService.isConnected()}');
+        });
+      } else {
+        print('❌ Dashboard - No username found in SharedPreferences');
       }
     } catch (e) {
       print('❌ Dashboard - Error loading user data: $e');
-    }
-  }
-
-  void _setupSocketListeners() {
-    // Listen for task notifications
-    _socketService.listenToTaskNotifications(_handleTaskNotification);
-    // Listen for dashboard updates
-    _socketService.listenToDashboardUpdates(_handleDashboardUpdate);
-  }
-
-  void _playNotificationSound() async {
-    try {
-      print('🔔 Dashboard - Playing notification sound...');
-      await _audioService.playNotificationSound();
-      await HapticFeedback.mediumImpact();
-      print('🔔 Dashboard - Notification sound and haptic feedback completed');
-    } catch (e) {
-      print('🔔 Dashboard - Error playing notification: $e');
+      print('❌ Dashboard - Error stack trace: ${StackTrace.current}');
     }
   }
 
   void _handleTaskNotification(dynamic data) {
-    if (mounted && _user != null) {
-      print('🔔 Dashboard - Received task notification: $data');
+    if (!mounted) {
+      print('❌ [Dashboard] Widget not mounted, skipping notification');
+      return;
+    }
 
-      // Check if the current user is the creator/updater
-      final bool isCreator = data['task']?['assigned_by'] == _user!.username;
-      final bool isUpdater = data['task']?['updated_by'] == _user!.username;
+    try {
+      // print('📊 [Dashboard] Processing task notification: $data');
+      // print('📊 [Dashboard] Current user: ${_user?.username}');
+      // print('📊 [Dashboard] Notification sender: ${data['task']?['updated_by'] ?? data['task']?['assigned_by']}');
+      // print('📊 [Dashboard] Task data: ${data['task']}');
 
-      // Only show notification if user is not the creator/updater
-      if (!isCreator && !isUpdater) {
+      // Only play sound and vibrate if the notification is from another user
+      final sender = data['task']?['updated_by'] ?? data['task']?['assigned_by'];
+      if (sender != _user?.username) {
+        // print('🔔 [Dashboard] Playing notification sound...');
+        // _playNotificationSound();
+
+        // Show notification in notification bar
+        // print('🔔 [Dashboard] Showing system notification...');
+        // _notificationService.showNotification(
+        //   title: data['type'] == 'task_created' ? 'New Task Assigned' : 'Task Updated',
+        //   body: data['task']?['title'] ?? 'You have a new task update',
+        //   payload: json.encode(data),
+        // );
+      } else {
+        print('👤 [Dashboard] Skipping notification - from current user');
+      }
+
+      // Update task list and show notification badge
+      print('🔄 [Dashboard] Updating task list and badge...');
+      _notificationService.setUnreadState(true);
+      if (mounted) {
         setState(() {
           _hasUnreadNotifications = true;
         });
-
-        // Play notification sound and vibrate
-        _playNotificationSound();
-
-        // Show notification for new tasks or updates
-        if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
-          _showTaskNotification(data['task']);
-        }
       }
-
-      // Always refresh tasks list to keep it up to date
-      print('🔄 Dashboard - Refreshing tasks after notification...');
       _loadTasks();
+      print('✅ [Dashboard] Notification handling complete');
+    } catch (e) {
+      print('❌ [Dashboard] Error handling notification: $e');
+      print('❌ [Dashboard] Error stack trace: ${StackTrace.current}');
     }
   }
 
-  void _handleDashboardUpdate(dynamic data) async {
-    if (mounted && _user != null) {
-      print('📨 Dashboard - Received update: $data');
 
-      // Check if the current user is the creator/updater
-      final bool isCreator = data['assigned_by'] == _user!.username;
-      final bool isUpdater = data['updated_by'] == _user!.username;
 
-      // Play notification sound if user is not the creator/updater
-      if (!isCreator && !isUpdater) {
-        setState(() {
-          _hasUnreadNotifications = true;
-        });
-        _playNotificationSound();
-      }
+  void _handleDashboardUpdate(dynamic data) {
+    print('📊 [Dashboard] Processing dashboard update: $data');
+    if (!mounted) {
+      print('❌ [Dashboard] Widget not mounted, skipping update');
+      return;
+    }
 
-      // Always refresh tasks list regardless of who created/updated
-      print('🔄 Dashboard - Refreshing tasks after update...');
-      await _loadTasks();
-
-      // Show a snackbar with the update message
-      if (mounted) {
-        final String actionType = data['type'] == 'task_created' ? 'created' : 'updated';
-        final String message = isCreator || isUpdater
-          ? 'Task $actionType successfully!'
-          : 'A task has been $actionType';
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+    try {
+      print('🔄 [Dashboard] Refreshing task list...');
+      _loadTasks();
+      print('✅ [Dashboard] Dashboard update complete');
+    } catch (e) {
+      print('❌ [Dashboard] Error handling dashboard update: $e');
     }
   }
 
@@ -291,48 +350,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadTasks() async {
-    if (_user == null) return; // Don't load tasks if user is not initialized
-
     try {
-      // Get the stored user data from SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final username = prefs.getString('username') ?? '';
-      final userId = prefs.getString('user_id') ?? '';
-      final role = prefs.getString('role') ?? '';
-
-      // Fetch tasks from API
+      setState(() => _isLoading = true);
       final response = await _apiService.getTasks(username: _user!.username, role: _user!.role);
-      if (response['success']) {
-        final tasksJson = response['data'] as List;
-        if (mounted) {
-          setState(() {
+      if (mounted) {
+        setState(() {
+          if (response['success']) {
+            final tasksJson = response['data'] as List;
             _userTasks = tasksJson.map((task) => Task.fromJson(task)).toList();
             _taskStats = TaskStats.fromTasks(_userTasks);
-          });
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(response['message'] ?? 'Failed to load tasks'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+          } else {
+            _userTasks = [];
+            _taskStats = TaskStats(
+              activeTasks: 0,
+              pendingTasks: 0,
+              inProgressTasks: 0,
+              completedTasks: 0,
+              snoozedTasks: 0,
+            );
+          }
+          _isLoading = false;
+        });
       }
     } catch (e) {
-      print('Error loading dashboard: $e'); // Add debug log
+      print('❌ Dashboard - Error loading tasks: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading dashboard: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _userTasks = [];
+          _taskStats = TaskStats(
+            activeTasks: 0,
+            pendingTasks: 0,
+            inProgressTasks: 0,
+            completedTasks: 0,
+            snoozedTasks: 0,
+          );
+        });
       }
     }
   }
@@ -358,6 +411,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
   }
+
 
   void _showSidePanel() {
     if (_user == null) return; // Don't show panel if user is not initialized
@@ -396,7 +450,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   end: Offset.zero,
                 ).animate(curvedAnimation),
                 child: SidePanel(
-                  onLogout: _handleLogout,
+                  // onLogout: _handleLogout,
                   onClose: () => Navigator.pop(context),
                   user: _user!,
                   currentRoute: '/',
@@ -408,6 +462,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       },
     );
   }
+
+
 
   void _switchView(ViewState newView) {
     switch (newView) {
@@ -455,22 +511,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
           CommonAppBar(
             onMenuPressed: _showSidePanel,
             hasUnreadNotifications: _hasUnreadNotifications,
-            onNotificationCleared: _clearNotifications,
+            onNotificationCleared: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationScreen(),
+                ),
+              );
+
+              if (result == true && mounted) {
+                _notificationService.setUnreadState(false);
+                setState(() {
+                  _hasUnreadNotifications = false;
+                });
+              }
+            },
           ),
           Container(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Dashboard',
-                  style: TextStyle(
-                    color: AppColors.accentCyan,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+            child: const Text(
+              'Dashboard',
+              style: TextStyle(
+                color: AppColors.accentCyan,
+                fontSize: 24,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           Expanded(
@@ -858,4 +923,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+
+  // void _playNotificationSound() async {
+  //   try {
+  //     print('🔔 Dashboard - Playing notification sound...');
+  //     await _audioService.playNotificationSound();
+  //     await HapticFeedback.mediumImpact();
+  //     print('🔔 Dashboard - Notification sound and haptic feedback completed');
+  //   } catch (e) {
+  //     print('🔔 Dashboard - Error playing notification: $e');
+  //     print('🔔 Dashboard - Error stack trace: ${StackTrace.current}');
+  //   }
+  // }
 }
+
