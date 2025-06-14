@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/notification_model.dart';
+import '../services/notification_firebase_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/snooze_dialog.dart';
 import '../widgets/notification_card.dart';
@@ -12,7 +13,7 @@ class NotificationScreen extends StatefulWidget {
 }
 
 class _NotificationScreenState extends State<NotificationScreen> {
-  final NotificationService _notificationService = NotificationService();
+  final NotificationFirebaseService _notificationService = NotificationFirebaseService();
   List<NotificationModel> _notifications = [];
   List<NotificationModel> _unreadNotifications = [];
   bool _isLoading = true;
@@ -133,12 +134,12 @@ class _NotificationScreenState extends State<NotificationScreen> {
       final notifications = await _notificationService.getNotifications();
       for (var notification in notifications) {
         if (!notification.isCompleted) {
-          await _notificationService.markNotificationAsComplete(notification.id);
+          // await _notificationService.markNotificationAsComplete(notification.id);
         }
       }
       
       // Clear the badge state since all notifications are marked as read
-      _notificationService.setUnreadState(false);
+      // _notificationService.setUnreadState(false);
       
       if (mounted) {
         setState(() {

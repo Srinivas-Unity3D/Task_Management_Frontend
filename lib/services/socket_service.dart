@@ -2,6 +2,7 @@ import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'dart:math';
+import 'notification_firebase_service.dart';
 import 'notification_service.dart';
 import 'dart:async';
 import 'auth_service.dart';
@@ -28,7 +29,7 @@ class SocketService {
   String? _serverUrl;
   final List<Function(dynamic)> _taskNotificationListeners = [];
   final List<Function(dynamic)> _dashboardUpdateListeners = [];
-  final _notificationService = NotificationService();
+  final _notificationService = NotificationFirebaseService();
   final _apiService = ApiService();
   bool _isRegistered = false;
   bool _isConnecting = false;

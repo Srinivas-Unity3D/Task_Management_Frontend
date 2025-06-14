@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../services/notification_firebase_service.dart';
 import '../services/notification_service.dart';
 import './audio_recorder.dart';
 import '../theme/colors.dart';
@@ -24,7 +25,7 @@ class SnoozeDialog extends StatefulWidget {
 
 class _SnoozeDialogState extends State<SnoozeDialog> {
   final TextEditingController _reasonController = TextEditingController();
-  final NotificationService _notificationService = NotificationService();
+  final NotificationFirebaseService _notificationService = NotificationFirebaseService();
   String? _audioData;
   String? _audioFilePath;
   int? _audioDuration;
@@ -89,10 +90,10 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
         }
         
         print('🎵 Attempting to play audio with DeviceFileSource');
-        await _audioPlayer.play(DeviceFileSource(path)).catchError((error) {
-          print('❌ Audio player error: $error');
-          setState(() => _isPlaying = false);
-        });
+        // await _audioPlayer.play(DeviceFileSource(path)).catchError((error) {
+        //   print('❌ Audio player error: $error');
+        //   setState(() => _isPlaying = false);
+        // });
         
         setState(() => _isPlaying = true);
         print('✅ Audio playback started successfully');
@@ -147,12 +148,12 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
 
     try {
       print('🔄 [SnoozeDialog] Calling snoozeNotification with audio data: ${audioNote != null}');
-      await _notificationService.snoozeNotification(
-        widget.notificationId,
-        _selectedDate,
-        reason: _reasonController.text.trim(),
-        audioNote: audioNote,
-      );
+      // await _notificationService.snoozeNotification(
+      //   widget.notificationId,
+      //   _selectedDate,
+      //   reason: _reasonController.text.trim(),
+      //   audioNote: audioNote,
+      // );
       
       print('✅ [SnoozeDialog] Notification snoozed successfully');
 

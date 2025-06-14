@@ -19,7 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
   
   // Only include screens that actually exist
   final List<Widget> _screens = [
-    const AlarmScreen(),
+    // const AlarmScreen(),
   ];
 
   @override

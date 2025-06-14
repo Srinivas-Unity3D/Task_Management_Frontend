@@ -36,9 +36,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ApiService _apiService = ApiService();
   final _socketService = SocketService.instance;
-  final _audioService = AudioService();
-  final _notificationService = NotificationService();
-  final _alarmService = AlarmService();
+  // final _audioService = AudioService();
+  final _notificationService = NotificationFirebaseService();
+  // final _alarmService = AlarmService();
   User? _user;
   TaskStats? _taskStats;
   bool _isLoading = true;
@@ -54,6 +54,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     print('📊 DashboardScreen - Initializing...');
     _initializeServices();
     _checkUnreadNotifications();
+    notificationService.requestNotificationPermission();
   }
 
   Future<void> _checkUnreadNotifications() async {
@@ -148,11 +149,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _initializeServices() async {
     try {
       print('🔄 Dashboard - Initializing services...');
-      await _audioService.initialize();
+      // await _audioService.initialize();
       print('🔄 Dashboard - Audio service initialized');
 
       // Initialize alarm service
-      await _alarmService.initialize();
+      // await _alarmService.initialize();
       print('🔄 Dashboard - Alarm service initialized');
 
       // Load initial data
@@ -226,7 +227,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final sender = data['task']?['updated_by'] ?? data['task']?['assigned_by'];
       if (sender != _user?.username) {
         // print('🔔 [Dashboard] Playing notification sound...');
-        _playNotificationSound();
+        // _playNotificationSound();
 
         // Show notification in notification bar
         // print('🔔 [Dashboard] Showing system notification...');
@@ -923,16 +924,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _playNotificationSound() async {
-    try {
-      print('🔔 Dashboard - Playing notification sound...');
-      await _audioService.playNotificationSound();
-      await HapticFeedback.mediumImpact();
-      print('🔔 Dashboard - Notification sound and haptic feedback completed');
-    } catch (e) {
-      print('🔔 Dashboard - Error playing notification: $e');
-      print('🔔 Dashboard - Error stack trace: ${StackTrace.current}');
-    }
-  }
+  // void _playNotificationSound() async {
+  //   try {
+  //     print('🔔 Dashboard - Playing notification sound...');
+  //     await _audioService.playNotificationSound();
+  //     await HapticFeedback.mediumImpact();
+  //     print('🔔 Dashboard - Notification sound and haptic feedback completed');
+  //   } catch (e) {
+  //     print('🔔 Dashboard - Error playing notification: $e');
+  //     print('🔔 Dashboard - Error stack trace: ${StackTrace.current}');
+  //   }
+  // }
 }
 

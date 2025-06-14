@@ -20,6 +20,9 @@ import 'screens/dashboard_screen.dart';
 import 'screens/my_tasks_screen.dart';
 import 'screens/assign_tasks_screen.dart';
 import 'theme/colors.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:alarm/alarm.dart';
 
 // Global variables for initialization state
 bool _isFirebaseInitialized = false;
@@ -27,90 +30,89 @@ bool _isInitializing = false;
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  try {
-    print('📱 Background message handler started');
-    print('📱 Message ID: ${message.messageId}');
-    print('📱 Message data: ${message.data}');
-    print('📱 Notification: ${message.notification?.title} - ${message.notification?.body}');
-
-    if (!_isFirebaseInitialized && !_isInitializing) {
-      print('🔄 Initializing Firebase in background handler...');
-      _isInitializing = true;
-      await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform);
-      _isFirebaseInitialized = true;
-      _isInitializing = false;
-      print('✅ Firebase initialized in background handler');
-    }
-
-    // Initialize services
-    print('🔄 Initializing services in background handler...');
-    final notificationService = NotificationService();
-    await notificationService.initialize();
-    print('✅ Notification service initialized in background handler');
-
-    final alarmService = AlarmService();
-    await alarmService.initialize();
-    print('✅ Alarm service initialized in background handler');
-
-    // Check if this is an alarm notification
-    if (message.data['type'] == 'task_alarm') {
-      print('⏰ Received task alarm notification in background');
-      
-      // Create notification details
-      final androidDetails = AndroidNotificationDetails(
-        'task_alarms',
-        'Task Alarms',
-        channelDescription: 'High priority notifications for task alarms',
-        importance: Importance.max,
-        priority: Priority.high,
-        sound: const RawResourceAndroidNotificationSound('alarm'),
-        fullScreenIntent: true,
-        category: AndroidNotificationCategory.alarm,
-        visibility: NotificationVisibility.public,
-        playSound: true,
-        enableVibration: true,
-        enableLights: true,
-        color: const Color(0xFF2196F3),
-        ledColor: const Color(0xFF2196F3),
-        ledOnMs: 1000,
-        ledOffMs: 500,
-      );
-
-      final iosDetails = DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-        sound: 'alarm.mp3',
-        interruptionLevel: InterruptionLevel.timeSensitive,
-      );
-
-      final notificationDetails = NotificationDetails(
-        android: androidDetails,
-        iOS: iosDetails,
-      );
-
-      // Show the notification
-      await alarmService.showAlarmNotification(
-        title: 'Task Alarm',
-        body: 'Time to complete your task!',
-        payload: jsonEncode(message.data),
-        notificationDetails: notificationDetails,
-      );
-
-      // Trigger the alarm
-      await alarmService.triggerAlarm(message.data);
-      print('✅ Alarm triggered in background');
-    } else {
-      print('📱 Handling regular notification in background');
-      await notificationService.handleNewNotification();
-      print('✅ Regular notification handled in background');
-    }
-  } catch (e) {
-    print('❌ Error in background handler: $e');
-    print('❌ Stack trace: ${StackTrace.current}');
-    _isInitializing = false;
-  }
+  // try {
+  //   print('📱 Background message handler started');
+  //   print('📱 Message ID: ${message.messageId}');
+  //   print('📱 Message data: ${message.data}');
+  //   print('📱 Notification: ${message.notification?.title} - ${message.notification?.body}');
+  //
+  //   if (!_isFirebaseInitialized && !_isInitializing) {
+  //     print('🔄 Initializing Firebase in background handler...');
+  //     _isInitializing = true;
+  //     await Firebase.initializeApp();
+  //     _isFirebaseInitialized = true;
+  //     _isInitializing = false;
+  //     print('✅ Firebase initialized in background handler');
+  //   }
+  //
+  //   // Initialize services
+  //   print('🔄 Initializing services in background handler...');
+  //   final notificationService = NotificationService();
+  //   await notificationService.initialize();
+  //   print('✅ Notification service initialized in background handler');
+  //
+  //   // final alarmService = AlarmService();
+  //   // await alarmService.initialize();
+  //   print('✅ Alarm service initialized in background handler');
+  //
+  //   // Check if this is an alarm notification
+  //   if (message.data['type'] == 'task_alarm') {
+  //     print('⏰ Received task alarm notification in background');
+  //
+  //     // Create notification details
+  //     final androidDetails = AndroidNotificationDetails(
+  //       'task_alarms',
+  //       'Task Alarms',
+  //       channelDescription: 'High priority notifications for task alarms',
+  //       importance: Importance.max,
+  //       priority: Priority.high,
+  //       sound: const RawResourceAndroidNotificationSound('alarm'),
+  //       fullScreenIntent: true,
+  //       category: AndroidNotificationCategory.alarm,
+  //       visibility: NotificationVisibility.public,
+  //       playSound: true,
+  //       enableVibration: true,
+  //       enableLights: true,
+  //       color: const Color(0xFF2196F3),
+  //       ledColor: const Color(0xFF2196F3),
+  //       ledOnMs: 1000,
+  //       ledOffMs: 500,
+  //     );
+  //
+  //     final iosDetails = DarwinNotificationDetails(
+  //       presentAlert: true,
+  //       presentBadge: true,
+  //       presentSound: true,
+  //       sound: 'alarm.mp3',
+  //       interruptionLevel: InterruptionLevel.timeSensitive,
+  //     );
+  //
+  //     final notificationDetails = NotificationDetails(
+  //       android: androidDetails,
+  //       iOS: iosDetails,
+  //     );
+  //
+  //     // Show the notification
+  //     // await alarmService.showAlarmNotification(
+  //     //   title: 'Task Alarm',
+  //     //   body: 'Time to complete your task!',
+  //     //   payload: jsonEncode(message.data),
+  //     //   notificationDetails: notificationDetails,
+  //     // );
+  //
+  //     // Trigger the alarm
+  //     // await alarmService.triggerAlarm(message.data);
+  //     print('✅ Alarm triggered in background');
+  //   } else {
+  //     print('📱 Handling regular notification in background');
+  //     await notificationService.handleNewNotification();
+  //     print('✅ Regular notification handled in background');
+  //   }
+  // } catch (e) {
+  //   print('❌ Error in background handler: $e');
+  //   print('❌ Stack trace: ${StackTrace.current}');
+  //   _isInitializing = false;
+  // }
 }
 
 Future<void> _initializeFirebase() async {
@@ -180,6 +182,17 @@ Future<void> ensureUserDataFromToken(SharedPreferences prefs) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  // Initialize timezone
+  tz.initializeTimeZones();
+  tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+
+  // Initialize Alarm
+  await Alarm.init();
+  await AlarmService().initialize(); // Initialize AlarmService
+
+
 
   try {
     // Set up certificate bypass for development
@@ -197,14 +210,14 @@ void main() async {
     await ensureUserDataFromToken(prefs);
 
     // Initialize Firebase
-    await _initializeFirebase();
+    // await _initializeFirebase();
 
     // Initialize other services only if Firebase is initialized
     if (_isFirebaseInitialized) {
       // Initialize notification service
-      final notificationService = NotificationService();
-      await notificationService.initialize();
-      print('✅ Notification service initialized');
+      // final notificationService = NotificationService();
+      // await notificationService.initialize();
+      // print('✅ Notification service initialized');
 
       // Initialize Firebase notification service
       final nfbs = NotificationFirebaseService();
@@ -212,27 +225,27 @@ void main() async {
       print('✅ Firebase notification service initialized');
 
       // Initialize alarm service
-      final alarmService = AlarmService();
-      await alarmService.initialize();
-      print('✅ Alarm service initialized');
+      // final alarmService = AlarmService();
+      // await alarmService.initialize();
+      // print('✅ Alarm service initialized');
 
       // Request FCM permissions
-      await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        criticalAlert: true,
-      );
-      print('✅ FCM permissions requested');
+      // await FirebaseMessaging.instance.requestPermission(
+      //   alert: true,
+      //   badge: true,
+      //   sound: true,
+      //   criticalAlert: true,
+      // );
+      // print('✅ FCM permissions requested');
 
       // Set FCM foreground notification options
-      await FirebaseMessaging.instance
-          .setForegroundNotificationPresentationOptions(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      print('✅ FCM foreground notification options set');
+      // await FirebaseMessaging.instance
+      //     .setForegroundNotificationPresentationOptions(
+      //   alert: true,
+      //   badge: true,
+      //   sound: true,
+      // );
+      // print('✅ FCM foreground notification options set');
 
       // Set up foreground message handler
       // FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
@@ -268,7 +281,7 @@ void main() async {
       print('🔌 Initializing socket service...');
       const serverUrl = 'https://134.209.149.12';
       const wsUrl = 'wss://${ApiService.url}';
-      // const wsUrl = 'wss://127.0.0.1:5001';
+      // const wsUrl = 'ws://0.0.0.0:5001';
       socketService.init(wsUrl);
 
       final username = prefs.getString('username');
@@ -317,7 +330,7 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      navigatorKey: globalNavigatorKey,
+      // navigatorKey: globalNavigatorKey,
       title: 'Task Management',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
