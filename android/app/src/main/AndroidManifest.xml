@@ -114,18 +114,18 @@
         </receiver>
 
         <!-- Alarm service and receiver -->
-        <service
-            android:name="com.yakuz.alarm.services.AlarmService"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback"/>
-        <receiver
-            android:name="com.yakuz.alarm.receivers.AlarmReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED"/>
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
-            </intent-filter>
-        </receiver>
+<!--        <service-->
+<!--            android:name="com.yakuz.alarm.services.AlarmService"-->
+<!--            android:exported="false"-->
+<!--            android:foregroundServiceType="mediaPlayback"/>-->
+<!--        <receiver-->
+<!--            android:name="com.yakuz.alarm.receivers.AlarmReceiver"-->
+<!--            android:exported="true">-->
+<!--            <intent-filter>-->
+<!--                <action android:name="android.intent.action.BOOT_COMPLETED"/>-->
+<!--                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>-->
+<!--            </intent-filter>-->
+<!--        </receiver>-->
 
 
     </application>

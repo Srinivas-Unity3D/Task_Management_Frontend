@@ -189,8 +189,8 @@ void main() async {
   tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
 
   // Initialize Alarm
-  await Alarm.init();
-  await AlarmService().initialize(); // Initialize AlarmService
+  // await Alarm.init();
+  // await AlarmService().initialize(); // Initialize AlarmService
 
 
 

@@ -70,7 +70,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _deadlineDateController = TextEditingController();
   late final AudioRecorder _audioRecorder;
   final _socketService = SocketService.instance;
-  final _alarmService = AlarmService();
+  // final _alarmService = AlarmService();
 
   String? _selectedAssignee;
   String _priority = 'Low';
