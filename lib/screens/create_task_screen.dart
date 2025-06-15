@@ -18,7 +18,6 @@ import 'dart:math';
 import 'dart:async';
 import '../services/socket_service.dart';
 import 'package:open_file/open_file.dart';
-import 'package:dio/dio.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   final bool isEditMode;
@@ -56,7 +55,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   late final AudioRecorder _audioRecorder;
   final _socketService = SocketService.instance;
-  
+
   String? _selectedAssignee;
   String _priority = 'Low';
   DateTime? _dueDate;
@@ -73,7 +72,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _isLoading = false;
   List<VoiceNote> _voiceNotes = [];
   List<Attachment> _existingAttachments = [];
-  List<Map<String, dynamic>> _localVoiceNotes = [];
 
   final List<String> _frequencyOptions = const [
     '30 minutes',
@@ -91,7 +89,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     'Urgent'
   ];
 
-  final bool _isEmulatorTestMode = false;  // Set to false for real device testing
+  final bool _isEmulatorTestMode = false;
 
   bool _canScroll = true;
   Duration _recordingDuration = Duration.zero;
@@ -99,17 +97,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Duration _playbackPosition = Duration.zero;
   Timer? _playbackTimer;
   Duration _totalDuration = Duration.zero;
-  StreamSubscription<Duration>? _positionSubscription;
-  StreamSubscription<Duration>? _durationSubscription;
+  StreamSubscription? _positionSubscription;
+  StreamSubscription? _durationSubscription;
 
   List<PlatformFile> _selectedFiles = [];
   bool _isUploadingFiles = false;
 
   bool _isLoadingVoiceNotes = true;
   bool _isLoadingAttachments = true;
-  int? _currentlyPlayingNoteIndex;
-
-  bool _isDisposed = false;
+  String? _currentlyPlayingNoteId;
 
   @override
   void initState() {
@@ -127,15 +123,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   @override
   void dispose() {
-    _isDisposed = true;
     _recordingTimer?.cancel();
     _playbackTimer?.cancel();
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
-    _disposeAudioPlayer();
+    _audioPlayer.dispose();
     _audioRecorder.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
+    _disposeAudioPlayer();
     super.dispose();
   }
 
@@ -154,22 +150,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   void _handleTaskNotification(dynamic data) {
-    // Handle notifications while screen is active
     if (mounted && ModalRoute.of(context)!.isCurrent) {
-      // Check if the current user is the creator/updater
       final bool isCreator = data['task']?['assigned_by'] == _currentUsername;
       final bool isUpdater = data['task']?['updated_by'] == _currentUsername;
-      
-      // Only show notification if user is not the creator/updater
+
       if (!isCreator && !isUpdater) {
         if (data['type'] == 'task_created' || data['type'] == 'task_updated') {
-          // Show a temporary success message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                data['type'] == 'task_created' 
-                    ? 'New task has been created'
-                    : 'Task has been updated'
+                  data['type'] == 'task_created'
+                      ? 'New task has been created'
+                      : 'Task has been updated'
               ),
               backgroundColor: Colors.green,
             ),
@@ -180,14 +172,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   void _handleDashboardUpdate(dynamic data) {
-    // Handle dashboard updates while screen is active
     if (mounted && ModalRoute.of(context)!.isCurrent) {
-      // Check if the current user is the creator/updater
       final bool isCreator = data['assigned_by'] == _currentUsername;
       final bool isUpdater = data['updated_by'] == _currentUsername;
-      
+
       if (isCreator || isUpdater) {
-        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(isCreator
@@ -197,8 +186,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        
-        // Return to previous screen with refresh signal
         Navigator.pop(context, true);
       }
     }
@@ -212,19 +199,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       _priority = widget.initialPriority ?? 'Low';
       _dueDate = widget.initialDueDate;
       _status = _parseStatus(widget.initialStatus ?? 'pending');
-      
-      // Fetch existing voice notes and attachments
       await _loadTaskVoiceNotes();
       await _loadTaskAttachments();
-    } else {
-      // Not edit mode: mark attachments as loaded so the button shows
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {
-            _isLoadingAttachments = false;
-          });
-        }
-      });
     }
   }
 
@@ -233,7 +209,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       setState(() {
         _isLoadingVoiceNotes = true;
       });
-
       final voiceNotes = await _apiService.getTaskVoiceNotes(widget.taskId!);
       setState(() {
         _voiceNotes = voiceNotes;
@@ -252,7 +227,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       setState(() {
         _isLoadingAttachments = true;
       });
-
       final attachments = await _apiService.getTaskAttachments(widget.taskId!);
       setState(() {
         _existingAttachments = attachments;
@@ -271,7 +245,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       case 'pending':
         return TaskStatus.pending;
       case 'in_progress':
-      case 'inprogress':
         return TaskStatus.inProgress;
       case 'completed':
         return TaskStatus.completed;
@@ -283,70 +256,27 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   void _setupAudioPlayer() {
-    // Listen to position changes
     _positionSubscription = _audioPlayer.onPositionChanged.listen((position) {
       setState(() {
         _playbackPosition = position;
       });
-      // Check if playback is complete (allowing a small margin)
-      if (_isPlaying && _totalDuration.inMilliseconds > 0 &&
-          (position.inMilliseconds >= _totalDuration.inMilliseconds - 200)) {
-        setState(() {
-          _isPlaying = false;
-          _currentlyPlayingNoteIndex = null;
-          _playbackPosition = Duration.zero;
-        });
-      }
     });
-
-    // Listen to duration changes
     _durationSubscription = _audioPlayer.onDurationChanged.listen((duration) {
       setState(() {
         _totalDuration = duration;
       });
-    });
-
-    // Listen to player state changes
-    _audioPlayer.onPlayerStateChanged.listen(
-      (state) {
-        if (mounted && !_isDisposed) {
-          // Do NOT reset _isPlaying here; rely on position check above
-          print('🎵 [Audio] Player state changed: $state');
-        }
-      },
-      onError: (error) {
-        print('❌ [Audio] State listener error: $error');
-      },
-    );
-
-    // Listen to playback completion (keep for safety, but rely on position check)
-    _audioPlayer.onPlayerComplete.listen((_) {
-      if (mounted && !_isDisposed) {
-        setState(() {
-          _isPlaying = false;
-          _currentlyPlayingNoteIndex = null;
-          _playbackPosition = Duration.zero;
-        });
-      }
     });
   }
 
   Future<void> _checkMicrophoneStatus() async {
     try {
       print('\n🎤 [Microphone] Checking microphone status...');
-      
-      // Check if microphone permission is granted
       final micPermission = await Permission.microphone.status;
       print('🎤 [Microphone] Permission status: $micPermission');
-      
-      // Check if microphone is available
       final hasRecordingPermission = await _audioRecorder.hasPermission();
       print('🎤 [Microphone] Recording permission: $hasRecordingPermission');
-      
-      // Check if microphone is currently in use
       final isRecording = await _audioRecorder.isRecording();
       print('🎤 [Microphone] Is currently recording: $isRecording');
-      
       if (!hasRecordingPermission) {
         print('❌ [Microphone] No recording permission available');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -363,11 +293,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       setState(() {
         _isLoadingUsers = true;
       });
-      
       final users = await _apiService.getUsers();
-      if (mounted) {  // Check if widget is still mounted
+      if (mounted) {
         setState(() {
-          // Filter out the current user from the list
           _users = users.where((user) => user != _currentUsername).toList();
           _isLoadingUsers = false;
         });
@@ -390,24 +318,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<bool> _requestStoragePermission() async {
     print('📱 [Permissions] Checking storage permissions...');
-    
     try {
-      // For Android 13 and above
       if (await Permission.photos.request().isGranted &&
           await Permission.videos.request().isGranted &&
           await Permission.audio.request().isGranted) {
         print('✅ [Permissions] Media permissions granted');
         return true;
       }
-      
-      // For Android 12 and below
       final status = await Permission.storage.request();
       if (status.isGranted) {
         print('✅ [Permissions] Storage permission granted');
         return true;
       }
-
-      // If permissions are denied, show rationale
       if (status.isPermanentlyDenied) {
         if (mounted) {
           showDialog(
@@ -440,7 +362,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         }
         return false;
       }
-
       print('❌ [Permissions] Storage permissions denied');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -458,33 +379,26 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<void> _pickFiles() async {
     try {
-      // Request storage permission first
       if (!await _requestStoragePermission()) {
         print('❌ [Files] Storage permission not granted');
         return;
       }
-
       setState(() {
         _isUploadingFiles = true;
       });
-
       print('📁 [Files] Opening file picker...');
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'jpg', 'jpeg', 'png'],
-        allowMultiple: true,  // Explicitly set to true
+        allowMultiple: true,
         withData: true,
         onFileLoading: (FilePickerStatus status) => print('📁 [Files] Picker status: $status'),
       );
-
       if (result != null) {
-        print('📁 [Files] ${result.files.length} files selected successfully');
+        print('📁 [Files] Files selected successfully');
         setState(() {
-          // Append new files to existing ones
-          _selectedFiles.addAll(result.files);
+          _selectedFiles = result.files;
         });
-        
-        // Print file details for debugging
         for (PlatformFile file in result.files) {
           print('📎 [Files] Selected file:');
           print('  - Name: ${file.name}');
@@ -517,18 +431,25 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     });
   }
 
-  IconData _getFileIcon(String? fileType) {
-    if (fileType == null) return Icons.insert_drive_file;
-    
-    final type = fileType.toLowerCase();
-    if (type.contains('pdf')) return Icons.picture_as_pdf;
-    if (type.contains('doc') || type.contains('docx')) return Icons.description;
-    if (type.contains('xls') || type.contains('xlsx')) return Icons.table_chart;
-    if (type.contains('ppt') || type.contains('pptx')) return Icons.slideshow;
-    if (type.contains('txt')) return Icons.text_snippet;
-    if (type.contains('zip') || type.contains('rar')) return Icons.archive;
-    if (type.contains('jpg') || type.contains('jpeg') || type.contains('png')) return Icons.image;
-    return Icons.insert_drive_file;
+  String _getFileIcon(String? extension) {
+    switch (extension?.toLowerCase()) {
+      case 'pdf':
+        return '📄';
+      case 'doc':
+      case 'docx':
+        return '📝';
+      case 'xls':
+      case 'xlsx':
+        return '📊';
+      case 'txt':
+        return '📃';
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+        return '🖼️';
+      default:
+        return '📎';
+    }
   }
 
   @override
@@ -556,649 +477,664 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
-              ),
-            )
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+        ),
+      )
           : SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title
-                      AbsorbPointer(
-                        absorbing: widget.isEditMode,
-                        child: Opacity(
-                          opacity: widget.isEditMode ? 0.7 : 1.0,
-                          child: CustomTextField(
-                            controller: _titleController,
-                            label: 'Title',
-                            hint: 'Enter task title',
-                            enabled: !widget.isEditMode,
-                            autofocus: false,
-                          ),
-                        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AbsorbPointer(
+                  absorbing: widget.isEditMode,
+                  child: Opacity(
+                    opacity: widget.isEditMode ? 0.7 : 1.0,
+                    child: CustomTextField(
+                      controller: _titleController,
+                      label: 'Title',
+                      hint: 'Enter task title',
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter a title';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AbsorbPointer(
+                  absorbing: widget.isEditMode,
+                  child: Opacity(
+                    opacity: widget.isEditMode ? 0.7 : 1.0,
+                    child: CustomTextField(
+                      controller: _descriptionController,
+                      label: 'Description',
+                      hint: 'Enter task description',
+                      maxLines: 4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AbsorbPointer(
+                  absorbing: widget.isEditMode,
+                  child: Opacity(
+                    opacity: widget.isEditMode ? 0.7 : 1.0,
+                    child: RoleDropdown(
+                      label: 'Assignee',
+                      hint: _isLoadingUsers ? 'Loading users...' : 'Select assignee',
+                      items: _users,
+                      value: _selectedAssignee,
+                      onChanged: widget.isEditMode ? null : (String? value) {
+                        setState(() {
+                          _selectedAssignee = value;
+                        });
+                      },
+                      isLoading: _isLoadingUsers,
+                      validator: (value) {
+                        if (!widget.isEditMode && (value == null || value.isEmpty)) {
+                          return 'Please select an assignee';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: RoleDropdown(
+                        label: 'Priority',
+                        hint: 'Select priority',
+                        items: _priorityOptions,
+                        value: _priority,
+                        onChanged: (value) {
+                          setState(() {
+                            _priority = value ?? 'Low';
+                          });
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please select a priority';
+                          }
+                          return null;
+                        },
                       ),
-                      const SizedBox(height: 16),
-                      // Description
-                      AbsorbPointer(
-                        absorbing: widget.isEditMode,
-                        child: Opacity(
-                          opacity: widget.isEditMode ? 0.7 : 1.0,
-                          child: CustomTextField(
-                            controller: _descriptionController,
-                            label: 'Description',
-                            hint: 'Enter task description',
-                            maxLines: 4,
-                            enabled: !widget.isEditMode,
-                            autofocus: false,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Assignee
-                      AbsorbPointer(
-                        absorbing: widget.isEditMode,
-                        child: Opacity(
-                          opacity: widget.isEditMode ? 0.7 : 1.0,
-                          child: RoleDropdown(
-                            label: 'Assignee',
-                            hint: _isLoadingUsers ? 'Loading users...' : 'Select assignee',
-                            items: _users,
-                            value: _selectedAssignee,
-                            onChanged: widget.isEditMode ? null : (String? value) {
-                              setState(() {
-                                _selectedAssignee = value;
-                              });
-                            },
-                            isLoading: _isLoadingUsers,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Priority and Due Date Row
-                      Row(
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Priority
-                          Expanded(
-                            child: RoleDropdown(
-                              label: 'Priority',
-                              hint: 'Select priority',
-                              items: _priorityOptions,
-                              value: _priority,
-                              onChanged: (value) {
-                                setState(() {
-                                  _priority = value ?? 'Low';
-                                });
-                              },
+                          const Text(
+                            'Due Date',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          // Due Date
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Due Date',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: _dueDate ?? DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now().add(const Duration(days: 365)),
+                                builder: (context, child) {
+                                  return Theme(
+                                    data: Theme.of(context).copyWith(
+                                      colorScheme: const ColorScheme.dark(
+                                        primary: Color(0xFF7DF9FF),
+                                        surface: Color(0xFF0D1526),
+                                      ),
+                                    ),
+                                    child: child!,
+                                  );
+                                },
+                              );
+                              if (date != null) {
+                                setState(() {
+                                  _dueDate = date;
+                                });
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D1526),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF1E293B)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    _dueDate != null
+                                        ? '${_dueDate!.day}/${_dueDate!.month}/${_dueDate!.year}'
+                                        : 'dd/mm/yyyy',
+                                    style: TextStyle(
+                                      color: _dueDate != null ? Colors.white : const Color(0xFF94A3B8),
+                                      fontSize: 14,
+                                    ),
                                   ),
+                                  const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (widget.isEditMode) ...[
+                  const Text(
+                    'Status',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildStatusButton(TaskStatus.pending, 'Pending'),
+                      const SizedBox(width: 12),
+                      _buildStatusButton(TaskStatus.inProgress, 'In Progress'),
+                      const SizedBox(width: 12),
+                      _buildStatusButton(TaskStatus.completed, 'Completed'),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                const Text(
+                  'Alarm Settings',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: _alarmStartDate ?? DateTime.now(),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      builder: (context, child) {
+                        return Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: const ColorScheme.dark(
+                              primary: Color(0xFF7DF9FF),
+                              surface: Color(0xFF0D1526),
+                            ),
+                          ),
+                          child: child!,
+                        );
+                      },
+                    );
+                    if (date != null) {
+                      setState(() {
+                        _alarmStartDate = date;
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D1526),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF1E293B)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _alarmStartDate != null
+                              ? '${_alarmStartDate!.day}/${_alarmStartDate!.month}/${_alarmStartDate!.year}'
+                              : 'Select Start Date',
+                          style: TextStyle(
+                            color: _alarmStartDate != null ? Colors.white : const Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                        ),
+                        const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () async {
+                    final time = await showTimePicker(
+                      context: context,
+                      initialTime: _alarmStartTime ?? TimeOfDay.now(),
+                      builder: (context, child) {
+                        return Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: const ColorScheme.dark(
+                              primary: Color(0xFF7DF9FF),
+                              surface: Color(0xFF0D1526),
+                            ),
+                          ),
+                          child: child!,
+                        );
+                      },
+                    );
+                    if (time != null) {
+                      setState(() {
+                        _alarmStartTime = time;
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D1526),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF1E293B)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _alarmStartTime != null
+                              ? '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}'
+                              : 'Select Start Time',
+                          style: TextStyle(
+                            color: _alarmStartTime != null ? Colors.white : const Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                        ),
+                        const Icon(Icons.access_time, color: Color(0xFF94A3B8), size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                RoleDropdown(
+                  label: 'Frequency',
+                  hint: 'Select frequency',
+                  items: _frequencyOptions,
+                  value: _alarmFrequency,
+                  onChanged: (value) {
+                    setState(() {
+                      _alarmFrequency = value ?? '30 minutes';
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Voice Notes',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBackground,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.borderColor),
+                  ),
+                  child: Column(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _isPlaying ? null : (_isRecording ? _stopRecording : _startRecording),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isRecording ? Colors.red : AppColors.accentCyan,
+                          foregroundColor: AppColors.background,
+                          minimumSize: const Size(double.infinity, 48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        icon: Icon(_isRecording ? Icons.stop : Icons.mic),
+                        label: Text(
+                          _isRecording ? 'Stop Recording' : 'Start Recording',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (_isRecording || _isPlaying) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                _isRecording
+                                    ? 'Recording: ${_formatDuration(_recordingDuration)}'
+                                    : 'Playing: ${_formatDuration(_playbackPosition)} / ${_formatDuration(_totalDuration)}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
                                 ),
+                                textAlign: TextAlign.center,
+                              ),
+                              if (_isPlaying && _totalDuration.inSeconds > 0) ...[
                                 const SizedBox(height: 8),
-                                GestureDetector(
-                                  onTap: () async {
-                                    final date = await showDatePicker(
-                                      context: context,
-                                      initialDate: _dueDate ?? DateTime.now(),
-                                      firstDate: DateTime.now(),
-                                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                                      builder: (context, child) {
-                                        return Theme(
-                                          data: Theme.of(context).copyWith(
-                                            colorScheme: const ColorScheme.dark(
-                                              primary: Color(0xFF7DF9FF),
-                                              surface: Color(0xFF0D1526),
-                                            ),
-                                          ),
-                                          child: child!,
-                                        );
-                                      },
-                                    );
-                                    if (date != null) {
-                                      setState(() {
-                                        _dueDate = date;
-                                      });
-                                    }
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF0D1526),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: const Color(0xFF1E293B)),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          _dueDate != null
-                                              ? '${_dueDate!.day}/${_dueDate!.month}/${_dueDate!.year}'
-                                              : 'dd/mm/yyyy',
-                                          style: TextStyle(
-                                            color: _dueDate != null ? Colors.white : const Color(0xFF94A3B8),
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                        const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
-                                      ],
-                                    ),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
+                                    backgroundColor: AppColors.borderColor,
+                                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accentCyan),
+                                    minHeight: 4,
                                   ),
                                 ),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      // Status - Only show in edit mode
-                      if (widget.isEditMode) ...[
-                        const Text(
-                          'Status',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 8),
+                      ],
+                      if (_recordedFilePath != null && !_isRecording) ...[
+                        const SizedBox(height: 16),
                         Row(
                           children: [
-                            _buildStatusButton(TaskStatus.pending, 'Pending'),
-                            const SizedBox(width: 12),
-                            _buildStatusButton(TaskStatus.inProgress, 'In Progress'),
-                            const SizedBox(width: 12),
-                            _buildStatusButton(TaskStatus.completed, 'Completed'),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                      // Alarm Section
-                      const Text(
-                        'Alarm Settings',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Start Date
-                      GestureDetector(
-                        onTap: () async {
-                          final date = await showDatePicker(
-                            context: context,
-                            initialDate: _alarmStartDate ?? DateTime.now(),
-                            firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(const Duration(days: 365)),
-                            builder: (context, child) {
-                              return Theme(
-                                data: Theme.of(context).copyWith(
-                                  colorScheme: const ColorScheme.dark(
-                                    primary: Color(0xFF7DF9FF),
-                                    surface: Color(0xFF0D1526),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _isRecording ? null : _playRecording,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.accentCyan,
+                                  foregroundColor: AppColors.background,
+                                  minimumSize: const Size(double.infinity, 48),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
                                 ),
-                                child: child!,
-                              );
-                            },
-                          );
-                          if (date != null) {
-                            setState(() {
-                              _alarmStartDate = date;
-                            });
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0D1526),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFF1E293B)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _alarmStartDate != null
-                                    ? '${_alarmStartDate!.day}/${_alarmStartDate!.month}/${_alarmStartDate!.year}'
-                                    : 'Select Start Date',
-                                style: TextStyle(
-                                  color: _alarmStartDate != null ? Colors.white : const Color(0xFF94A3B8),
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const Icon(Icons.calendar_today, color: Color(0xFF94A3B8), size: 16),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Start Time
-                      GestureDetector(
-                        onTap: () async {
-                          final time = await showTimePicker(
-                            context: context,
-                            initialTime: _alarmStartTime ?? TimeOfDay.now(),
-                            builder: (context, child) {
-                              return Theme(
-                                data: Theme.of(context).copyWith(
-                                  colorScheme: const ColorScheme.dark(
-                                    primary: Color(0xFF7DF9FF),
-                                    surface: Color(0xFF0D1526),
+                                icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
+                                label: Text(
+                                  _isPlaying ? 'Stop Playing' : 'Play Recording',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
                                   ),
-                                ),
-                                child: child!,
-                              );
-                            },
-                          );
-                          if (time != null) {
-                            setState(() {
-                              _alarmStartTime = time;
-                            });
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0D1526),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFF1E293B)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _alarmStartTime != null
-                                    ? '${_alarmStartTime!.hour.toString().padLeft(2, '0')}:${_alarmStartTime!.minute.toString().padLeft(2, '0')}'
-                                    : 'Select Start Time',
-                                style: TextStyle(
-                                  color: _alarmStartTime != null ? Colors.white : const Color(0xFF94A3B8),
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const Icon(Icons.access_time, color: Color(0xFF94A3B8), size: 16),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Frequency Dropdown
-                      RoleDropdown(
-                        label: 'Frequency',
-                        hint: 'Select frequency',
-                        items: _frequencyOptions,
-                        value: _alarmFrequency,
-                        onChanged: (value) {
-                          setState(() {
-                            _alarmFrequency = value ?? '30 minutes';
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      // Voice Notes
-                      const Text(
-                        'Voice Notes',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.inputBackground,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppColors.borderColor),
-                        ),
-                        child: Column(
-                          children: [
-                            // Record Button
-                            ElevatedButton.icon(
-                              onPressed: _isPlaying ? null : (_isRecording ? _stopRecording : _startRecording),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _isRecording ? Colors.red : AppColors.accentCyan,
-                                foregroundColor: AppColors.background,
-                                minimumSize: const Size(double.infinity, 48),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              icon: Icon(_isRecording ? Icons.stop : Icons.mic),
-                              label: Text(
-                                _isRecording ? 'Stop Recording' : 'Record Voice Note',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ),
-                            if (_isRecording) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                'Recording: ${_formatDuration(_recordingDuration)}',
-                                style: const TextStyle(color: Colors.white, fontSize: 14),
-                              ),
-                            ],
-                            if (_localVoiceNotes.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              ListView.builder(
-                                shrinkWrap: true,
-                                physics: NeverScrollableScrollPhysics(),
-                                itemCount: _localVoiceNotes.length,
-                                itemBuilder: (context, index) {
-                                  final note = _localVoiceNotes[index];
-                                  final isPlaying = _currentlyPlayingNoteIndex == index && _isPlaying;
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.background,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppColors.borderColor),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            IconButton(
-                                              icon: Icon(
-                                                isPlaying ? Icons.pause : Icons.play_arrow,
-                                                color: const Color(0xFF7DF9FF),
-                                              ),
-                                              onPressed: () async {
-                                                if (isPlaying) {
-                                                  await _stopPlayback();
-                                                  setState(() {
-                                                    _currentlyPlayingNoteIndex = null;
-                                                    _isPlaying = false;
-                                                  });
-                                                } else {
-                                                  setState(() {
-                                                    _currentlyPlayingNoteIndex = index;
-                                                    _isPlaying = true;
-                                                  });
-                                                  await _audioPlayer.play(DeviceFileSource(note['file_path']));
-                                                }
-                                              },
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    'Voice Note ${index + 1}',
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 14,
-                                                      fontWeight: FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    'By: ${note['created_by']} - ${_formatDuration(note['duration'])}',
-                                                    style: const TextStyle(
-                                                      color: Color(0xFF94A3B8),
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(Icons.delete, color: Colors.red),
-                                              onPressed: () {
-                                                setState(() {
-                                                  File(note['file_path']).deleteSync();
-                                                  _localVoiceNotes.removeAt(index);
-                                                  if (_currentlyPlayingNoteIndex == index) {
-                                                    _currentlyPlayingNoteIndex = null;
-                                                    _isPlaying = false;
-                                                  }
-                                                });
-                                              },
-                                            ),
-                                          ],
-                                        ),
-                                        if (isPlaying) ...[
-                                          const SizedBox(height: 8),
-                                          Row(
-                                            children: [
-                                              Text(
-                                                _formatDuration(_playbackPosition),
-                                                style: const TextStyle(color: Colors.white, fontSize: 12),
-                                              ),
-                                              Expanded(
-                                                child: Padding(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                                  child: LinearProgressIndicator(
-                                                    value: _totalDuration.inMilliseconds == 0
-                                                        ? 0
-                                                        : _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
-                                                    backgroundColor: Colors.grey[800],
-                                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
-                                                    minHeight: 4,
-                                                  ),
-                                                ),
-                                              ),
-                                              Text(
-                                                _formatDuration(_totalDuration),
-                                                style: const TextStyle(color: Colors.white, fontSize: 12),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  );
-                                },
+                            if (!_isPlaying) ...[
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: _deleteRecording,
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                tooltip: 'Delete Recording',
                               ),
                             ],
                           ],
                         ),
-                      ),
-                      // Move Audio Notes section here (from bottom)
-                      if (widget.isEditMode) ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Audio Notes',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        if (_voiceNotes.isEmpty)
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Color(0xFF0D1526),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Color(0xFF1E293B)),
-                            ),
-                            child: const Text(
-                              'No audio notes.',
-                              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-                            ),
-                          )
-                        else
-                          ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _voiceNotes.length,
-                            itemBuilder: (context, index) {
-                              final voiceNote = _voiceNotes[index];
-                              final isPlaying = _currentlyPlayingNoteIndex == index && _isPlaying;
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF0D1526),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFF1E293B)),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        IconButton(
-                                          icon: Icon(
-                                            isPlaying ? Icons.pause : Icons.play_arrow,
-                                            color: const Color(0xFF7DF9FF),
-                                          ),
-                                          onPressed: () async {
-                                            if (isPlaying) {
-                                              await _stopPlayback();
-                                              setState(() {
-                                                _currentlyPlayingNoteIndex = null;
-                                                _isPlaying = false;
-                                              });
-                                            } else {
-                                              setState(() {
-                                                _currentlyPlayingNoteIndex = index;
-                                                _isPlaying = true;
-                                              });
-                                              await _playVoiceNote(voiceNote);
-                                            }
-                                          },
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Voice Note ${index + 1}',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                'By: ${voiceNote.createdBy}',
-                                                style: const TextStyle(
-                                                  color: Color(0xFF94A3B8),
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    // Always show timeline for currently playing note
-                                    if (isPlaying)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 8.0),
-                                        child: Row(
-                                          children: [
-                                            Text(
-                                              _formatDuration(_playbackPosition),
-                                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                                            ),
-                                            Expanded(
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                                child: LinearProgressIndicator(
-                                                  value: _totalDuration.inMilliseconds == 0
-                                                      ? 0
-                                                      : _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
-                                                  backgroundColor: Colors.grey[800],
-                                                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
-                                                  minHeight: 4,
-                                                ),
-                                              ),
-                                            ),
-                                            Text(
-                                              _formatDuration(_totalDuration),
-                                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
                       ],
-                      const SizedBox(height: 16),
-                      // Attachments
-                      _buildAttachmentsSection(),
-                      const SizedBox(height: 16),
-                      // Action Buttons
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                backgroundColor: Colors.transparent,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: const Text(
-                                'Cancel',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: TextButton(
-                              onPressed: _handleCreateTask,
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                backgroundColor: const Color(0xFF7DF9FF),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: Text(
-                                widget.isEditMode ? 'Save' : 'Create Task',
-                                style: const TextStyle(
-                                  color: Color(0xFF0F172A),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),
-              ),
-    ),
+                if (widget.isEditMode && _voiceNotes.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Audio Notes',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _voiceNotes.length,
+                    itemBuilder: (context, index) {
+                      final voiceNote = _voiceNotes[index];
+                      final isPlaying = _currentlyPlayingNoteId == voiceNote.id;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0D1526),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF1E293B)),
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                isPlaying ? Icons.pause : Icons.play_arrow,
+                                color: const Color(0xFF7DF9FF),
+                              ),
+                              onPressed: () async {
+                                if (isPlaying) {
+                                  await _stopPlayback();
+                                  setState(() {
+                                    _currentlyPlayingNoteId = null;
+                                  });
+                                } else {
+                                  setState(() {
+                                    _currentlyPlayingNoteId = voiceNote.id;
+                                  });
+                                  await _playVoiceNote(voiceNote);
+                                }
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Voice Note ${index + 1}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'By: ${voiceNote.createdBy}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF94A3B8),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  if (isPlaying && _totalDuration.inSeconds > 0) ...[
+                                    const SizedBox(height: 8),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: LinearProgressIndicator(
+                                        value: _playbackPosition.inMilliseconds / _totalDuration.inMilliseconds,
+                                        backgroundColor: const Color(0xFF0D1526),
+                                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+                                        minHeight: 2,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
+                const SizedBox(height: 16),
+                const Text(
+                  'Attachments',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBackground,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.borderColor),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GestureDetector(
+                        onTap: _isUploadingFiles ? null : _pickFiles,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _isUploadingFiles ? AppColors.borderColor : AppColors.background,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.borderColor),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.add,
+                                color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _isUploadingFiles ? 'Uploading...' : 'Choose files...',
+                                style: TextStyle(
+                                  color: _isUploadingFiles ? Colors.grey : const Color(0xFF94A3B8),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_selectedFiles.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Column(
+                          children: List.generate(_selectedFiles.length, (index) {
+                            final file = _selectedFiles[index];
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppColors.borderColor),
+                              ),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    _getFileIcon(file.extension),
+                                    style: const TextStyle(fontSize: 20),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          file.name,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        Text(
+                                          '${(file.size / 1024).toStringAsFixed(2)} KB',
+                                          style: TextStyle(
+                                            color: Colors.grey[400],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                                    onPressed: () => _removeFile(index),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (widget.isEditMode) _buildExistingAttachments(),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          backgroundColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: _handleCreateTask,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          backgroundColor: const Color(0xFF7DF9FF),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: Text(
+                          widget.isEditMode ? 'Save' : 'Create Task',
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1235,230 +1171,130 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     );
   }
 
-  // Add this getter for alarm settings
-  Map<String, dynamic>? get _alarmSettings {
-    if (_alarmStartDate == null || _alarmStartTime == null) return null;
-    
-    return {
-      'start_date': _alarmStartDate!.toIso8601String(),
-      'start_time': '${_alarmStartTime!.hour}:${_alarmStartTime!.minute}',
-      'frequency': _alarmFrequency,
-    };
-  }
-
-  // Convert PlatformFile to File
-  List<File>? get _attachmentFiles {
-    if (_selectedFiles.isEmpty) return null;
-    return _selectedFiles
-        .where((pFile) => pFile.path != null)
-        .map((pFile) => File(pFile.path!))
-        .toList();
-  }
-
-  Future<List<Map<String, dynamic>>> _uploadLocalVoiceNotes() async {
-    List<Map<String, dynamic>> uploadedNotes = [];
-    for (var note in _localVoiceNotes) {
-      final file = File(note['file_path']);
-      if (!await file.exists()) continue;
-      final fileName = note['file_name'];
-      final duration = note['duration'];
-      final createdBy = note['created_by'];
-      try {
-        final formData = FormData.fromMap({
-          'files[]': await MultipartFile.fromFile(
-            file.path,
-            filename: fileName,
-          ),
-          'type': 'audio',
-        });
-        final response = await ApiService().dio.post(
-          '/upload',
-          data: formData,
-          options: Options(
-            contentType: 'multipart/form-data',
-            validateStatus: (status) => true,
-          ),
-        );
-        if (response.statusCode == 200 && response.data['success'] == true) {
-          final uploaded = response.data['files'][0];
-          uploadedNotes.add({
-            'file_path': uploaded['file_path'],
-            'file_name': uploaded['file_name'],
-            'duration': duration.inSeconds,
-            'created_by': createdBy,
-          });
-          print('✅ [Upload] Successfully uploaded audio: ${uploaded['file_path']}');
-        } else {
-          print('❌ [Upload] Failed to upload audio: ${response.data}');
-        }
-      } catch (e) {
-        print('❌ [Upload] Error uploading audio: $e');
-      }
-    }
-    return uploadedNotes;
-  }
-
   Future<void> _handleCreateTask() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
       });
-
       try {
-        // Prepare audio notes list
-        final List<Map<String, dynamic>> audioNotes = [];
-        
-        // Add new voice note if recorded
-        if (_recordedFilePath != null) {
-          try {
-            final file = File(_recordedFilePath!);
-            if (await file.exists()) {
-              final fileName = 'voice_note_${DateTime.now().millisecondsSinceEpoch}.m4a';
-              final response = await _apiService.uploadFile(file, fileName);
-              
-              if (response['success']) {
-                audioNotes.add({
-                  'file_path': response['file_path'],
-                  'file_name': fileName,
-                  'duration': _recordingDuration.inSeconds,
-                  'created_by': _currentUsername,
-                });
-              }
-            }
-          } catch (e) {
-            print('❌ [CreateTask] Error uploading voice note: $e');
-          }
+        await _stopPlayback();
+        Map<String, dynamic>? audioNote;
+        if (_recordedFilePath != null && await File(_recordedFilePath!).exists()) {
+          final audioBytes = await File(_recordedFilePath!).readAsBytes();
+          final base64Audio = base64Encode(audioBytes);
+          final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
+          audioNote = {
+            'filename': filename,
+            'duration': _recordingDuration.inSeconds,
+            'audio_data': base64Audio,
+          };
         }
-
-        // Prepare attachments list
-        final List<Map<String, dynamic>> uploadedAttachments = [];
-        
-        // Upload new files
+        List<File>? attachments;
         if (_selectedFiles.isNotEmpty) {
-          for (var file in _selectedFiles) {
-            try {
-              if (file.path != null) {
-                final response = await _apiService.uploadFile(File(file.path!), file.name);
-                
-                if (response['success']) {
-                  uploadedAttachments.add({
-                    'file_path': response['file_path'],
-                    'file_name': file.name,
-                    'file_type': file.extension ?? 'unknown',
-                    'file_size': file.size,
-                    'uploaded_by': _currentUsername,
-                  });
-                }
-              }
-            } catch (e) {
-              print('❌ [CreateTask] Error uploading file ${file.name}: $e');
+          attachments = _selectedFiles.map((file) {
+            if (file.path == null) {
+              throw Exception('File path is null');
             }
-          }
+            return File(file.path!);
+          }).toList();
         }
-
-        // Add existing voice notes (edit mode)
-        for (var voiceNote in _voiceNotes) {
-          if (voiceNote.filePath != null) {
-            audioNotes.add({
-              'file_path': voiceNote.filePath,
-              'file_name': voiceNote.fileName,
-              'duration': voiceNote.duration.inSeconds,
-              'created_by': voiceNote.createdBy,
-            });
-          }
+        Map<String, dynamic>? alarmSettings;
+        if (_alarmStartDate != null && _alarmStartTime != null) {
+          final alarmDateTime = DateTime(
+            _alarmStartDate!.year,
+            _alarmStartDate!.month,
+            _alarmStartDate!.day,
+            _alarmStartTime!.hour,
+            _alarmStartTime!.minute,
+          );
+          alarmSettings = {
+            'alarm_time': alarmDateTime.toIso8601String(),
+            'is_enabled': true,
+          };
         }
-
-        // Get current user info
-        final prefs = await SharedPreferences.getInstance();
-        _currentUsername = prefs.getString('username');
-        
-        print('📝 [CreateTask] Updating task with data:');
-        print('Title: ${_titleController.text}');
-        print('Description: ${_descriptionController.text}');
-        print('Assignee: $_selectedAssignee');
-        print('Priority: $_priority');
-        print('Status: ${_getStatusString(_status)}');
-        print('Due Date: $_dueDate');
-        print('Audio Notes: ${audioNotes.length}');
-        print('Attachments: ${uploadedAttachments.length}');
-        print('Existing Attachments: ${_existingAttachments.length}');
-
-        Map<String, dynamic> response;
+        String response;
         if (widget.isEditMode) {
-          // Update existing task
+          if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
+            throw Exception('Assignee is missing');
+          }
+          // Log initialAssigner for debugging
+          print('Debug: initialAssigner=${widget.initialAssigner}, taskId=${widget.taskId}');
+          // Use initialAssigner if valid, else fallback to _currentUsername
+          final assignedBy = (widget.initialAssigner != null && widget.initialAssigner!.isNotEmpty)
+              ? widget.initialAssigner!
+              : (_currentUsername ?? '');
+          if (widget.initialAssigner == null || widget.initialAssigner!.isEmpty) {
+            print('Warning: initialAssigner is missing or empty, using _currentUsername=$assignedBy');
+          }
           response = await _apiService.updateTask(
             taskId: widget.taskId!,
             title: _titleController.text,
             description: _descriptionController.text,
-            assignedTo: widget.initialAssignee ?? '',
-            assignedBy: widget.initialAssigner ?? '',
+            assignedTo: _selectedAssignee!,
+            assignedBy: widget.initialAssigner.toString(),
             deadline: _dueDate ?? DateTime.now(),
             priority: _priority.toLowerCase(),
             status: _getStatusString(_status),
-            audioNotes: audioNotes,
-            attachments: uploadedAttachments,
-            alarmSettings: _alarmSettings,
-            existingAttachmentIds: _existingAttachments.map((a) => a.id).toList(),
+            audioNote: audioNote,
+            attachments: attachments,
+            alarmSettings: alarmSettings,
           );
         } else {
-          // Create new task
+          if (_currentUsername == null || _currentUsername!.isEmpty) {
+            throw Exception('Current user is not logged in');
+          }
+          if (_selectedAssignee == null || _selectedAssignee!.isEmpty) {
+            throw Exception('Assignee is missing');
+          }
           response = await _apiService.createTask(
             title: _titleController.text,
             description: _descriptionController.text,
-            assignedTo: _selectedAssignee ?? '',
-            assignedBy: _currentUsername ?? '',
+            assignedTo: _selectedAssignee!,
+            assignedBy: _currentUsername!,
             deadline: _dueDate ?? DateTime.now(),
             priority: _priority.toLowerCase(),
             status: 'pending',
-            audioNotes: audioNotes,
-            attachments: uploadedAttachments,
-            alarmSettings: _alarmSettings,
+            audioNote: audioNote,
+            attachments: attachments,
+            alarmSettings: alarmSettings,
           );
         }
-
-        print('📤 [CreateTask] Update task response: $response');
-        
-        if (!response['success']) {
-          throw Exception(response['message'] ?? 'Operation failed');
-        }
-
-        // Show success message
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                response['message'] ?? (widget.isEditMode ? 'Task updated successfully' : 'Task created successfully'),
-                style: const TextStyle(color: Colors.white),
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.isEditMode ? 'Task updated successfully' : 'Task created successfully',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
-              backgroundColor: Colors.green,
             ),
-          );
-        }
-
-        // Wait for server to process the update
-        await Future.delayed(const Duration(milliseconds: 500));
-
-        // Pop back with success result
+            backgroundColor: const Color(0xFF1E293B),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: const BorderSide(
+                color: Color(0xFF7DF9FF),
+                width: 1,
+              ),
+            ),
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            duration: const Duration(seconds: 3),
+          ),
+        );
         Navigator.pop(context, true);
       } catch (e) {
-        print('❌ [CreateTask] Error: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Error: ${e.toString()}',
-                style: const TextStyle(color: Colors.white),
-              ),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _isLoading = false;
+        });
+        print('Error ${widget.isEditMode ? "updating" : "creating"} task: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error ${widget.isEditMode ? "updating" : "creating"} task: $e')),
+        );
       }
     }
   }
@@ -1499,8 +1335,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Future<void> _requestInitialPermissions() async {
     try {
       print('🔐 [Permissions] Requesting initial permissions...');
-      
-      // Request all necessary permissions at start
       Map<Permission, PermissionStatus> statuses = await [
         Permission.microphone,
         Permission.storage,
@@ -1508,12 +1342,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         Permission.videos,
         Permission.audio,
       ].request();
-      
       print('📱 [Permissions] Initial status:');
       statuses.forEach((permission, status) {
         print('  - ${permission.toString()}: $status');
       });
-      } catch (e) {
+    } catch (e) {
       print('❌ [Permissions] Error requesting initial permissions: $e');
     }
   }
@@ -1528,15 +1361,12 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Future<void> _startRecording() async {
     try {
       print('\n🎤 [Recording] Starting recording process...');
-      
       setState(() {
         _canScroll = false;
       });
-
       final micPermission = await Permission.microphone.status;
       print('📱 [Recording] Permission check:');
       print('  - Microphone: $micPermission');
-      
       if (!micPermission.isGranted) {
         print('❌ [Recording] Microphone permission not granted, requesting...');
         final status = await Permission.microphone.request();
@@ -1551,22 +1381,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           return;
         }
       }
-
       final appDir = await getApplicationDocumentsDirectory();
       print('📁 [Recording] App documents directory: ${appDir.path}');
-      
       final dirPath = '${appDir.path}/recordings';
       print('📁 [Recording] Creating recordings directory at: $dirPath');
-      
       try {
         await Directory(dirPath).create(recursive: true);
       } catch (e) {
         print('⚠️ [Recording] Directory creation warning (may already exist): $e');
       }
-      
       final filePath = '$dirPath/audio_note_${DateTime.now().millisecondsSinceEpoch}.wav';
       print('📝 [Recording] Will save recording to: $filePath');
-
       if (_isEmulatorTestMode) {
         print('🔧 [Recording] Running in emulator test mode');
         await _createTestAudioFile(filePath);
@@ -1577,10 +1402,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('✅ [Recording] Test file created at: $filePath');
         return;
       }
-
       final isRecorderReady = await _audioRecorder.hasPermission();
       print('🎤 [Recording] Recorder ready status: $isRecorderReady');
-      
       if (!isRecorderReady) {
         print('❌ [Recording] Recorder not ready');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1591,34 +1414,30 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         );
         return;
       }
-
       print('⚙️ [Recording] Configuring recorder...');
       await _audioRecorder.start(
         const RecordConfig(
-          encoder: AudioEncoder.wav,  // Changed to WAV format
+          encoder: AudioEncoder.wav,
           bitRate: 128000,
           sampleRate: 44100,
         ),
         path: filePath,
       );
       print('✅ [Recording] Recording started successfully');
-
       setState(() {
         _isRecording = true;
         _recordedFilePath = filePath;
       });
       print('🔄 [Recording] State updated: isRecording=$_isRecording, filePath=$_recordedFilePath');
-
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         setState(() {
           _recordingDuration += const Duration(seconds: 1);
         });
       });
-
     } catch (e) {
       print('❌ [Recording] Error: $e');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
           content: Text('Failed to start recording: $e'),
           duration: const Duration(seconds: 5),
         ),
@@ -1631,24 +1450,22 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<void> _createTestAudioFile(String filePath) async {
     try {
-      // Create a simple test audio file (1 second of silence)
       final file = File(filePath);
       final List<int> headerBytes = [
-        0x52, 0x49, 0x46, 0x46, // "RIFF"
-        0x24, 0x00, 0x00, 0x00, // File size
-        0x57, 0x41, 0x56, 0x45, // "WAVE"
-        0x66, 0x6D, 0x74, 0x20, // "fmt "
-        0x10, 0x00, 0x00, 0x00, // Format chunk size
-        0x01, 0x00,             // Format tag (PCM)
-        0x01, 0x00,             // Channels (mono)
-        0x44, 0xAC, 0x00, 0x00, // Sample rate (44100 Hz)
-        0x88, 0x58, 0x01, 0x00, // Bytes per second
-        0x02, 0x00,             // Block align
-        0x10, 0x00,             // Bits per sample
-        0x64, 0x61, 0x74, 0x61, // "data"
-        0x00, 0x00, 0x00, 0x00  // Data chunk size
+        0x52, 0x49, 0x46, 0x46,
+        0x24, 0x00, 0x00, 0x00,
+        0x57, 0x41, 0x56, 0x45,
+        0x66, 0x6D, 0x74, 0x20,
+        0x10, 0x00, 0x00, 0x00,
+        0x01, 0x00,
+        0x01, 0x00,
+        0x44, 0xAC, 0x00, 0x00,
+        0x88, 0x58, 0x01, 0x00,
+        0x02, 0x00,
+        0x10, 0x00,
+        0x64, 0x61, 0x74, 0x61,
+        0x00, 0x00, 0x00, 0x00
       ];
-      
       await file.writeAsBytes(headerBytes);
       print('✅ [Recording] Created test audio file with silence');
     } catch (e) {
@@ -1662,20 +1479,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       print('⚠️ [Recording] Stop called but not currently recording');
       return;
     }
-
     try {
       print('\n🛑 [Recording] Stopping recording...');
       final path = await _audioRecorder.stop();
       print('✅ [Recording] Recording stopped. File saved at: $path');
-
       setState(() {
         _isRecording = false;
-        _canScroll = true;  // Re-enable scrolling
+        _canScroll = true;
         _recordingDuration = Duration.zero;
       });
       print('🔄 [Recording] State updated: isRecording=$_isRecording');
-
-      // Verify file exists and check its size
       final file = File(path ?? '');
       if (await file.exists()) {
         final size = await file.length();
@@ -1683,20 +1496,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('  - Path: ${file.path}');
         print('  - Size: $size bytes');
         print('  - Exists: true');
-        
-        // Add to local voice notes list for preview
-        final prefs = await SharedPreferences.getInstance();
-        final username = prefs.getString('username') ?? 'Unknown';
-        setState(() {
-          _localVoiceNotes.add({
-            'file_path': file.path,
-            'duration': _recordingDuration,
-            'created_by': username,
-            'file_name': 'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
-          });
-          _recordedFilePath = null;
-          _recordingDuration = Duration.zero;
-        });
+        if (size > 0) {
+          final bytes = await file.openRead(0, min(size, 16)).toList();
+          print('  - First few bytes: $bytes');
+          print('✅ [Recording] File verification complete - file is valid');
+        }
       } else {
         print('❌ [Recording] Warning: Recording file not found at: ${file.path}');
       }
@@ -1706,47 +1510,45 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         SnackBar(content: Text('Failed to stop recording: $e')),
       );
       setState(() {
-        _canScroll = true;  // Re-enable scrolling on error
+        _canScroll = true;
       });
     }
   }
 
   Future<void> _playRecording() async {
-    if (_isDisposed || _recordedFilePath == null || _isRecording || _audioPlayer.state == PlayerState.disposed) return;
+    if (_recordedFilePath == null || _isRecording) return;
     try {
       if (_isPlaying) {
-        await _stopPlayback();
+        await _audioPlayer.stop();
+        _playbackTimer?.cancel();
+        setState(() {
+          _isPlaying = false;
+          _playbackPosition = Duration.zero;
+          _canScroll = true;
+        });
       } else {
         await _audioPlayer.play(DeviceFileSource(_recordedFilePath!));
         setState(() {
           _isPlaying = true;
           _canScroll = false;
-          _currentlyPlayingNoteIndex = null;
         });
-        // Listen for playback completion
         _audioPlayer.onPlayerComplete.listen((event) {
-          if (!_isDisposed) {
-            _playbackTimer?.cancel();
-            setState(() {
-              _isPlaying = false;
-              _playbackPosition = Duration.zero;
-              _canScroll = true;
-              _currentlyPlayingNoteIndex = null;
-            });
-          }
+          _playbackTimer?.cancel();
+          setState(() {
+            _isPlaying = false;
+            _playbackPosition = Duration.zero;
+            _canScroll = true;
+          });
         });
       }
     } catch (e) {
       print('❌ [Playback] Error: $e');
       _playbackTimer?.cancel();
-      if (!_isDisposed) {
-        setState(() {
-          _isPlaying = false;
-          _playbackPosition = Duration.zero;
-          _canScroll = true;
-          _currentlyPlayingNoteIndex = null;
-        });
-      }
+      setState(() {
+        _isPlaying = false;
+        _playbackPosition = Duration.zero;
+        _canScroll = true;
+      });
     }
   }
 
@@ -1755,7 +1557,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       print('⚠️ [Delete] No recording to delete');
       return;
     }
-    
     try {
       print('\n🗑️ [Delete] Attempting to delete recording at: $_recordedFilePath');
       final file = File(_recordedFilePath!);
@@ -1774,19 +1575,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     }
   }
 
-  // Add playback methods
   Future<void> _stopPlayback() async {
     try {
-      if (!_isDisposed && _audioPlayer.state != PlayerState.disposed) {
-        await _audioPlayer.stop();
-        setState(() {
-          _isPlaying = false;
-          _playbackPosition = Duration.zero;
-          _canScroll = true;
-          _currentlyPlayingNoteIndex = null;
-        });
-        _playbackTimer?.cancel();
-      }
+      await _audioPlayer.stop();
+      setState(() {
+        _isPlaying = false;
+        _playbackPosition = Duration.zero;
+        _canScroll = true;
+      });
+      _playbackTimer?.cancel();
     } catch (e) {
       print('❌ [Playback] Error stopping playback: $e');
     }
@@ -1794,45 +1591,24 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Future<void> _playVoiceNote(VoiceNote voiceNote) async {
     try {
-      // Validate voice note data
       if (voiceNote.id == null) {
         print('❌ Voice note ID is null');
         _showErrorSnackBar('Invalid voice note data');
         return;
       }
-
-      // Use the widget's taskId if voiceNote.taskId is null
       final taskId = voiceNote.taskId ?? widget.taskId;
       if (taskId == null) {
         print('❌ Task ID is null');
         _showErrorSnackBar('Cannot play voice note - missing task ID');
         return;
       }
-
-      // Stop any currently playing audio
       final playerState = await _audioPlayer.state;
       if (playerState == PlayerState.playing) {
         await _audioPlayer.stop();
       }
-
-      // First try to get the file path from the voice note
-      String? filePath = voiceNote.filePath;
-      
-      // If no file path, try to download the audio
-      if (filePath == null || !File(filePath).existsSync()) {
-        print('📥 Downloading voice note...');
-        filePath = await _apiService.downloadVoiceNote(voiceNote);
-        if (filePath == null) {
-          throw Exception('Failed to download voice note');
-        }
-      }
-
-      print('🎵 Playing voice note from local file: $filePath');
-
-      // Configure audio player for local file playback
+      final apiUrl = '${ApiService.baseUrl}/tasks/$taskId/audio';
+      print('🎵 Playing voice note from URL: $apiUrl');
       await _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
-      
-      // Set audio context mode to spatial audio
       await _audioPlayer.setAudioContext(AudioContext(
         android: AudioContextAndroid(
           contentType: AndroidContentType.music,
@@ -1847,30 +1623,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ],
         ),
       ));
-
-      // Start playback from local file
-      await _audioPlayer.play(DeviceFileSource(filePath));
-
-      // Fetch and set duration after playback starts
-      final duration = await _audioPlayer.getDuration();
-      print('🎵 [Audio] Fetched duration: $duration');
-      if (duration != null && mounted) {
-        setState(() {
-          _totalDuration = duration;
-        });
-      }
-      
+      await _audioPlayer.setSourceUrl(apiUrl);
+      await _audioPlayer.resume();
       setState(() {
         _isPlaying = true;
-        _currentlyPlayingNoteIndex = null;
+        _currentlyPlayingNoteId = voiceNote.id;
       });
-
-      // Update UI when playback completes
       _audioPlayer.onPlayerComplete.listen((_) {
         if (mounted) {
           setState(() {
             _isPlaying = false;
-            _currentlyPlayingNoteIndex = null;
+            _currentlyPlayingNoteId = null;
             _playbackPosition = Duration.zero;
           });
         }
@@ -1880,27 +1643,22 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       _showErrorSnackBar('Failed to play voice note');
       setState(() {
         _isPlaying = false;
-        _currentlyPlayingNoteIndex = null;
+        _currentlyPlayingNoteId = null;
       });
     }
   }
 
   Future<String?> _getVoiceNoteFilePath(VoiceNote voiceNote) async {
     try {
-      // First try to get from API
       final filePath = await _apiService.downloadVoiceNote(voiceNote);
       if (filePath != null) {
         print('✅ Voice note downloaded successfully: $filePath');
         return filePath;
       }
-      
-      // If API fails, try local path
       if (voiceNote.filePath != null && await File(voiceNote.filePath!).exists()) {
         print('✅ Using existing local voice note: ${voiceNote.filePath}');
         return voiceNote.filePath;
       }
-      
-      // If both fail, try audio data
       if (voiceNote.audioData != null) {
         final tempDir = await getTemporaryDirectory();
         final tempPath = '${tempDir.path}/voice_note_${voiceNote.id}.wav';
@@ -1909,7 +1667,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         print('✅ Created voice note from audio data: $tempPath');
         return tempPath;
       }
-      
       print('❌ No valid source found for voice note');
       return null;
     } catch (e) {
@@ -1922,7 +1679,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     if (attachment.filePath != null && File(attachment.filePath!).existsSync()) {
       return attachment.filePath;
     }
-    
     try {
       final filePath = await _apiService.downloadAttachment(attachment.id);
       return filePath;
@@ -1939,171 +1695,111 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         _showErrorSnackBar('Attachment file not available');
         return;
       }
-
       await OpenFile.open(filePath);
     } catch (e) {
       _showErrorSnackBar('Failed to open attachment');
     }
   }
 
-  Widget _buildAttachmentsSection() {
+  Widget _buildExistingAttachments() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Attachments',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (_isLoadingAttachments)
-          Center(
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7DF9FF)),
+        if (_existingAttachments.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Existing Attachments',
+            style: TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
             ),
-          )
-        else
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Existing attachments
-              if (_existingAttachments.isNotEmpty) ...[
-                Text(
-                  'Existing Attachments',
-                  style: TextStyle(
-                    color: Color(0xFF94A3B8),
-                    fontSize: 14,
-                  ),
+          ),
+          const SizedBox(height: 8),
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _existingAttachments.length,
+            itemBuilder: (context, index) {
+              final attachment = _existingAttachments[index];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _existingAttachments.map((attachment) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Color(0xFF0D1526),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Color(0xFF1E293B)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                child: Row(
+                  children: [
+                    Text(
+                      _getFileIcon(attachment.fileType),
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            _getFileIcon(attachment.fileType),
-                            color: Color(0xFF7DF9FF),
-                            size: 16,
-                          ),
-                          const SizedBox(width: 8),
                           Text(
                             attachment.fileName,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 12,
+                              fontSize: 14,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: Icon(Icons.download, color: Color(0xFF7DF9FF), size: 16),
-                            tooltip: 'Download',
-                            onPressed: () async {
-                              await _openAttachment(attachment);
-                            },
+                          Row(
+                            children: [
+                              Text(
+                                '${(attachment.fileSize / 1024).toStringAsFixed(2)} KB',
+                                style: const TextStyle(
+                                  color: Color(0xFF94A3B8),
+                                  fontSize: 12,
+                                ),
+                              ),
+                              if (attachment.createdBy != null) ...[
+                                const Text(
+                                  ' • ',
+                                  style: TextStyle(
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Text(
+                                  'By ${attachment.createdBy}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),
-                    );
-                  }).toList(),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.download, color: Color(0xFF7DF9FF)),
+                      onPressed: () => _openAttachment(attachment),
+                      tooltip: 'Download',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () {
+                        setState(() {
+                          _existingAttachments.removeAt(index);
+                          _selectedFiles.removeAt(index);
+                        });
+                      },
+                      tooltip: 'Delete',
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-              ],
-              // New attachments
-              if (_selectedFiles.isNotEmpty) ...[
-                Text(
-                  'New Attachments',
-                  style: TextStyle(
-                    color: Color(0xFF94A3B8),
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _selectedFiles.map((file) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Color(0xFF0D1526),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Color(0xFF7DF9FF)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _getFileIcon(file.extension),
-                            color: Color(0xFF7DF9FF),
-                            size: 16,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            file.name,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _selectedFiles.remove(file);
-                              });
-                            },
-                            child: Icon(
-                              Icons.close,
-                              color: Colors.red,
-                              size: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-              ],
-              // Add attachment button
-              TextButton.icon(
-                onPressed: _pickFiles,
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  backgroundColor: Color(0xFF0D1526),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(color: Color(0xFF1E293B)),
-                  ),
-                ),
-                icon: Icon(
-                  Icons.attach_file,
-                  color: Color(0xFF7DF9FF),
-                  size: 16,
-                ),
-                label: Text(
-                  'Add Attachment',
-                  style: TextStyle(
-                    color: Color(0xFF7DF9FF),
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ],
+              );
+            },
           ),
+        ],
       ],
     );
   }
@@ -2117,14 +1813,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Future<void> _initializeAudioPlayer() async {
     try {
       print('🎵 [Audio] Initializing audio player...');
-      
-      if (_isDisposed) return;
-
-      // Configure audio player for streaming
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
       await _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
-      
-      // Configure audio context
       await _audioPlayer.setAudioContext(AudioContext(
         android: AudioContextAndroid(
           contentType: AndroidContentType.music,
@@ -2139,12 +1829,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ],
         ),
       ));
-      
-      // Set up position listener
       _positionSubscription?.cancel();
       _positionSubscription = _audioPlayer.onPositionChanged.listen(
-        (position) {
-          if (mounted && !_isDisposed) {
+            (position) {
+          if (mounted) {
             setState(() {
               _playbackPosition = position;
             });
@@ -2154,12 +1842,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           print('❌ [Audio] Position listener error: $error');
         },
       );
-      
-      // Set up duration listener
       _durationSubscription?.cancel();
       _durationSubscription = _audioPlayer.onDurationChanged.listen(
-        (duration) {
-          if (mounted && !_isDisposed) {
+            (duration) {
+          if (mounted) {
             setState(() {
               _totalDuration = duration;
             });
@@ -2169,22 +1855,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           print('❌ [Audio] Duration listener error: $error');
         },
       );
-      
-      // Set up completion listener
       _audioPlayer.onPlayerComplete.listen((_) {
-        if (mounted && !_isDisposed) {
+        if (mounted) {
           setState(() {
             _isPlaying = false;
             _playbackPosition = Duration.zero;
-            _currentlyPlayingNoteIndex = null;
+            _currentlyPlayingNoteId = null;
           });
         }
       });
-
-      // Set up state change listener
       _audioPlayer.onPlayerStateChanged.listen(
-        (state) {
-          if (mounted && !_isDisposed) {
+            (state) {
+          if (mounted) {
             setState(() {
               _isPlaying = state == PlayerState.playing;
             });
@@ -2195,7 +1877,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           print('❌ [Audio] State listener error: $error');
         },
       );
-
       print('✅ [Audio] Audio player initialized successfully');
     } catch (e) {
       print('❌ [Audio] Error initializing audio player: $e');
@@ -2204,16 +1885,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   void _disposeAudioPlayer() {
-    try {
-      if (!_isDisposed) {
-        _positionSubscription?.cancel();
-        _durationSubscription?.cancel();
-        if (_audioPlayer.state != PlayerState.disposed) {
-          _audioPlayer.dispose();
-        }
-      }
-    } catch (e) {
-      print('⚠️ [Audio] Error disposing audio player: $e');
-    }
+    _positionSubscription?.cancel();
+    _durationSubscription?.cancel();
+    _audioPlayer.dispose();
   }
 }

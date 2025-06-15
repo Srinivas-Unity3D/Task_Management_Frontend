@@ -1,75 +1,23 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:async';
-import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:taskmanagement/services/notification_firebase_service.dart';
+import 'package:uuid/uuid.dart';
+
 import '../models/attachment.dart';
 import '../models/task_assignment.dart';
 import '../models/voice_note.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:uuid/uuid.dart';
-
-class CacheManager {
-  // Static singleton instance
-  static final CacheManager _instance = CacheManager._internal();
-  factory CacheManager() => _instance;
-  CacheManager._internal();
-
-  // Lightweight cache storage
-  final Map<String, dynamic> _cache = {};
-  final Map<String, DateTime> _cacheTimestamp = {};
-  
-  // Cache duration (adjust based on your needs)
-  static const cacheDuration = Duration(minutes: 5);
-
-  bool isDataValid(String key) {
-    if (!_cache.containsKey(key) || !_cacheTimestamp.containsKey(key)) {
-      return false;
-    }
-    
-    final timestamp = _cacheTimestamp[key]!;
-    return DateTime.now().difference(timestamp) < cacheDuration;
-  }
-
-  void setData(String key, dynamic data) {
-    _cache[key] = data;
-    _cacheTimestamp[key] = DateTime.now();
-    
-    // Cleanup old cache entries
-    _cleanupCache();
-  }
-
-  dynamic getData(String key) {
-    if (!isDataValid(key)) {
-      _cache.remove(key);
-      _cacheTimestamp.remove(key);
-      return null;
-    }
-    return _cache[key];
-  }
-
-  void _cleanupCache() {
-    final now = DateTime.now();
-    final keysToRemove = _cacheTimestamp.keys
-        .where((key) => now.difference(_cacheTimestamp[key]!) > cacheDuration)
-        .toList();
-    
-    for (var key in keysToRemove) {
-      _cache.remove(key);
-      _cacheTimestamp.remove(key);
-    }
-  }
-
-  void clearCache() {
-    _cache.clear();
-    _cacheTimestamp.clear();
-  }
-}
+import 'send_notification_service.dart';
 
 class ApiService {
   static const String baseUrl = 'http://134.209.149.12:5000';
+  // static const String baseUrl = 'http://10.20.0.248:5000';
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
     connectTimeout: const Duration(seconds: 10),
@@ -81,81 +29,160 @@ class ApiService {
     validateStatus: (status) => true,
   ));
 
-  // Add getter for dio instance
-  Dio get dio => _dio;
-
-  // Initialize the CacheManager
-  final CacheManager _cacheManager = CacheManager();
-
-  // Add background sync controller
-  final StreamController<void> _syncController = StreamController<void>.broadcast();
-  Timer? _syncTimer;
-  bool _isSyncing = false;
-
-  // Initialize background sync
-  void initBackgroundSync() {
-    _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
-      _syncController.add(null);
-    });
-
-    _syncController.stream.listen((_) {
-      _performBackgroundSync();
-    });
+  ApiService() {
+    setupFcmTokenRefreshListener();
   }
 
-  // Dispose background sync
-  void disposeBackgroundSync() {
-    _syncTimer?.cancel();
-    _syncController.close();
-  }
+  void setupFcmTokenRefreshListener() {
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+      print('FCM Token Refreshed: $newToken');
 
-  // Perform background sync
-  Future<void> _performBackgroundSync() async {
-    if (_isSyncing) return;
-    _isSyncing = true;
-
-    try {
       final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getString('user_id');
-      final role = prefs.getString('role');
+      await prefs.setString('fcm_token', newToken);
 
-      if (userId == null || role == null) {
-        _isSyncing = false;
-        return;
+      final username = prefs.getString('username');
+      if (username != null) {
+        await updateFcmTokenInBackend(username, newToken);
+      } else {
+        print('User not logged in, cannot update FCM token in backend');
+      }
+    }).onError((e) {
+      print('Error listening for FCM token refresh: $e');
+    });
+  }
+
+  Future<String?> getAndStoreFcmToken() async {
+    try {
+      String? fcmToken = await NotificationFirebaseService().getDeviceToken();
+      print('Retrieved FCM Token: $fcmToken');
+
+      if (fcmToken != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('fcm_token', fcmToken);
+      } else {
+        print('FCM token retrieval returned null');
       }
 
-      print('🔄 [SYNC] Starting background sync for user: $userId');
+      return fcmToken;
+    } catch (e) {
+      print('Error retrieving FCM token: $e');
+      return null;
+    }
+  }
 
-      // Get last sync timestamp
-      final lastSync = prefs.getString('last_sync_timestamp') ?? '0';
-      
-      // Fetch only updates since last sync
-      final response = await http.get(
-        Uri.parse('$baseUrl/sync?user_id=$userId&last_sync=$lastSync'),
+  Future<void> updateFcmTokenInBackend(String username, String fcmToken) async {
+    final result = await updateFcmToken(username, fcmToken);
+    if (result['success']) {
+      print('FCM token updated in backend: $fcmToken');
+    } else {
+      print('Failed to update FCM token in backend: ${result['message']}');
+    }
+  }
+
+  Future<Map<String, dynamic>> updateFcmToken(String username, String fcmToken) async {
+    try {
+      print('Updating FCM token for username: $username');
+      print('FCM token to update: $fcmToken');
+
+      // First get the user_id for the username using POST request
+      final response = await http.post(
+        Uri.parse('$baseUrl/get_fcm_token'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-      ).timeout(const Duration(seconds: 10));
+        body: json.encode({
+          'username': username,
+        }),
+      );
+
+      print('Get FCM token response status: ${response.statusCode}');
+      print('Get FCM token response body: ${response.body}');
+
+      if (response.statusCode != 200) {
+        print('Failed to get user ID. Status: ${response.statusCode}, Body: ${response.body}');
+        return {
+          'success': false,
+          'message': 'Failed to get user ID',
+        };
+      }
+
+      final userData = json.decode(response.body);
+      final userId = userData['user_id'];
+
+      if (userId == null) {
+        print('User ID not found in response: ${response.body}');
+        return {
+          'success': false,
+          'message': 'User ID not found',
+        };
+      }
+
+      print('Retrieved user ID: $userId');
+
+      // Now update the FCM token
+      final updateResponse = await http.post(
+        Uri.parse('$baseUrl/update_fcm_token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode({
+          'user_id': userId,
+          'fcm_token': fcmToken,
+        }),
+      );
+
+      print('Update FCM token response status: ${updateResponse.statusCode}');
+      print('Update FCM token response body: ${updateResponse.body}');
+
+      final data = json.decode(updateResponse.body);
+      if (updateResponse.statusCode == 200) {
+        print('FCM token updated successfully in database');
+        return {
+          'success': true,
+          'message': data['message'] ?? 'FCM token updated successfully',
+        };
+      } else {
+        print('Failed to update FCM token in database');
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Failed to update FCM token',
+        };
+      }
+    } catch (e) {
+      print('Error updating FCM token: $e');
+      return {
+        'success': false,
+        'message': 'Connection error. Please try again.',
+      };
+    }
+  }
+
+  Future<String?> getUserFcmToken(String username) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/get_fcm_token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode({'username': username}),
+      );
+
+      print('Fetch FCM token response status: ${response.statusCode}');
+      print('Fetch FCM token response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final updates = data['updates'] as List;
-        
-        // Update cache for each changed task
-        for (var update in updates) {
-          await updateTaskCache(userId, role);
-        }
-
-        // Store new sync timestamp
-        await prefs.setString('last_sync_timestamp', DateTime.now().toIso8601String());
-        print('✅ [SYNC] Background sync completed successfully');
+        return data['fcm_token'];
+      } else {
+        print('Failed to fetch FCM token for user $username');
+        return null;
       }
     } catch (e) {
-      print('❌ [SYNC] Background sync failed: $e');
-    } finally {
-      _isSyncing = false;
+      print('Error fetching FCM token for user $username: $e');
+      return null;
     }
   }
 
@@ -168,12 +195,17 @@ class ApiService {
   }) async {
     try {
       print('Sending signup request with data:');
+      
+      // Get FCM token before registration
+      String? fcmToken = await getAndStoreFcmToken();
+      
       final requestBody = {
         'username': username,
         'email': email,
         'phone': phone,
         'password': password,
         'role': role,
+        'fcm_token': fcmToken ?? '', // Include FCM token in registration
       };
       print(requestBody);
 
@@ -192,6 +224,14 @@ class ApiService {
       final data = json.decode(response.body);
 
       if (response.statusCode == 200) {
+        // Store user data in SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('username', username);
+        await prefs.setString('role', role);
+        if (fcmToken != null) {
+          await prefs.setString('fcm_token', fcmToken);
+        }
+
         return {
           'success': true,
           'message': data['message'] ?? 'Registration successful',
@@ -224,35 +264,59 @@ class ApiService {
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
       print('Attempting login for user: $username');
-      
-      // Get FCM token from SharedPreferences
+
+      // Get stored FCM token
       final prefs = await SharedPreferences.getInstance();
-      final fcmToken = prefs.getString('fcm_token') ?? '';
-      
-      final response = await http.post(
-        Uri.parse('$baseUrl/login'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode({
-          'username': username,
-          'password': password,
-          'fcm_token': fcmToken,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      final storedFcmToken = prefs.getString('fcm_token');
+      print('Stored FCM token: $storedFcmToken');
+
+      // Always get fresh FCM token from device
+      final freshFcmToken = await NotificationFirebaseService().getDeviceToken();
+      print('Fresh FCM token from device: $freshFcmToken');
+
+      // If we got a fresh token and it's different from stored token, update it
+      if (freshFcmToken != null && freshFcmToken.isNotEmpty) {
+        if (storedFcmToken != freshFcmToken) {
+          print('FCM token has changed, updating...');
+          await prefs.setString('fcm_token', freshFcmToken);
+        }
+      }
+
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/login'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: json.encode({
+              'username': username,
+              'password': password,
+              'fcm_token': freshFcmToken ?? '', // Use fresh token in login request
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
 
       print('Login response status: ${response.statusCode}');
       print('Login response body: ${response.body}');
 
       final data = json.decode(response.body);
-      
+
       if (response.statusCode == 200) {
         // Store user data in SharedPreferences
-        await prefs.setString('user_id', data['user_id']);
+        await prefs.setString('user_id', data['user_id'].toString());
         await prefs.setString('username', data['username']);
         await prefs.setString('role', data['role']);
-        
+
+        // Always update FCM token in backend after successful login
+        if (freshFcmToken != null && freshFcmToken.isNotEmpty) {
+          print('Updating FCM token in backend after successful login');
+          final updateResult = await updateFcmToken(username, freshFcmToken);
+          print('FCM token update result: $updateResult');
+        } else {
+          print('No FCM token available to update after login');
+        }
+
         return {
           'success': true,
           'data': data,
@@ -267,7 +331,8 @@ class ApiService {
       print('Login request timed out');
       return {
         'success': false,
-        'message': 'Connection timed out. Please check your internet connection.',
+        'message':
+            'Connection timed out. Please check your internet connection.',
       };
     } on SocketException {
       print('Network error during login');
@@ -289,96 +354,55 @@ class ApiService {
     required String role,
   }) async {
     try {
-      // Generate cache key
-      final cacheKey = 'tasks_${username}_${role}';
-      print('🔍 [CACHE] Checking cache for key: $cacheKey');
-      
-      // Check cache first
-      final cachedData = _cacheManager.getData(cacheKey);
-      if (cachedData != null) {
-        print('✅ [CACHE] Found cached data');
-        return {
-          'success': true,
-          'data': cachedData,
-        };
-      }
-      print('ℹ️ [CACHE] No cached data found, fetching from API');
+      int retryCount = 0;
+      const maxRetries = 3;
+      const retryDelay = Duration(seconds: 1);
 
-      // Add retry logic
-      int maxRetries = 3;
-      int currentTry = 0;
-      Duration retryDelay = const Duration(seconds: 1);
-
-      while (currentTry < maxRetries) {
+      while (retryCount < maxRetries) {
         try {
-          print('🔍 [API] Fetching tasks for user: $username with role: $role (Attempt ${currentTry + 1})');
-          
-          final response = await _dio.get(
-            '/tasks',
-            queryParameters: {
-              'username': username,
-              'role': role,
+          print('🔍 [API] Fetching tasks for user: $username with role: $role');
+          final response = await http.get(
+            Uri.parse('$baseUrl/tasks?username=$username&role=$role'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
             },
-            options: Options(
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-              },
-              receiveTimeout: const Duration(seconds: 10),
-              sendTimeout: const Duration(seconds: 10),
-            ),
-          );
+          ).timeout(const Duration(seconds: 10));
 
           print('📥 [API] Tasks response status: ${response.statusCode}');
+          print('📥 [API] Tasks response body: ${response.body}');
 
           if (response.statusCode == 200) {
-            final data = response.data;
-            print('💾 [CACHE] Caching new data');
-            _cacheManager.setData(cacheKey, data);
+            final data = json.decode(response.body);
             return {
               'success': true,
               'data': data,
             };
           }
-          
-          // If we get here, it means we got a response but it wasn't 200
-          print('⚠️ [API] Received non-200 status code: ${response.statusCode}');
-          currentTry++;
-          
+          return {
+            'success': false,
+            'message': 'Failed to load tasks',
+          };
         } catch (e) {
-          print('❌ [API] Error during fetch attempt ${currentTry + 1}: $e');
-          currentTry++;
-          
-          if (currentTry < maxRetries) {
-            print('🔄 [API] Retrying in ${retryDelay.inSeconds} seconds...');
+          retryCount++;
+          if (retryCount < maxRetries) {
+            print('Retry attempt $retryCount after error: $e');
             await Future.delayed(retryDelay);
-            // Increase delay for next retry
-            retryDelay *= 2;
+            continue;
           }
+          rethrow;
         }
       }
-      
-      // If we have cached data but failed to refresh, use cached data
-      if (cachedData != null) {
-        print('⚠️ [API] Failed to fetch fresh data, using cached data');
-        return {
-          'success': true,
-          'data': cachedData,
-        };
-      }
-      
-      // If all retries failed and no cache, return empty list
-      print('⚠️ [API] All retry attempts failed, returning empty list');
-      return {
-        'success': true,
-        'data': [],
-      };
 
-    } catch (e) {
-      print('❌ [API] Fatal error loading tasks: $e');
       return {
-        'success': true,
-        'data': [],
+        'success': false,
+        'message': 'Failed after $maxRetries retry attempts',
+      };
+    } catch (e) {
+      print('Error loading tasks: $e');
+      return {
+        'success': false,
+        'message': 'Connection error. Please try again.',
       };
     }
   }
@@ -405,7 +429,7 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> createTask({
+  Future<String> createTask({
     required String title,
     required String description,
     required String assignedTo,
@@ -413,28 +437,29 @@ class ApiService {
     required DateTime deadline,
     required String priority,
     required String status,
-    List<Map<String, dynamic>>? audioNotes,
-    List<Map<String, dynamic>>? attachments,
+    Map<String, dynamic>? audioNote,
+    List<File>? attachments,
     Map<String, dynamic>? alarmSettings,
   }) async {
     try {
-      // Get assignee's FCM token from server (use /get_fcm_token with POST)
-      String? assigneeFcmToken;
-      try {
-        final tokenResponse = await http.post(
-          Uri.parse('$baseUrl/get_fcm_token'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: json.encode({'username': assignedTo}),
-        );
-        if (tokenResponse.statusCode == 200) {
-          assigneeFcmToken = json.decode(tokenResponse.body)['fcm_token'];
-        }
-      } catch (_) {}
+      List<Map<String, dynamic>> attachmentData = [];
+      if (attachments != null) {
+        for (var file in attachments) {
+          if (await file.exists()) {
+            List<int> fileBytes = await file.readAsBytes();
+            String base64File = base64Encode(fileBytes);
+            String fileName = file.path.split('/').last;
+            String fileType = fileName.split('.').last;
 
-      // Prepare the request body
+            attachmentData.add({
+              'file_name': fileName,
+              'file_type': fileType,
+              'file_data': base64File,
+            });
+          }
+        }
+      }
+
       final taskData = {
         'title': title,
         'description': description,
@@ -443,86 +468,99 @@ class ApiService {
         'deadline': deadline.toIso8601String(),
         'priority': priority,
         'status': status,
-        'audio_notes': audioNotes,
+        'audio_note': audioNote,
         'alarm_settings': alarmSettings,
-        'attachments': attachments,
-        'assignee_fcm_token': assigneeFcmToken,
+        'attachments': attachmentData,
       };
 
-      final response = await http.post(
+      final response = await http
+          .post(
         Uri.parse('$baseUrl/tasks'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: json.encode(taskData),
-      ).timeout(const Duration(seconds: 10));
+      )
+          .timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw TimeoutException('Request timed out');
+        },
+      );
 
-      print('📤 [API] Create task response status: ${response.statusCode}');
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
 
       if (response.statusCode == 201) {
         final responseData = json.decode(response.body);
-        final newTask = responseData['task'];
-        
-        // Update cache for both users
-        await updateTaskCache(assignedTo, assignedBy);
-        
-        // Clear assignments cache for both users to force refresh
-        final assigneeAssignmentsKey = 'task_assignments_$assignedTo';
-        final assignerAssignmentsKey = 'task_assignments_$assignedBy';
-        _cacheManager.getData(assigneeAssignmentsKey)?.clear();
-        _cacheManager.getData(assignerAssignmentsKey)?.clear();
-        
-        // Trigger background sync
-        _syncController.add(null);
-        
-        return {
-          'success': true,
-          'message': responseData['message'] ?? 'Task created successfully',
-          'task': newTask,
-        };
+        final taskId = responseData['task_id']?.toString() ?? 'unknown';
+
+        final fcmToken = await getUserFcmToken(assignedTo);
+        if (fcmToken != null && fcmToken.isNotEmpty) {
+          final notificationData = {
+            'type': 'task_created',
+            'task_id': taskId,
+            'title': title,
+            'assigned_by': assignedBy,
+          };
+          final notificationDataStr = notificationData
+              .map((key, value) => MapEntry(key, value.toString()));
+          final result = await SendNotificationService.sendNotification(
+            token: fcmToken,
+            title: 'New Task Assigned',
+            body: 'You have been assigned a new task: $title by $assignedBy',
+            data: notificationDataStr,
+          );
+          if (result.success) {
+            print('Notification sent to $assignedTo with FCM token: $fcmToken');
+          } else {
+            print(
+                'Failed to send notification: ${result.message}, Error: ${result.errorDetails}');
+          }
+        } else {
+          print(
+              'Warning: Could not send notification - FCM token not found for user $assignedTo');
+        }
+
+        return responseData['message'] ?? 'Task created successfully';
       } else {
-        return {
-          'success': false,
-          'message': 'Failed to create task: ${response.statusCode}',
-        };
+        throw Exception(
+            'Failed to create task: ${response.statusCode} - ${response.body}');
       }
+    } on TimeoutException {
+      throw Exception(
+          'Connection timed out. Please check your internet connection and try again.');
+    } on SocketException catch (e) {
+      throw Exception(
+          'Network error: ${e.message}. Please check your internet connection.');
     } catch (e) {
-      print('❌ [API] Error creating task: $e');
-      return {
-        'success': false,
-        'message': 'Failed to create task: $e',
-      };
+      throw Exception('Failed to create task: $e');
     }
   }
 
   Future<List<VoiceNote>> getTaskVoiceNotes(String taskId) async {
     try {
       print('📞 [API] Fetching voice notes for task: $taskId');
-      final response = await _dio.get('/tasks/$taskId/audio');
-      print('✅ [API] Voice notes response status: [36m[1m${response.statusCode}[0m');
+      final response = await _dio.get('/api/tasks/$taskId/voice-notes');
+
+      print('✅ [API] Voice notes response status: ${response.statusCode}');
       print('✅ [API] Voice notes response data: ${response.data}');
+
       if (response.statusCode == 200) {
         final List<dynamic> data = response.data;
-        // Patch: Ensure each VoiceNote has taskId set
         return data.map((json) {
-          final note = VoiceNote.fromJson(json);
-          return note.taskId == null ? VoiceNote(
-            id: note.id,
-            taskId: taskId,
-            filePath: note.filePath,
-            audioData: note.audioData,
-            createdBy: note.createdBy,
-            createdAt: note.createdAt,
-            duration: note.duration,
-            fileName: note.fileName,
-          ) : note;
+          if (!json.containsKey('audio_id') && !json.containsKey('id')) {
+            json['id'] = Uuid().v4();
+          }
+          return VoiceNote.fromJson(json);
         }).toList();
       } else if (response.statusCode == 404) {
         print('ℹ️ [API] No voice notes found for task');
         return [];
       } else {
-        throw Exception('Failed to fetch voice notes: ${response.statusMessage}');
+        throw Exception(
+            'Failed to fetch voice notes: ${response.statusMessage}');
       }
     } catch (e) {
       print('❌ [API] Error getting task voice notes: $e');
@@ -532,66 +570,25 @@ class ApiService {
 
   Future<String?> downloadVoiceNote(VoiceNote voiceNote) async {
     try {
-      // Extract the filename from the file_path
-      final filePathFromMeta = voiceNote.filePath;
-      if (filePathFromMeta == null) {
-        print('❌ Voice note file path is null');
+      if (voiceNote.audioData == null) {
+        print('❌ [API] No audio data available for download');
         return null;
       }
 
-      // Create directory for audio files if it doesn't exist
-      final directory = await getApplicationDocumentsDirectory();
-      final audioDir = Directory('${directory.path}/audio');
-      if (!await audioDir.exists()) {
-        await audioDir.create(recursive: true);
-      }
+      final tempDir = await getTemporaryDirectory();
+      final fileName =
+          voiceNote.fileName.isNotEmpty ? voiceNote.fileName : 'voice_note.wav';
+      final file = File('${tempDir.path}/$fileName');
 
-      // Always use .wav extension for audio files
-      final fileName = '${voiceNote.id}.wav';
-      final localFilePath = '${audioDir.path}/$fileName';
+      print('📝 [API] Saving voice note to: ${file.path}');
 
-      // Download the actual audio file from the backend using the correct endpoint
-      final url = '${ApiService.baseUrl}/uploads/audio/${filePathFromMeta.split('/').last}';
-      print('⬇️ Downloading audio from: $url');
-      final response = await _dio.download(
-        url,
-        localFilePath,
-        options: Options(
-          responseType: ResponseType.bytes,
-          receiveTimeout: Duration(minutes: 2),
-          sendTimeout: Duration(minutes: 2),
-        ),
-      );
+      final bytes = base64.decode(voiceNote.audioData!);
+      await file.writeAsBytes(bytes);
 
-      // Check file existence and size after download
-      final file = File(localFilePath);
-      if (!await file.exists()) {
-        print('❌ Downloaded file does not exist at $localFilePath');
-        return null;
-      }
-      final fileSize = await file.length();
-      print('✅ Downloaded file exists. Size: $fileSize bytes');
-      if (fileSize == 0) {
-        print('❌ Downloaded file is empty');
-        return null;
-      }
-      if (fileSize < 1024) { // If file is less than 1KB, likely an error page
-        final content = await file.readAsString();
-        print('⚠️ Downloaded file is very small. Contents:\n$content');
-        if (content.contains('<html') || content.contains('DOCTYPE html')) {
-          print('❌ Downloaded file is an HTML error page, not audio.');
-          return null;
-        }
-      }
-
-      print('✅ Voice note downloaded successfully: $localFilePath');
-      // Print first 32 bytes for debugging
-      final bytes = await file.openRead(0, fileSize < 32 ? fileSize : 32).toList();
-      final flatBytes = bytes.expand((b) => b).toList();
-      print('🔎 First bytes: ${flatBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-      return localFilePath;
+      print('✅ [API] Voice note saved successfully');
+      return file.path;
     } catch (e) {
-      print('❌ Error downloading voice note: $e');
+      print('❌ [API] Error downloading voice note: $e');
       return null;
     }
   }
@@ -601,7 +598,9 @@ class ApiService {
       final response = await _dio.get('/tasks/$taskId/attachments');
       if (response.statusCode == 200) {
         final List<dynamic> attachments = response.data['attachments'];
-        return attachments.map((attachment) => Attachment.fromJson(attachment)).toList();
+        return attachments
+            .map((attachment) => Attachment.fromJson(attachment))
+            .toList();
       } else {
         throw Exception('Failed to fetch attachments');
       }
@@ -621,7 +620,11 @@ class ApiService {
       if (response.statusCode == 200) {
         final bytes = response.data as List<int>;
         final tempDir = await getTemporaryDirectory();
-        final fileName = response.headers.value('content-disposition')?.split('filename=').last ?? 'attachment_$attachmentId';
+        final fileName = response.headers
+                .value('content-disposition')
+                ?.split('filename=')
+                .last ??
+            'attachment_$attachmentId';
         final file = File('${tempDir.path}/$fileName');
         await file.writeAsBytes(bytes);
         return file.path;
@@ -640,12 +643,12 @@ class ApiService {
       final response = await _dio.get('/tasks/$taskId/audio');
       print('✅ [API] Audio note response status: ${response.statusCode}');
       print('✅ [API] Audio note response data: ${response.data}');
-      
+
       if (response.statusCode == 404) {
         print('ℹ️ [API] No audio note found for task');
         return {'success': true, 'data': null};
       }
-      
+
       if (response.statusCode != 200) {
         throw DioException(
           requestOptions: response.requestOptions,
@@ -673,12 +676,12 @@ class ApiService {
       final response = await _dio.get('/attachments/$attachmentId');
       print('✅ [API] Attachment response status: ${response.statusCode}');
       print('✅ [API] Attachment response data: ${response.data}');
-      
+
       if (response.statusCode == 404) {
         print('ℹ️ [API] Attachment not found');
         return {'success': false, 'message': 'Attachment not found'};
       }
-      
+
       if (response.statusCode != 200) {
         throw DioException(
           requestOptions: response.requestOptions,
@@ -701,77 +704,7 @@ class ApiService {
   }
 
   Future<List<TaskAssignment>> getTaskAssignments(String userId) async {
-    final cacheKey = 'task_assignments_$userId';
-    
     try {
-      // Try to get cached data first
-      final cachedData = _cacheManager.getData(cacheKey);
-      if (cachedData != null) {
-        print('✅ [CACHE] Found cached task assignments');
-        return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
-      }
-
-      // Add retry logic
-      int maxRetries = 3;
-      int currentTry = 0;
-      Duration retryDelay = const Duration(seconds: 1);
-
-      while (currentTry < maxRetries) {
-        try {
-          print('🔍 [API] Fetching task assignments for user: $userId (Attempt ${currentTry + 1})');
-          
-          final response = await _dio.get(
-            '/tasks/assignments/$userId',
-            options: Options(
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-              },
-              receiveTimeout: const Duration(seconds: 10),
-              sendTimeout: const Duration(seconds: 10),
-            ),
-          );
-
-          print('📥 [API] Task assignments response status: ${response.statusCode}');
-
-          if (response.statusCode == 200) {
-            final data = response.data['assignments'] as List;
-            
-            // Cache the successful response
-            _cacheManager.setData(cacheKey, data);
-            
-            return data.map((json) => TaskAssignment.fromJson(json)).toList();
-          }
-          
-          // If we get here, it means we got a response but it wasn't 200
-          print('⚠️ [API] Received non-200 status code: ${response.statusCode}');
-          currentTry++;
-          
-        } catch (e) {
-          print('❌ [API] Error during fetch attempt ${currentTry + 1}: $e');
-          currentTry++;
-          
-          if (currentTry < maxRetries) {
-            print('🔄 [API] Retrying in ${retryDelay.inSeconds} seconds...');
-            await Future.delayed(retryDelay);
-            // Increase delay for next retry
-            retryDelay *= 2;
-          }
-        }
-      }
-      
-      // If we have cached data but failed to refresh, use cached data
-      if (cachedData != null) {
-        print('⚠️ [API] Failed to fetch fresh data, using cached data');
-        return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
-      }
-      
-      // If all retries failed and no cache, return empty list
-      print('⚠️ [API] All retry attempts failed, returning empty list');
-      return [];
-
-    } catch (e) {
-      print('❌ [API] Fatal error fetching task assignments: $e');
       print('🔍 [API] Fetching task assignments for user: $userId');
       final response = await http.get(
         Uri.parse('$baseUrl/tasks/assignments/$userId'),
@@ -779,82 +712,25 @@ class ApiService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-      ).timeout(const Duration(seconds: 10));
+      );
 
-      print('📥 [API] Task assignments response status: ${response.statusCode}');
+      print(
+          '📥 [API] Task assignments response status: ${response.statusCode}');
       print('📥 [API] Task assignments response body: ${response.body}');
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final assignments = data['assignments'] as List;
-        
-        // Cache the data
-        _cacheManager.setData(cacheKey, assignments);
-        
-        return assignments.map((json) => TaskAssignment.fromJson(json)).toList();
+        final List<dynamic> data = json.decode(response.body)['assignments'];
+        return data.map((json) => TaskAssignment.fromJson(json)).toList();
       } else {
-        print('❌ [API] Failed to fetch task assignments: ${response.statusCode}');
-        return [];
+        throw Exception('Failed to fetch task assignments');
       }
     } catch (e) {
       print('❌ [API] Error fetching task assignments: $e');
-      return [];
+      throw Exception('Error fetching task assignments: $e');
     }
   }
 
-  // Add method to force refresh assignments
-  Future<List<TaskAssignment>> refreshTaskAssignments(String userId) async {
-    final cacheKey = 'task_assignments_$userId';
-    
-    try {
-      print('🔄 [API] Force refreshing task assignments for user: $userId');
-      final response = await http.get(
-        Uri.parse('$baseUrl/tasks/assignments/$userId'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body)['assignments'] as List;
-        
-        // Update cache
-        _cacheManager.setData(cacheKey, data);
-        
-        // Update SharedPreferences
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(cacheKey, json.encode(data));
-        
-        print('💾 [CACHE] Updated task assignments in cache and storage');
-        return data.map((json) => TaskAssignment.fromJson(json)).toList();
-      }
-      
-      // If refresh fails, return cached data
-      final cachedData = _cacheManager.getData(cacheKey);
-      if (cachedData != null) {
-        return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
-      }
-      
-      return [];
-    } catch (e) {
-      print('❌ [API] Error refreshing task assignments: $e');
-      // Return cached data on error
-      final cachedData = _cacheManager.getData(cacheKey);
-      if (cachedData != null) {
-        return (cachedData as List).map((json) => TaskAssignment.fromJson(json)).toList();
-      }
-      return [];
-    }
-  }
-
-  // Add method to clear all cache
-  void clearCache() {
-    print('🧹 [CACHE] Clearing all cache');
-    _cacheManager.clearCache();
-  }
-
-  Future<Map<String, dynamic>> updateTask({
+  Future<String> updateTask({
     required String taskId,
     required String title,
     required String description,
@@ -863,130 +739,122 @@ class ApiService {
     required DateTime deadline,
     required String priority,
     required String status,
-    List<Map<String, dynamic>>? audioNotes,
-    List<Map<String, dynamic>>? attachments,
+    Map<String, dynamic>? audioNote,
+    List<File>? attachments,
     Map<String, dynamic>? alarmSettings,
-    List<String>? existingAttachmentIds,
   }) async {
     try {
-      print('\n📤 [API] Updating task $taskId with data:');
-      print('Title: $title');
-      print('Description: $description');
-      print('AssignedTo: $assignedTo');
-      print('AssignedBy: $assignedBy');
-      print('Priority: $priority');
-      print('Status: $status');
-      print('Audio Notes: ${audioNotes?.length ?? 0}');
-      print('New Attachments: ${attachments?.length ?? 0}');
-      print('Existing Attachments: ${existingAttachmentIds?.length ?? 0}');
-
+      // Get current user from SharedPreferences to determine who is updating
       final prefs = await SharedPreferences.getInstance();
-      final updatedBy = prefs.getString('username');
-      
-      if (updatedBy == null) {
-        throw Exception('User not logged in');
-      }
+      final updatedBy = prefs.getString('username') ??
+          assignedBy; // Fallback to assignedBy if not found
 
-      // Get existing audio notes
-      final existingAudioNotes = await getTaskVoiceNotes(taskId);
-      final allAudioNotes = [
-        ...existingAudioNotes.map((note) => {
-          'file_id': note.id,
-          'file_path': note.filePath,
-          'duration': note.duration.inMilliseconds, // Convert Duration to milliseconds
-          'file_name': note.fileName,
-          'created_by': note.createdBy,
-        }),
-        ...?audioNotes?.map((note) => {
-          ...note,
-          'duration': note['duration'] is Duration ? (note['duration'] as Duration).inMilliseconds : note['duration'],
-        }),
-      ];
-
-      final requestData = {
+      final taskData = {
         'title': title,
         'description': description,
         'assigned_to': assignedTo,
         'assigned_by': assignedBy,
-        'updated_by': updatedBy,
         'deadline': deadline.toIso8601String(),
         'priority': priority,
         'status': status,
-        'audio_notes': allAudioNotes,
-        'new_attachments': attachments,
+        'updated_by': updatedBy,
+        'audio_note': audioNote,
         'alarm_settings': alarmSettings,
-        'existing_attachment_ids': existingAttachmentIds,
       };
 
-      print('📤 [API] Sending update request with data:');
-      print(requestData);
+      if (attachments != null && attachments.isNotEmpty) {
+        List<Map<String, dynamic>> attachmentData = [];
+        for (var file in attachments) {
+          if (await file.exists()) {
+            List<int> fileBytes = await file.readAsBytes();
+            String base64File = base64Encode(fileBytes);
+            String fileName = file.path.split('/').last;
+            String fileType = fileName.split('.').last;
 
-      final response = await _dio.put(
-        '/tasks/$taskId',
-        data: requestData,
-        options: Options(
-          validateStatus: (status) => true,
-        ),
-      );
-
-      print('📤 [API] Update task response status: ${response.statusCode}');
-      print('📤 [API] Update task response data: ${response.data}');
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        // Update cache for both users
-        await updateTaskCache(assignedTo, assignedBy);
-        
-        // Clear assignments cache for both users to force refresh
-        final assigneeAssignmentsKey = 'task_assignments_$assignedTo';
-        final assignerAssignmentsKey = 'task_assignments_$assignedBy';
-        _cacheManager.getData(assigneeAssignmentsKey)?.clear();
-        _cacheManager.getData(assignerAssignmentsKey)?.clear();
-        
-        // Trigger background sync
-        _syncController.add(null);
-        
-        return {
-          'success': true,
-          'message': response.data['message'] ?? 'Task updated successfully',
-        };
-      } else {
-        print('❌ [API] Failed to update task: ${response.statusCode}');
-        print('❌ [API] Error message: ${response.data}');
-        return {
-          'success': false,
-          'message': response.data['message'] ?? 'Failed to update task',
-        };
+            attachmentData.add({
+              'file_name': fileName,
+              'file_type': fileType,
+              'file_data': base64File,
+            });
+          }
+        }
+        taskData['attachments'] = attachmentData;
       }
-    } catch (e) {
-      print('❌ [API] Error updating task: $e');
-      return {
-        'success': false,
-        'message': 'Failed to update task: $e',
-      };
-    }
-  }
 
-  // Helper method to update task cache
-  Future<void> updateTaskCache(String username, String role) async {
-    final cacheKey = 'tasks_${username}_${role}';
-    try {
-      _cacheManager.getData(cacheKey)?.clear();
-      final response = await _dio.get(
-        '/tasks',
-        queryParameters: {
-          'username': username,
-          'role': role,
+      final response = await http.put(
+        Uri.parse('$baseUrl/tasks/$taskId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
+        body: json.encode(taskData),
       );
+
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
       if (response.statusCode == 200) {
-        final tasks = response.data;
-        _cacheManager.setData(cacheKey, tasks);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(cacheKey, json.encode(tasks));
-        print('💾 [CACHE] Updated tasks cache for user: $username, role: $role');
+        final responseData = json.decode(response.body);
+
+        // Determine notification recipient and details
+        String? recipientUsername;
+        String notificationTitle = '';
+        String notificationBody = '';
+        final notificationData = {
+          'type': 'task_updated',
+          'task_id': taskId,
+          'title': title,
+          'updated_by': updatedBy,
+        };
+
+        if (updatedBy == assignedTo) {
+          // Assignee updated the task, notify assigner
+          recipientUsername = assignedBy;
+          notificationTitle = 'Task Updated by Assignee';
+          notificationBody =
+              'The task "$title" has been updated by $assignedTo';
+        } else if (updatedBy == assignedBy) {
+          // Assigner updated the task, notify assignee
+          recipientUsername = assignedTo;
+          notificationTitle = 'Task Updated';
+          notificationBody =
+              'The task "$title" has been updated by $assignedBy';
+        }
+
+        if (recipientUsername != null) {
+          final fcmToken = await getUserFcmToken(recipientUsername);
+          if (fcmToken != null && fcmToken.isNotEmpty) {
+            final notificationDataStr = notificationData
+                .map((key, value) => MapEntry(key, value.toString()));
+            final result = await SendNotificationService.sendNotification(
+              token: fcmToken,
+              title: notificationTitle,
+              body: notificationBody,
+              data: notificationDataStr,
+            );
+            if (result.success) {
+              print(
+                  'Notification sent to $recipientUsername with FCM token: $fcmToken');
+            } else {
+              print(
+                  'Failed to send notification: ${result.message}, Error: ${result.errorDetails}');
+            }
+          } else {
+            print(
+                'Warning: Could not send notification - FCM token not found for user $recipientUsername');
+          }
+        } else {
+          print(
+              'Warning: Could not determine notification recipient for task update');
+        }
+
+        return responseData['message'] ?? 'Task updated successfully';
+      } else {
+        throw Exception(
+            'Failed to update task: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
-      print('❌ [CACHE] Error updating task cache: $e');
+      throw Exception('Failed to update task: $e');
     }
   }
 
@@ -1019,57 +887,4 @@ class ApiService {
       };
     }
   }
-
-  // Helper to get auth token from SharedPreferences
-  Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
-
-  Future<Map<String, dynamic>> uploadFile(File file, String fileName) async {
-    try {
-      print('📤 [API] Uploading file: $fileName');
-      
-      final formData = FormData.fromMap({
-        'files[]': await MultipartFile.fromFile(
-          file.path,
-          filename: fileName,
-        ),
-        'type': 'document',
-      });
-
-      final response = await _dio.post(
-        '/upload',
-        data: formData,
-        options: Options(
-          contentType: 'multipart/form-data',
-          validateStatus: (status) => true,
-        ),
-      );
-
-      print('📤 [API] Upload response status: ${response.statusCode}');
-      print('📤 [API] Upload response data: ${response.data}');
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final uploaded = response.data['files'][0];
-        return {
-          'success': true,
-          'file_path': uploaded['file_path'],
-          'file_name': uploaded['file_name'],
-        };
-      } else {
-        print('❌ [API] Failed to upload file: ${response.data}');
-        return {
-          'success': false,
-          'message': response.data['message'] ?? 'Failed to upload file',
-        };
-      }
-    } catch (e) {
-      print('❌ [API] Error uploading file: $e');
-      return {
-        'success': false,
-        'message': 'Failed to upload file: $e',
-      };
-    }
-  }
-} 
+}
