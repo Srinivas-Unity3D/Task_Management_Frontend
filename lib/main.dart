@@ -280,8 +280,8 @@ void main() async {
     try {
       print('🔌 Initializing socket service...');
       const serverUrl = 'https://134.209.149.12';
-      const wsUrl = 'wss://${ApiService.url}';
-      // const wsUrl = 'ws://0.0.0.0:5001';
+      // const wsUrl = 'wss://${ApiService.url}';
+      const wsUrl = 'wss://task-man-back-render-2.onrender.com';
       socketService.init(wsUrl);
 
       final username = prefs.getString('username');

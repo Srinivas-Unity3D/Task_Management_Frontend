@@ -607,6 +607,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -869,6 +870,111 @@ class NotificationFirebaseService {
   //     debugPrint('❌ Failed to show local notification: $e');
   //   }
   // }
+
+    Future<void> snoozeNotification(String notificationId, DateTime snoozeUntil, {String? reason, Map<String, dynamic>? audioNote}) async {
+    try {
+      print('🔄 [NotificationSnooze] Starting snooze request');
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+      final username = prefs.getString('username');
+      final token = prefs.getString('access_token');
+
+      if (userId == null || username == null) {
+        throw Exception('User not logged in');
+      }
+
+      print('🔄 [NotificationSnooze] User: $username, ID: $userId');
+
+      // Use HTTPS protocol
+      final baseUrl = ApiService.baseUrl;
+
+      // First, get the task ID from the notification
+      print('🔄 [NotificationSnooze] Fetching notification details from: $baseUrl/tasks/notifications');
+      final response = await http.get(
+        Uri.parse('$baseUrl/tasks/notifications?user_id=$userId&username=$username'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token', // Add auth token
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      print('🔄 [NotificationSnooze] Notification details response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        if (responseData['success'] == true && responseData['notifications'] != null) {
+          final List<dynamic> notifications = responseData['notifications'];
+          final notification = notifications.firstWhere(
+            (n) => n['id'] == notificationId,
+            orElse: () => throw Exception('Notification not found')
+          );
+
+          print('🔄 [NotificationSnooze] Found notification: ${notification['id']}');
+
+          // Create the request payload
+          Map<String, dynamic> payload = {
+            'notification_id': notificationId,
+            'snooze_until': snoozeUntil.toIso8601String(),
+            'reason': reason,
+            'updated_by': username,
+          };
+
+          // Only add audio note if it exists
+          if (audioNote != null) {
+            // Create a proper audio_note structure
+            payload['audio_note'] = {
+              'audio_data': audioNote['audio_data'],
+              'duration': audioNote['duration'] ?? 0,
+              'filename': audioNote['filename'] ?? 'voice_note.wav'
+            };
+          }
+
+          print('🔄 [NotificationSnooze] Payload structure: ${payload.keys.join(', ')}');
+          print('🔄 [NotificationSnooze] Payload: ${json.encode(payload)}');
+
+          // Snooze the notification
+          final snoozeResponse = await http.post(
+            Uri.parse('$baseUrl/notifications/snooze'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token', // Add auth token
+            },
+            body: json.encode(payload),
+          ).timeout(const Duration(seconds: 10));
+
+          print('🔄 [NotificationSnooze] Response status: ${snoozeResponse.statusCode}');
+          print('🔄 [NotificationSnooze] Response headers: ${snoozeResponse.headers}');
+          print('🔄 [NotificationSnooze] Response body: ${snoozeResponse.body.substring(0, math.min(500, snoozeResponse.body.length))}');
+
+          if (snoozeResponse.statusCode == 200 || snoozeResponse.statusCode == 201) {
+            print('✅ [NotificationSnooze] Notification snoozed successfully');
+            // Mark the notification as read to clear it from the notification bar
+            await markNotificationAsComplete(notificationId);
+          } else {
+            print('❌ [NotificationSnooze] Failed to snooze notification: ${snoozeResponse.statusCode}');
+            try {
+              final errorBody = json.decode(snoozeResponse.body);
+              final errorMessage = errorBody['message'] ?? 'Failed to snooze notification';
+              throw Exception(errorMessage);
+            } catch (e) {
+              throw Exception('Failed to snooze notification: ${snoozeResponse.statusCode}');
+            }
+          }
+        } else {
+          throw Exception('Invalid response format');
+        }
+      } else {
+        throw Exception('Failed to fetch notifications: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ [NotificationSnooze] Error snoozing notification: $e');
+      rethrow;
+    }
+  }
+
+
 
   Future<void> showLocalNotification(RemoteMessage message) async {
     try {

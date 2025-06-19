@@ -326,181 +326,690 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   }
 
   Widget _buildTaskCard(Task task) {
-    String _formatDate(DateTime date) {
-      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    String _formatDate(DateTime? date) {
+      if (date == null) return 'N/A';
+
+      // Convert to IST (UTC+5:30)
+      final istDate = date.add(const Duration(hours: 5, minutes: 30));
+
+      // Convert to 12-hour format with AM/PM
+      final hour = istDate.hour % 12 == 0 ? 12 : istDate.hour % 12;
+      final period = istDate.hour >= 12 ? 'PM' : 'AM';
+      final time = '${hour.toString().padLeft(2, '0')}:${istDate.minute.toString().padLeft(2, '0')} $period';
+      return time;
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: AppColors.inputBackground,
-                child: Text(
-                  task.assignedBy[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: AppColors.accentCyan,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+    String _formatDateOnly(DateTime? date) {
+      if (date == null) return 'N/A';
+
+      // Convert to IST (UTC+5:30)
+      final istDate = date.add(const Duration(hours: 5, minutes: 30));
+      // final fullDate = '${istDate.year}-${istDate.month.toString().padLeft(2, '0')}-${istDate.day.toString().padLeft(2, '0')}';
+      final fullDate = '${istDate.day.toString().padLeft(2, '0')}-${istDate.month.toString().padLeft(2, '0')}-${istDate.year}';
+      return fullDate;
+    }
+
+    // Determine the status emoji based on status
+    String _getStatusEmoji(String status) {
+      switch (status.toLowerCase()) {
+        case 'completed':
+          return '🟢';
+        case 'pending':
+          return '🔴';
+        case 'in_progress':
+          return '🔵';
+        default:
+          return '🟡';
+      }
+    }
+
+    return InkWell(
+      onTap: () async {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CreateTaskScreen(
+              isEditMode: true,
+              taskId: task.taskId,
+              initialTitle: task.title,
+              initialDescription: task.description,
+              initialAssignee: task.assignedTo,
+              initialAssigner: task.assignedBy,
+              initialPriority: task.priority.toString().split('.').last,
+              initialDueDate: task.deadline,
+              initialStatus: task.status.toString().split('.').last,
+            ),
+          ),
+        );
+        if (result == true) {
+          await _loadTasks();
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.borderColor.withOpacity(0.1),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Task Icon Circle
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: AppColors.inputBackground,
+              child: Icon(
+                Icons.task,
+                color: AppColors.accentCyan,
+                size: 20,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      task.assignedBy,
-                      style: const TextStyle(
-                        color: AppColors.accentCyan,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+            ),
+            const SizedBox(width: 8),
+            // Task Details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Task Title
+                  Text(
+                    task.title,
+                    style: const TextStyle(
+                      color: AppColors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
-                    Text(
-                      task.assignedByRole,
-                      style: const TextStyle(
-                        color: AppColors.textGrey,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                height: 32,
-                decoration: BoxDecoration(
-                  color: AppColors.accentCyan,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: TextButton.icon(
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  onPressed: () async {
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => CreateTaskScreen(
-                          isEditMode: true,
-                          taskId: task.taskId,
-                          initialTitle: task.title,
-                          initialDescription: task.description,
-                          initialAssignee: task.assignedTo,
-                          initialAssigner: task.assignedBy, // Added
-                          initialPriority: task.priority.toString().split('.').last,
-                          initialDueDate: task.deadline,
-                          initialStatus: task.status.toString().split('.').last,
+                  const SizedBox(height: 4),
+                  // Task Description
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '📝 ',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      Expanded(
+                        child: Text(
+                          task.description.isNotEmpty
+                              ? task.description
+                              : 'No description available',
+                          style: const TextStyle(
+                            color: AppColors.textGrey,
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    );
-                    if (result == true) {
-                      await _loadTasks();
-                    }
-                  },
-                  icon: const Icon(
-                    Icons.edit,
-                    color: AppColors.background,
-                    size: 16,
+                    ],
                   ),
-                  label: const Text(
-                    'View/Edit',
-                    style: TextStyle(
-                      color: AppColors.background,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  const SizedBox(height: 8),
+                  // Assigner Info
+                  Row(
+                    children: [
+                      const Text(
+                        'Assigned By: ',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textGrey,
+                        ),
+                      ),
+                      Flexible(
+                        child: Text(
+                          task.assignedBy,
+                          style: const TextStyle(
+                            color: AppColors.accentCyan,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          ' (${task.assignedByRole})',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textGrey,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Text(
-                'Task: ',
-                style: TextStyle(
-                  color: AppColors.textGrey,
-                  fontSize: 12,
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  task.title,
-                  style: TextStyle(
-                    color: AppColors.white,
-                    fontSize: 12,
+                  const SizedBox(height: 12),
+                  // Status and Priority
+                  Row(
+                    children: [
+                      // Priority badge
+                      const Text(
+                        'Priority: ',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _getPriorityColorString(task.priority.toString().split('.').last).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          task.priority.toString().split('.').last,
+                          style: TextStyle(
+                            color: _getPriorityColorString(task.priority.toString().split('.').last),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Status badge
+                      Text(
+                        _getStatusEmoji(task.status.toString().split('.').last),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(task.status.toString().split('.').last).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          task.status.toString().split('.').last,
+                          style: TextStyle(
+                            color: _getStatusColor(task.status.toString().split('.').last),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              // Priority badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _getPriorityColorString(task.priority.toString().split('.').last).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  task.priority.toString().split('.').last,
-                  style: TextStyle(
-                    color: _getPriorityColorString(task.priority.toString().split('.').last),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
+                  const SizedBox(height: 8),
+                  // Created Time and Due Date
+                  Row(
+                    children: [
+                      const Text(
+                        '⏰ ',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      Flexible(
+                        flex: 3, // Give "Created" more priority
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 150), // Ensure enough space for date and time
+                          child: Text(
+                            'Created: ${_formatDate(task.createdAt)} | ${_formatDateOnly(task.createdAt)}',
+                            style: const TextStyle(
+                              color: AppColors.textGrey,
+                              fontSize: 10,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        '📅 ',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      Flexible(
+                        flex: 2, // "Due" gets less priority
+                        child: Text(
+                          'Due: ${_formatDateOnly(task.deadline)}',
+                          style: const TextStyle(
+                            color: AppColors.textGrey,
+                            fontSize: 10,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
-              const SizedBox(width: 8),
-              // Status badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _getStatusColor(task.status.toString().split('.').last).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  task.status.toString().split('.').last,
-                  style: TextStyle(
-                    color: _getStatusColor(task.status.toString().split('.').last),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Due date
-              Icon(Icons.calendar_today, size: 12, color: AppColors.textGrey),
-              const SizedBox(width: 2),
-              Text(
-                _formatDate(task.deadline),
-                style: TextStyle(
-                  color: AppColors.textGrey,
-                  fontSize: 10,
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  // Widget _buildTaskCard(Task task) {
+  //   String _formatDate(DateTime? date) {
+  //     if (date == null) return 'N/A';
+  //
+  //     // Convert to IST (UTC+5:30)
+  //     final istDate = date.add(const Duration(hours: 5, minutes: 30));
+  //
+  //     // Convert to 12-hour format with AM/PM
+  //     final hour = istDate.hour % 12 == 0 ? 12 : istDate.hour % 12;
+  //     final period = istDate.hour >= 12 ? 'PM' : 'AM';
+  //     final time = '${hour.toString().padLeft(2, '0')}:${istDate.minute.toString().padLeft(2, '0')} $period';
+  //     return time;
+  //   }
+  //
+  //   String _formatDateOnly(DateTime? date) {
+  //     if (date == null) return 'N/A';
+  //
+  //     // Convert to IST (UTC+5:30)
+  //     final istDate = date.add(const Duration(hours: 5, minutes: 30));
+  //     final fullDate = '${istDate.year}-${istDate.month.toString().padLeft(2, '0')}-${istDate.day.toString().padLeft(2, '0')}';
+  //     return fullDate;
+  //   }
+  //
+  //   // Determine the status emoji based on status
+  //   String _getStatusEmoji(String status) {
+  //     switch (status.toLowerCase()) {
+  //       case 'completed':
+  //         return '🟢';
+  //       case 'pending':
+  //         return '🔴';
+  //       case 'in_progress':
+  //         return '🔵';
+  //       default:
+  //         return '🟡';
+  //     }
+  //   }
+  //
+  //   return InkWell(
+  //     onTap: () async {
+  //       final result = await Navigator.push(
+  //         context,
+  //         MaterialPageRoute(
+  //           builder: (context) => CreateTaskScreen(
+  //             isEditMode: true,
+  //             taskId: task.taskId,
+  //             initialTitle: task.title,
+  //             initialDescription: task.description,
+  //             initialAssignee: task.assignedTo,
+  //             initialAssigner: task.assignedBy,
+  //             initialPriority: task.priority.toString().split('.').last,
+  //             initialDueDate: task.deadline,
+  //             initialStatus: task.status.toString().split('.').last,
+  //           ),
+  //         ),
+  //       );
+  //       if (result == true) {
+  //         await _loadTasks();
+  //       }
+  //     },
+  //     borderRadius: BorderRadius.circular(12),
+  //     child: Container(
+  //       margin: const EdgeInsets.only(bottom: 16),
+  //       padding: const EdgeInsets.all(16),
+  //       decoration: BoxDecoration(
+  //         color: AppColors.cardBackground,
+  //         borderRadius: BorderRadius.circular(12),
+  //         boxShadow: [
+  //           BoxShadow(
+  //             color: AppColors.borderColor.withOpacity(0.1),
+  //             blurRadius: 4,
+  //             offset: Offset(0, 2),
+  //           ),
+  //         ],
+  //       ),
+  //       child: Row(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           // User Initial Circle
+  //           // Task Icon Circle
+  //           CircleAvatar(
+  //             radius: 20,
+  //             backgroundColor: AppColors.inputBackground,
+  //             child: Icon(
+  //               Icons.task, // Notes icon to represent the task
+  //               color: AppColors.accentCyan,
+  //               size: 24, // Slightly larger to fit the CircleAvatar
+  //             ),
+  //           ),
+  //           const SizedBox(width: 12),
+  //           // Task Details
+  //           Expanded(
+  //             child: Column(
+  //               crossAxisAlignment: CrossAxisAlignment.start,
+  //               children: [
+  //                 // Task Title
+  //                 Text(
+  //                   task.title,
+  //                   style: const TextStyle(
+  //                     color: AppColors.white,
+  //                     fontSize: 16,
+  //                     fontWeight: FontWeight.w600,
+  //                   ),
+  //                   maxLines: 1,
+  //                   overflow: TextOverflow.ellipsis,
+  //                 ),
+  //                 const SizedBox(height: 4),
+  //                 // Task Description
+  //                 Row(
+  //                   crossAxisAlignment: CrossAxisAlignment.start,
+  //                   children: [
+  //                     const Text(
+  //                       '📝 ',
+  //                       style: TextStyle(fontSize: 12),
+  //                     ),
+  //                     Expanded(
+  //                       child: Text(
+  //                         task.description.isNotEmpty
+  //                             ? task.description
+  //                             : 'No description available',
+  //                         style: const TextStyle(
+  //                           color: AppColors.textGrey,
+  //                           fontSize: 12,
+  //                         ),
+  //                         maxLines: 2,
+  //                         overflow: TextOverflow.ellipsis,
+  //                       ),
+  //                     ),
+  //                   ],
+  //                 ),
+  //                 const SizedBox(height: 8),
+  //                 // Assigner Info
+  //                 Row(
+  //                   children: [
+  //                     const Text(
+  //                       'Assigned To: ',
+  //                       style: TextStyle(
+  //                         fontSize: 12,
+  //                         color: AppColors.textGrey,
+  //                       ),
+  //                     ),
+  //                     Text(
+  //                       task.assignedTo,
+  //                       style: const TextStyle(
+  //                         color: AppColors.accentCyan,
+  //                         fontSize: 14,
+  //                         fontWeight: FontWeight.w600,
+  //                       ),
+  //                     ),
+  //                     const SizedBox(width: 4),
+  //                     Text(
+  //                       ' (${task.assignedByRole})',
+  //                       style: const TextStyle(
+  //                         fontSize: 12,
+  //                         color: AppColors.textGrey,
+  //                       ),
+  //                     ),
+  //                   ],
+  //                 ),
+  //                 const SizedBox(height: 12),
+  //                 // Status and Priority
+  //                 Row(
+  //                   children: [
+  //                     // Priority badge
+  //                     const Text(
+  //                       'Priority: ',
+  //                       style: TextStyle(fontSize: 12),
+  //                     ),
+  //                     Container(
+  //                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+  //                       decoration: BoxDecoration(
+  //                         color: _getPriorityColorString(task.priority.toString().split('.').last).withOpacity(0.2),
+  //                         borderRadius: BorderRadius.circular(8),
+  //                       ),
+  //                       child: Text(
+  //                         task.priority.toString().split('.').last,
+  //                         style: TextStyle(
+  //                           color: _getPriorityColorString(task.priority.toString().split('.').last),
+  //                           fontSize: 10,
+  //                           fontWeight: FontWeight.w500,
+  //                         ),
+  //                       ),
+  //                     ),
+  //                     const SizedBox(width: 8),
+  //                     // Status badge
+  //                     Text(
+  //                       _getStatusEmoji(task.status.toString().split('.').last),
+  //                       style: const TextStyle(fontSize: 12),
+  //                     ),
+  //                     const SizedBox(width: 4),
+  //                     Container(
+  //                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+  //                       decoration: BoxDecoration(
+  //                         color: _getStatusColor(task.status.toString().split('.').last).withOpacity(0.2),
+  //                         borderRadius: BorderRadius.circular(8),
+  //                       ),
+  //                       child: Text(
+  //                         task.status.toString().split('.').last,
+  //                         style: TextStyle(
+  //                           color: _getStatusColor(task.status.toString().split('.').last),
+  //                           fontSize: 10,
+  //                           fontWeight: FontWeight.w500,
+  //                         ),
+  //                       ),
+  //                     ),
+  //                   ],
+  //                 ),
+  //                 const SizedBox(height: 8),
+  //                 // Created Time and Due Date
+  //                 Row(
+  //                   children: [
+  //                     const Text(
+  //                       '⏰ ',
+  //                       style: TextStyle(fontSize: 12),
+  //                     ),
+  //                     Text(
+  //                       'Created: ${_formatDateOnly(task.createdAt)} | ${_formatDate(task.createdAt)}',
+  //                       style: const TextStyle(
+  //                         color: AppColors.textGrey,
+  //                         fontSize: 10,
+  //                       ),
+  //                     ),
+  //                     const SizedBox(width: 16),
+  //                     const Text(
+  //                       '📅 ',
+  //                       style: TextStyle(fontSize: 12),
+  //                     ),
+  //                     Text(
+  //                       'Due: ${_formatDateOnly(task.deadline)}',
+  //                       style: const TextStyle(
+  //                         color: AppColors.textGrey,
+  //                         fontSize: 10,
+  //                       ),
+  //                     ),
+  //                   ],
+  //                 ),
+  //               ],
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+
+  // Widget _buildTaskCard(Task task) {
+  //   String _formatDate(DateTime date) {
+  //     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  //   }
+  //
+  //   return Container(
+  //     margin: const EdgeInsets.only(bottom: 16),
+  //     padding: const EdgeInsets.all(16),
+  //     decoration: BoxDecoration(
+  //       color: AppColors.cardBackground,
+  //       borderRadius: BorderRadius.circular(12),
+  //     ),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         Row(
+  //           children: [
+  //             CircleAvatar(
+  //               radius: 20,
+  //               backgroundColor: AppColors.inputBackground,
+  //               child: Text(
+  //                 task.assignedBy[0].toUpperCase(),
+  //                 style: const TextStyle(
+  //                   color: AppColors.accentCyan,
+  //                   fontSize: 16,
+  //                   fontWeight: FontWeight.w600,
+  //                 ),
+  //               ),
+  //             ),
+  //             const SizedBox(width: 12),
+  //             Expanded(
+  //               child: Column(
+  //                 crossAxisAlignment: CrossAxisAlignment.start,
+  //                 children: [
+  //                   Text(
+  //                     task.assignedBy,
+  //                     style: const TextStyle(
+  //                       color: AppColors.accentCyan,
+  //                       fontSize: 14,
+  //                       fontWeight: FontWeight.w600,
+  //                     ),
+  //                   ),
+  //                   Text(
+  //                     task.assignedByRole,
+  //                     style: const TextStyle(
+  //                       color: AppColors.textGrey,
+  //                       fontSize: 12,
+  //                     ),
+  //                   ),
+  //                 ],
+  //               ),
+  //             ),
+  //             Container(
+  //               height: 32,
+  //               decoration: BoxDecoration(
+  //                 color: AppColors.accentCyan,
+  //                 borderRadius: BorderRadius.circular(8),
+  //               ),
+  //               child: TextButton.icon(
+  //                 style: TextButton.styleFrom(
+  //                   padding: const EdgeInsets.symmetric(horizontal: 12),
+  //                 ),
+  //                 onPressed: () async {
+  //                   final result = await Navigator.push(
+  //                     context,
+  //                     MaterialPageRoute(
+  //                       builder: (context) => CreateTaskScreen(
+  //                         isEditMode: true,
+  //                         taskId: task.taskId,
+  //                         initialTitle: task.title,
+  //                         initialDescription: task.description,
+  //                         initialAssignee: task.assignedTo,
+  //                         initialAssigner: task.assignedBy, // Added
+  //                         initialPriority: task.priority.toString().split('.').last,
+  //                         initialDueDate: task.deadline,
+  //                         initialStatus: task.status.toString().split('.').last,
+  //                       ),
+  //                     ),
+  //                   );
+  //                   if (result == true) {
+  //                     await _loadTasks();
+  //                   }
+  //                 },
+  //                 icon: const Icon(
+  //                   Icons.edit,
+  //                   color: AppColors.background,
+  //                   size: 16,
+  //                 ),
+  //                 label: const Text(
+  //                   'View/Edit',
+  //                   style: TextStyle(
+  //                     color: AppColors.background,
+  //                     fontSize: 12,
+  //                     fontWeight: FontWeight.w500,
+  //                   ),
+  //                 ),
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //         const SizedBox(height: 12),
+  //         Row(
+  //           children: [
+  //             Text(
+  //               'Task: ',
+  //               style: TextStyle(
+  //                 color: AppColors.textGrey,
+  //                 fontSize: 12,
+  //               ),
+  //             ),
+  //             Expanded(
+  //               child: Text(
+  //                 task.title,
+  //                 style: TextStyle(
+  //                   color: AppColors.white,
+  //                   fontSize: 12,
+  //                 ),
+  //                 maxLines: 1,
+  //                 overflow: TextOverflow.ellipsis,
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //         const SizedBox(height: 4),
+  //         Row(
+  //           children: [
+  //             // Priority badge
+  //             Container(
+  //               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+  //               decoration: BoxDecoration(
+  //                 color: _getPriorityColorString(task.priority.toString().split('.').last).withOpacity(0.2),
+  //                 borderRadius: BorderRadius.circular(4),
+  //               ),
+  //               child: Text(
+  //                 task.priority.toString().split('.').last,
+  //                 style: TextStyle(
+  //                   color: _getPriorityColorString(task.priority.toString().split('.').last),
+  //                   fontSize: 10,
+  //                   fontWeight: FontWeight.w500,
+  //                 ),
+  //               ),
+  //             ),
+  //             const SizedBox(width: 8),
+  //             // Status badge
+  //             Container(
+  //               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+  //               decoration: BoxDecoration(
+  //                 color: _getStatusColor(task.status.toString().split('.').last).withOpacity(0.2),
+  //                 borderRadius: BorderRadius.circular(4),
+  //               ),
+  //               child: Text(
+  //                 task.status.toString().split('.').last,
+  //                 style: TextStyle(
+  //                   color: _getStatusColor(task.status.toString().split('.').last),
+  //                   fontSize: 10,
+  //                   fontWeight: FontWeight.w500,
+  //                 ),
+  //               ),
+  //             ),
+  //             const SizedBox(width: 8),
+  //             // Due date
+  //             Icon(Icons.calendar_today, size: 12, color: AppColors.textGrey),
+  //             const SizedBox(width: 2),
+  //             Text(
+  //               _formatDate(task.deadline),
+  //               style: TextStyle(
+  //                 color: AppColors.textGrey,
+  //                 fontSize: 10,
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   Future<void> _downloadTasks() async {
     try {

@@ -148,12 +148,12 @@ class _SnoozeDialogState extends State<SnoozeDialog> {
 
     try {
       print('🔄 [SnoozeDialog] Calling snoozeNotification with audio data: ${audioNote != null}');
-      // await _notificationService.snoozeNotification(
-      //   widget.notificationId,
-      //   _selectedDate,
-      //   reason: _reasonController.text.trim(),
-      //   audioNote: audioNote,
-      // );
+      await _notificationService.snoozeNotification(
+        widget.notificationId,
+        _selectedDate,
+        reason: _reasonController.text.trim(),
+        audioNote: audioNote,
+      );
       
       print('✅ [SnoozeDialog] Notification snoozed successfully');
 

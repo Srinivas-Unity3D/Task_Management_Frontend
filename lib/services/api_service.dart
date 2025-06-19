@@ -28,8 +28,8 @@ class MyHttpOverrides extends HttpOverrides {
 }
 
 class ApiService {
-  static const String url = '134.209.149.12';
-  // static const String url = '10.0.2.2:5001';
+  // static const String url = '134.209.149.12';
+  static const String url = 'task-man-back-render-2.onrender.com';
   static const String baseUrl = 'https://$url';
   // static const String baseUrl = 'http://10.20.0.248:5000';
 

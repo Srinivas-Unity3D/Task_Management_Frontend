@@ -24,6 +24,7 @@ class Task {
   final String assignedBy;
   final String assignedByRole;
   final String assignedTo;
+  final DateTime? createdAt; // Added field
   final DateTime? completedAt;
   final DateTime? alarmStartDate;
   final TimeOfDay? alarmStartTime;
@@ -42,6 +43,7 @@ class Task {
     required this.assignedBy,
     required this.assignedByRole,
     required this.assignedTo,
+    this.createdAt, // Added to constructor
     this.completedAt,
     this.alarmStartDate,
     this.alarmStartTime,
@@ -93,6 +95,7 @@ class Task {
       assignedBy: json['assigned_by'],
       assignedByRole: json['assigned_by_role'] ?? '',
       assignedTo: json['assigned_to'] ?? '',
+      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null, // Parse created_at
       completedAt: json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,
       alarmStartDate: parseAlarmStartDate,
       alarmStartTime: parseAlarmStartTime,
@@ -134,6 +137,7 @@ class Task {
       'assigned_by': assignedBy,
       'assigned_by_role': assignedByRole,
       'assigned_to': assignedTo,
+      'created_at': createdAt?.toIso8601String(), // Serialize createdAt
       'completed_at': completedAt?.toIso8601String(),
       'alarm_settings': alarmSettings.isNotEmpty ? alarmSettings : null,
     };

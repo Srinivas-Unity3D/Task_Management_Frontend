@@ -8,6 +8,7 @@ class TaskAssignment {
   final DateTime dueDate;
   final String priority;
   final String currentTask;
+  final DateTime createdDate; // Added to handle created_at
 
   TaskAssignment({
     required this.taskId,
@@ -19,6 +20,7 @@ class TaskAssignment {
     required this.dueDate,
     required this.priority,
     required this.currentTask,
+    required this.createdDate,
   });
 
   factory TaskAssignment.fromJson(Map<String, dynamic> json) {
@@ -32,6 +34,7 @@ class TaskAssignment {
       dueDate: DateTime.parse(json['due_date']),
       priority: json['priority'],
       currentTask: json['current_task'],
+      createdDate: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
     );
   }
 
@@ -46,6 +49,7 @@ class TaskAssignment {
       'due_date': dueDate.toIso8601String(),
       'priority': priority,
       'current_task': currentTask,
+      'created_at': createdDate.toIso8601String(),
     };
   }
-} 
+}

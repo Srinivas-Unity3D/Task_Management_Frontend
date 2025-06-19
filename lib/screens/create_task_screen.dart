@@ -400,9 +400,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       print('🎤 [Microphone] Is currently recording: $isRecording');
       if (!hasRecordingPermission) {
         print('❌ [Microphone] No recording permission available');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Microphone access is not available')),
-        );
+        // ScaffoldMessenger.of(context).showSnackBar(
+        //   const SnackBar(content: Text('Microphone access is not available')),
+        // );
       }
     } catch (e) {
       print('❌ [Microphone] Error checking status: $e');
