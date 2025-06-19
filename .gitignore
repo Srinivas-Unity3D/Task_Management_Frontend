@@ -32,6 +32,13 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+/assets
+/macos
+
+ios/
+web/
+linux/
+windows/
 
 # Symbolication related
 app.*.symbols
@@ -41,10 +48,24 @@ app.*.map.json
 
 # Android Studio will place build artifacts here
 /android/app/debug
+android/app/build/
 /android/app/profile
 /android/app/release
 /android/app/google-services.json
 /macos/Flutter/GeneratedPluginRegistrant.swift
+assets/debug/flutter_assets/kernel_blob.bin
+assets/debug/mergeDebugAssets/flutter_assets/kernel_blob.bin
 
 #/assets/service-account-key.json
 #/lib/services/get_service_key.dart
+
+# ✅ Additional ignores for cleaner Android-only Flutter project
+
+# Node modules (if using web-related packages)
+node_modules/
+
+# Firebase JSON config — often specific to local dev
+firebase.json
+
+# Local Android SDK path config (shouldn't be committed)
+local.properties
